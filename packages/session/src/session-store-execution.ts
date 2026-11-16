@@ -15,7 +15,7 @@ import {
 } from '@nodeint/migent-kernel';
 
 import { ORDER_PAD_WIDTH, TURN_PAD_WIDTH } from './constants.js';
-import { appendLifecycleEvent } from './session-events.js';
+import { sessionEventLog } from './event-log.js';
 import { quotedSessionId } from './session-id.js';
 import type { PlannedExecutionSave } from './session-ledger.js';
 import { ExecutionContext, type HumanInput, type SkipDetails } from './session-store-types.js';
@@ -132,7 +132,7 @@ export function runningExecutionMetadata(input: {
 export function appendExecutionSaveEvents(input: FinishExecutionSaveInput): void {
   const { context, sessionDirectory, status, outcome, plan, timestamp, stageId } = input;
   const { failureReason, storedError } = input;
-  appendLifecycleEvent(sessionDirectory, {
+  sessionEventLog.record(sessionDirectory, {
     event: `execution.${status}`,
     timestamp,
     executionId: context.executionId,
@@ -147,7 +147,7 @@ export function appendExecutionSaveEvents(input: FinishExecutionSaveInput): void
   });
   if (outcome !== null) {
     const outcomeJson = outcome.toJson();
-    appendLifecycleEvent(sessionDirectory, {
+    sessionEventLog.record(sessionDirectory, {
       event: `stage.${outcome.status}`,
       timestamp,
       executionId: context.executionId,
@@ -157,7 +157,7 @@ export function appendExecutionSaveEvents(input: FinishExecutionSaveInput): void
     });
   }
   if (plan.outputs.length > 0) {
-    appendLifecycleEvent(sessionDirectory, {
+    sessionEventLog.record(sessionDirectory, {
       event: 'outputs.published',
       timestamp,
       executionId: context.executionId,
@@ -166,7 +166,7 @@ export function appendExecutionSaveEvents(input: FinishExecutionSaveInput): void
     });
   }
   if (plan.sessionEvent !== null) {
-    appendLifecycleEvent(sessionDirectory, {
+    sessionEventLog.record(sessionDirectory, {
       event: `session.${plan.sessionStatus}`,
       timestamp,
       executionId: context.executionId,
@@ -182,7 +182,7 @@ export function appendExecutionStarted(
   event: { timestamp: string; executionId: string; stageId: string },
   data: Record<string, unknown>,
 ): void {
-  appendLifecycleEvent(sessionDirectory, { event: 'execution.started', ...event, data });
+  sessionEventLog.record(sessionDirectory, { event: 'execution.started', ...event, data });
 }
 
 export function skipRecordOf(skip: SkipDetails): Record<string, unknown> {
@@ -203,7 +203,7 @@ export function createSessionFiles(context: ExecutionContext): void {
   writeFileAtomic(
     manifestPath,
     `${[`session_id: ${quotedSessionId(context.sessionId)}`, `created_at: ${createdAt}`, 'status: running'].join('\n')}\n`);
-  appendLifecycleEvent(sessionDirectory, {
+  sessionEventLog.record(sessionDirectory, {
     event: 'session.created',
     timestamp: createdAt,
     data: {},

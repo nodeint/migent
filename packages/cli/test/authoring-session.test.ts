@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { AgentToolRunner, executeNamedWorkflow } from '@nodeint/migent-engine';
 import { sha256Hex } from '@nodeint/migent-kernel';
-import { activatePreparedSession, appendLifecycleEvent, createPreparedSession,SessionLock } from '@nodeint/migent-session';
+import { activatePreparedSession, createPreparedSession, sessionEventLog,SessionLock } from '@nodeint/migent-session';
 import { afterEach, beforeEach, expect, test } from 'vitest';
 
 import { main } from '../src/index.ts';
@@ -430,7 +430,7 @@ test('a stale status.json cannot hide a terminal or inconsistent event history',
   // status.json still says active while the events say completed.
   const lock = SessionLock.acquire(sessionDir(id));
   try {
-    appendLifecycleEvent(sessionDir(id), { event: 'session.completed', timestamp: new Date().toISOString(), data: {} });
+    sessionEventLog.record(sessionDir(id), { event: 'session.completed', timestamp: new Date().toISOString(), data: {} });
   } finally {
     lock.release();
   }

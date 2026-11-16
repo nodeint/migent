@@ -5,7 +5,7 @@ import path from 'node:path';
 
 import type { ClientRegistry, ExecutionSnapshot } from '@nodeint/migent-kernel';
 import { ConfigurationError, endsScheduling, log, NextStage, readyStages, runnableNow, schedulableStageIds, Stop, stopReasonFor, utcNow, writeFileAtomic } from '@nodeint/migent-kernel';
-import { activatePreparedSession, appendLifecycleEvent, assertSingleLineTask, bindPriorSessionId, commitFoldedStatus, createWorkflowSession, loadFrozenWorkflow, readWorkflowFreeze, repairSessionUnlocked, requireLiveWorkflow, requireTaskBody, resolvePriorSessionId, SessionLock, SessionStore, warnIfFrozenDrift, WORKFLOW_FREEZE_FILE, writeWorkflowFreeze } from '@nodeint/migent-session';
+import { activatePreparedSession, assertSingleLineTask, bindPriorSessionId, createWorkflowSession, loadFrozenWorkflow, readWorkflowFreeze, repairSessionUnlocked, requireLiveWorkflow, requireTaskBody, resolvePriorSessionId, sessionEventLog, SessionLock, SessionStore, warnIfFrozenDrift, WORKFLOW_FREEZE_FILE, writeWorkflowFreeze } from '@nodeint/migent-session';
 import { isWorkflowV2, loadNamedWorkflow, type WorkflowDocument } from '@nodeint/migent-workflow';
 
 import { executeFinal, type ExecuteResult, PendingStageReply, resumeInputs, selectedStage, text } from './dispatch.js';
@@ -121,7 +121,7 @@ function refreezeWorkflow(
   const { workflow, registry } = next;
   const written = writeWorkflowFreeze(sessionDirectory, { workspace, workflow, resolveClient: registry });
   try {
-    appendLifecycleEvent(sessionDirectory, {
+    sessionEventLog.record(sessionDirectory, {
       event: 'workflow.refreshed',
       timestamp: utcNow(),
       data: {
@@ -130,7 +130,7 @@ function refreezeWorkflow(
         source_sha256: written.sourceSha256,
       },
     });
-    commitFoldedStatus(workspace, sessionDirectory);
+    sessionEventLog.commit(workspace, sessionDirectory);
   } catch (error) {
     writeFileAtomic(freezePath, previousText);
     throw error;

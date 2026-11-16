@@ -17,7 +17,7 @@ import {
 } from '@nodeint/migent-kernel';
 import type { TurnKind } from '@nodeint/migent-prompts';
 import { frozenRoleInstructions, frozenStageTarget, readWorkflowFreeze } from '@nodeint/migent-session';
-import { commitFoldedStatus, parseExecutionId } from '@nodeint/migent-session';
+import { parseExecutionId, sessionEventLog } from '@nodeint/migent-session';
 import { freezeSessionTask } from '@nodeint/migent-session';
 import { bindPriorSessionId, createWorkflowSession } from '@nodeint/migent-session';
 import { type HumanInput, SessionStore, stringOptions } from '@nodeint/migent-session';
@@ -325,7 +325,7 @@ export async function dispatchExecuteStage(
   if (stageSpec === undefined) throw new ConfigurationError(`Stage not found: ${stageId}`);
   // Runs before the first await so two starts in one pool turn cannot both capture the baseline.
   if (ensureSessionBaseline(workspace, sessionId, workflow)) {
-    commitFoldedStatus(workspace, path.join(workspace, '.migent', 'sessions', sessionId));
+    sessionEventLog.commit(workspace, path.join(workspace, '.migent', 'sessions', sessionId));
   }
   const skipped = skipUnlessRunWhenMatches({ workspace, sessionId, runner }, stageSpec, snapshots);
   if (skipped !== null) return skipped;

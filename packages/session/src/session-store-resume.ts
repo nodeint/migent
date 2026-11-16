@@ -10,9 +10,9 @@ import { EXECUTIONS_DIRNAME, utcNow } from '@nodeint/migent-kernel';
 import { acceptsBlockedResume, answerQuestions, BLOCKED_RESUME_FROM, formatQuestionAnswers, type Question, resolutionFrom, storedQuestions } from '@nodeint/migent-kernel';
 import { isRecord } from '@nodeint/migent-workflow';
 
+import { sessionEventLog } from './event-log.js';
 import { readPendingResumes } from './resume-pending.js';
-import { appendLifecycleEvent, CANCELLED_REPLY, readParsedEvents } from './session-events.js';
-import { commitFoldedStatus } from './session-fold.js';
+import { CANCELLED_REPLY, readParsedEvents } from './session-events.js';
 import { blockedExecutions, statusExecutionsFromSnapshots } from './session-ledger.js';
 import { assertSessionLockHeld } from './session-lock.js';
 import { SessionStoreCore } from './session-store-core.js';
@@ -102,12 +102,12 @@ export class SessionStoreResume extends SessionStoreCore {
     if (!target) throw new ConfigurationError(`Stage ${stageId} has no cancelled execution.`);
     if (!reply.text.trim()) throw new ConfigurationError('--reply is empty.');
     // Persist the reply before dispatch so an interrupted dispatch can be recovered.
-    appendLifecycleEvent(directory, {
+    sessionEventLog.record(directory, {
       event: 'session.active', timestamp: utcNow(), executionId: target.executionId, stageId: stageId || null,
       data: { from: CANCELLED_REPLY, reply: reply.text, origin: reply.origin },
     });
     this.rewriteManifestStatus(directory, 'running');
-    commitFoldedStatus(this.workspace, directory);
+    sessionEventLog.commit(this.workspace, directory);
   }
 
   /** A recorded reply whose superseded execution is still the latest of its stage, so it was not dispatched yet. */
@@ -159,11 +159,11 @@ export class SessionStoreResume extends SessionStoreCore {
     const answers = answerQuestions(target.questions, reply);
     const formatted = formatQuestionAnswers(target.questions, answers);
     // Persist the answer before unlocking dispatch, including if dispatch fails before creating an execution.
-    appendLifecycleEvent(directory, {
+    sessionEventLog.record(directory, {
       event: 'session.active', timestamp: utcNow(), executionId: target.executionId, stageId,
       data: { from: resolutionFrom('question'), reply: formatted, answers, input: reply },
     });
-    commitFoldedStatus(this.workspace, directory);
+    sessionEventLog.commit(this.workspace, directory);
     const records = answers as unknown as Record<string, unknown>[];
     return { formatted, input: reply, answers: records, target: target.executionId };
   }
@@ -175,7 +175,7 @@ export class SessionStoreResume extends SessionStoreCore {
   public recordResumeExpired(sessionId: string, record: ResumeExpiredRecord): void {
     const directory = path.join(this.sessionsDirectory, sessionId);
     assertSessionLockHeld(directory);
-    appendLifecycleEvent(directory, {
+    sessionEventLog.record(directory, {
       event: 'resume.expired',
       timestamp: utcNow(),
       stageId: record.stageId,
@@ -188,14 +188,14 @@ export class SessionStoreResume extends SessionStoreCore {
         estimate: record.estimate,
       },
     });
-    commitFoldedStatus(this.workspace, directory);
+    sessionEventLog.commit(this.workspace, directory);
   }
 
   /** Record a decision for a pending resume, then re-fold. Idempotent for a pair with no pending stop. */
   public recordResumeDecision(sessionId: string, record: ResumeDecisionRecord): void {
     const directory = path.join(this.sessionsDirectory, sessionId);
     assertSessionLockHeld(directory);
-    appendLifecycleEvent(directory, {
+    sessionEventLog.record(directory, {
       event: 'resume.decided',
       timestamp: utcNow(),
       stageId: record.stageId,
@@ -206,7 +206,7 @@ export class SessionStoreResume extends SessionStoreCore {
         origin: record.origin,
       },
     });
-    commitFoldedStatus(this.workspace, directory);
+    sessionEventLog.commit(this.workspace, directory);
   }
 
   /** The resume decisions the session waits for, from its events. */
@@ -246,7 +246,7 @@ export class SessionStoreResume extends SessionStoreCore {
   /** Rewrite the legacy manifest and commit the fold; the session must come out active. */
   private commitResumed(sessionId: string, sessionDirectory: string): void {
     this.rewriteManifestStatus(sessionDirectory, 'running');
-    const folded = commitFoldedStatus(this.workspace, sessionDirectory);
+    const folded = sessionEventLog.commit(this.workspace, sessionDirectory);
     if (folded.status !== 'active') {
       throw new ConfigurationError(`Session ${sessionId} stayed ${String(folded.status)} after resume.`);
     }
@@ -274,7 +274,7 @@ export class SessionStoreResume extends SessionStoreCore {
       const blocker = target.blocker ?? (targets.length === 1 ? textField(status.blocker) : null);
       if (blocker) data.blocker = blocker;
       if (reply !== null && stageId !== null && target.stageId === stageId) data.reply = reply;
-      appendLifecycleEvent(sessionDirectory, {
+      sessionEventLog.record(sessionDirectory, {
         event: 'session.active',
         timestamp,
         executionId: target.executionId,
@@ -305,7 +305,7 @@ export class SessionStoreResume extends SessionStoreCore {
       if (stageId !== null && snapshot.stageId !== stageId) continue;
       if (snapshot.status !== 'failed') continue;
       if (snapshot.failureReason === 'verify_exhausted' || snapshot.failureReason === 'verify_failed') continue;
-      appendLifecycleEvent(sessionDirectory, {
+      sessionEventLog.record(sessionDirectory, {
         event: 'session.active',
         timestamp,
         executionId: snapshot.executionId,
@@ -380,7 +380,7 @@ export class SessionStoreResume extends SessionStoreCore {
       this.save(record, context);
     }
     const stageId = typeof metadata.stage_id === 'string' ? metadata.stage_id : '';
-    appendLifecycleEvent(sessionDirectory, {
+    sessionEventLog.record(sessionDirectory, {
       event: 'execution.running',
       timestamp,
       executionId: context.executionId,
@@ -392,7 +392,7 @@ export class SessionStoreResume extends SessionStoreCore {
         session_status: 'active',
       },
     });
-    appendLifecycleEvent(sessionDirectory, {
+    sessionEventLog.record(sessionDirectory, {
       event: 'session.active',
       timestamp,
       executionId: context.executionId,
@@ -460,11 +460,11 @@ export class SessionStoreResume extends SessionStoreCore {
         counts[snapshot.stageId] = (counts[snapshot.stageId] ?? 0) + 1;
       }
     }
-    appendLifecycleEvent(sessionDirectory, {
+    sessionEventLog.record(sessionDirectory, {
       event: 'revisions.reset',
       timestamp: utcNow(),
       data: { baselines: counts },
     });
-    commitFoldedStatus(this.workspace, sessionDirectory);
+    sessionEventLog.commit(this.workspace, sessionDirectory);
   }
 }

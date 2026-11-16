@@ -1,7 +1,8 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { type FailureClassification, STATUS_PROVIDER_EVENTS } from '@nodeint/migent-kernel';
+import { eventKindTraits } from '@nodeint/migent-contracts';
+import { type FailureClassification } from '@nodeint/migent-kernel';
 import { sessionMetrics, SessionStore, watchSnapshot } from '@nodeint/migent-session';
 import { expect, test, vi } from 'vitest';
 
@@ -181,7 +182,7 @@ test('--once on quota exits 8 and a non-continue --once on the failure does not 
 });
 
 test('provider.quota names the execution and a zero capture is not uncaptured', async () => {
-  expect(STATUS_PROVIDER_EVENTS.has('provider.quota')).toBe(true);
+  expect(eventKindTraits('provider.quota').folds).toBe(true);
   const workspace = workspaceFor(SOLO);
   const lines: string[] = [];
   const write = process.stderr.write.bind(process.stderr);

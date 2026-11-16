@@ -7,7 +7,7 @@ import { ConfigurationError } from '@nodeint/migent-kernel';
 import { StageOutcome } from '@nodeint/migent-kernel';
 import { SessionLock } from '@nodeint/migent-session';
 import { readExecutions, readFoldedStatus, statusDriftMessage } from '@nodeint/migent-session';
-import { appendLifecycleEvent, readParsedEvents } from '@nodeint/migent-session';
+import { readParsedEvents, sessionEventLog } from '@nodeint/migent-session';
 import { repairSession } from '@nodeint/migent-session';
 import { createAgentSession, createWorkflowSession } from '@nodeint/migent-session';
 import { clearInFlightExecution, noteInFlightExecution, SessionStore } from '@nodeint/migent-session';
@@ -16,7 +16,7 @@ import { loadWorkflowDocument } from '@nodeint/migent-workflow';
 import { expect, test } from 'vitest';
 
 import { AgentToolRunner, executeNamedWorkflow } from '../src/index.ts';
-import { defaultClients, tempDir, writeSessionConfig } from './support.ts';
+import { defaultClients, holdSessionLock, tempDir, writeSessionConfig } from './support.ts';
 
 const PLAN = readFileSync(
   path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'workflows', 'plan.yaml'),
@@ -56,6 +56,7 @@ function eventsText(workspace: string, sessionId: string): string {
 test('the fold matches status.json after each session write', () => {
   const workspace = workspaceWithPlan();
   const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
+  holdSessionLock(workspace, sessionId);
   const created = expectFold(workspace, sessionId);
   expect(created.status).toBe('active');
   expect(created.workflow_id).toBe('plan');
@@ -174,6 +175,7 @@ test('the fold matches status.json for every workflow fixture', () => {
     writeSessionConfig(workspace);
     const workflowId = name.slice(0, -'.yaml'.length);
     const sessionId = createWorkflowSession(workspace, workflowId, { task: 'Write the change' });
+    holdSessionLock(workspace, sessionId);
     expectFold(workspace, sessionId);
     freezeSessionTask(workspace, sessionId);
     expectFold(workspace, sessionId);
@@ -210,6 +212,7 @@ test('a directory created before execution.json leaves no event and is not reuse
 test('repair rebuilds a running execution whose started event is missing', () => {
   const workspace = workspaceWithPlan();
   const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
+  const lock = holdSessionLock(workspace, sessionId);
   const directory = sessionDirectory(workspace, sessionId);
   const store = new SessionStore(workspace);
   const [, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'plan', stageAttempt: null, executionOrder: null, prompt: 'plan' });
@@ -218,6 +221,7 @@ test('repair rebuilds a running execution whose started event is missing', () =>
     .filter((line) => line.includes('"event":"session.created"'))
     .join('\n');
   writeFileSync(path.join(directory, 'events.jsonl'), kept.endsWith('\n') || kept === '' ? kept : `${kept}\n`, 'utf8');
+  lock.release();
   const restored = repairSession(workspace, sessionId);
   expect(eventsText(workspace, sessionId)).toContain('"event":"execution.started"');
   expect(eventsText(workspace, sessionId)).not.toContain('"event":"execution.completed"');
@@ -229,6 +233,7 @@ test('repair rebuilds a running execution whose started event is missing', () =>
 test('repair rebuilds a truncated schema 2 status.json', () => {
   const workspace = workspaceWithPlan();
   const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
+  const lock = holdSessionLock(workspace, sessionId);
   freezeSessionTask(workspace, sessionId);
   const store = new SessionStore(workspace);
   const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'plan', stageAttempt: null, executionOrder: null, prompt: 'plan' });
@@ -236,6 +241,7 @@ test('repair rebuilds a truncated schema 2 status.json', () => {
   store.saveExecution(context, record, { status: 'completed', outcome: new StageOutcome('complete') });
   const intact = readStatus(workspace, sessionId);
   writeFileSync(path.join(sessionDirectory(workspace, sessionId), 'status.json'), '{', 'utf8');
+  lock.release();
   const restored = repairSession(workspace, sessionId);
   expect(restored.task_sha256).toBe(intact.task_sha256);
   expect(restored.latest_execution_id).toBe(context.executionId);
@@ -246,6 +252,7 @@ test('repair rebuilds a truncated schema 2 status.json', () => {
 test('continue repairs a status.json that missed its event, and refuses a destroyed one', async () => {
   const workspace = workspaceWithPlan();
   const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
+  const lock = holdSessionLock(workspace, sessionId);
   freezeSessionTask(workspace, sessionId);
   const store = new SessionStore(workspace);
   const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'plan', stageAttempt: null, executionOrder: null, prompt: 'plan' });
@@ -260,6 +267,7 @@ test('continue repairs a status.json that missed its event, and refuses a destro
   expect(intact.status).toBe('completed');
   const hash = intact.task_sha256;
   writeFileSync(path.join(directory, 'status.json'), JSON.stringify({ session_id: sessionId, status: 'active' }), 'utf8');
+  lock.release();
   const restored = repairSession(workspace, sessionId);
   expect(restored.task_sha256).toBe(hash);
   expect(restored.latest_execution_id).toBe(reviewContext.executionId);
@@ -311,6 +319,7 @@ test('continue repairs a status.json that missed its event, and refuses a destro
 test('a schema 2 repair rebuilds missing execution events and ignores a forged start', () => {
   const workspace = workspaceWithPlan();
   const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
+  const lock = holdSessionLock(workspace, sessionId);
   const directory = sessionDirectory(workspace, sessionId);
   markSchema2(workspace, sessionId);
   const store = new SessionStore(workspace);
@@ -321,14 +330,16 @@ test('a schema 2 repair rebuilds missing execution events and ignores a forged s
     .filter((line) => line.includes('session.created'))
     .join('\n');
   writeFileSync(path.join(directory, 'events.jsonl'), kept.endsWith('\n') || kept === '' ? kept : `${kept}\n`, 'utf8');
+  lock.release();
   repairSession(workspace, sessionId);
   const repaired = eventsText(workspace, sessionId);
   expect(repaired).toContain('"event":"execution.started"');
   expect(repaired).toContain('"event":"execution.completed"');
   expectFold(workspace, sessionId);
   expect(readStatus(workspace, sessionId).latest_execution_id).toBe(context.executionId);
+  holdSessionLock(workspace, sessionId);
 
-  appendLifecycleEvent(directory, {
+  sessionEventLog.record(directory, {
     event: 'execution.started',
     timestamp: '2026-10-19T00:00:00+00:00',
     executionId: '0005-plan--attempt-01',
@@ -350,11 +361,12 @@ test('a schema 2 repair rebuilds missing execution events and ignores a forged s
 test('a new running execution does not keep the previous current stage', () => {
   const workspace = workspaceWithPlan();
   const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
+  const lock = holdSessionLock(workspace, sessionId);
   const directory = sessionDirectory(workspace, sessionId);
   const store = new SessionStore(workspace);
   const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'plan', stageAttempt: null, executionOrder: null, prompt: 'plan' });
   expect(readExecutions(directory).find((execution) => execution.executionId === context.executionId)?.client).toBe('fake');
-  appendLifecycleEvent(directory, {
+  sessionEventLog.record(directory, {
     event: 'provider.stage_started',
     timestamp: '2026-10-19T00:00:01+00:00',
     executionId: context.executionId,
@@ -375,7 +387,7 @@ test('a new running execution does not keep the previous current stage', () => {
   expect(folded.latest_execution_id).toBe(next.executionId);
   expect(folded.running_stages).toBeUndefined();
   expect(folded.current_stage).toBeUndefined();
-  appendLifecycleEvent(directory, {
+  sessionEventLog.record(directory, {
     event: 'provider.stage_started',
     timestamp: '2026-10-19T00:00:03+00:00',
     executionId: next.executionId,
@@ -383,6 +395,7 @@ test('a new running execution does not keep the previous current stage', () => {
     topLevel: { client: 'fake' },
     summary: 'new',
   });
+  lock.release();
   const refreshed = repairSession(workspace, sessionId);
   expect(refreshed.running_stages).toEqual([
     expect.objectContaining({
@@ -399,6 +412,7 @@ test('a new running execution does not keep the previous current stage', () => {
 test('junk files in outputs are not recorded', () => {
   const workspace = workspaceWithPlan();
   const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
+  const lock = holdSessionLock(workspace, sessionId);
   markSchema2(workspace, sessionId);
   const outputs = path.join(sessionDirectory(workspace, sessionId), 'outputs');
   mkdirSync(outputs, { recursive: true });
@@ -406,6 +420,7 @@ test('junk files in outputs are not recorded', () => {
   for (const name of ['.DS_Store', 'plan.md~', 'Thumbs.db', 'desktop.ini', '.notes.swp', '.notes.tmp']) {
     writeFileSync(path.join(outputs, name), 'junk', 'utf8');
   }
+  lock.release();
   const recorded = repairSession(workspace, sessionId);
   expect(recorded.outputs).toEqual({ notes: { path: 'outputs/notes' } });
   for (const name of ['.DS_Store', 'plan.md~', 'Thumbs.db', 'desktop.ini', '.notes.swp', '.notes.tmp']) {
@@ -420,6 +435,7 @@ test('junk files in outputs are not recorded', () => {
 test('a v1 show does not report fold drift', () => {
   const workspace = workspaceWithPlan();
   const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
+  holdSessionLock(workspace, sessionId);
   markSchema1(workspace, sessionId);
   const status = readStatus(workspace, sessionId);
   status.task = 'changed by hand';
@@ -430,13 +446,15 @@ test('a v1 show does not report fold drift', () => {
 test('repair refuses a parsed hash the fold would replace', () => {
   const workspace = workspaceWithPlan();
   const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
+  const lock = holdSessionLock(workspace, sessionId);
   freezeSessionTask(workspace, sessionId);
   const directory = sessionDirectory(workspace, sessionId);
-  appendLifecycleEvent(directory, {
+  sessionEventLog.record(directory, {
     event: 'task.frozen',
     timestamp: '2026-10-19T00:00:00+00:00',
     data: { sha256: 'a'.repeat(64) },
   });
+  lock.release();
   expect(() => repairSession(workspace, sessionId, { acceptTask: true })).toThrow(/task_sha256 would be dropped/);
   expect(() => repairSession(workspace, sessionId, { acceptTask: true })).not.toThrow(/--accept-task/);
   expect(readStatus(workspace, sessionId).task_sha256).not.toBe('a'.repeat(64));
@@ -445,6 +463,7 @@ test('repair refuses a parsed hash the fold would replace', () => {
 test('an execution file without its started event is still visible to a v1 fold', () => {
   const workspace = workspaceWithPlan();
   const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
+  const lock = holdSessionLock(workspace, sessionId);
   markSchema1(workspace, sessionId);
   const store = new SessionStore(workspace);
   const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'plan', stageAttempt: null, executionOrder: null, prompt: 'plan' });
@@ -455,6 +474,7 @@ test('an execution file without its started event is still visible to a v1 fold'
     .filter((line) => line !== '' && !line.includes('"event":"execution.started"'));
   writeFileSync(path.join(directory, 'events.jsonl'), `${lines.join('\n')}\n`, 'utf8');
   writeFileSync(path.join(directory, 'status.json'), '{"status":"active"}', 'utf8');
+  lock.release();
   const folded = repairSession(workspace, sessionId);
   expect(folded.latest_execution_id).toBe(context.executionId);
   expect(folded.latest_execution_status).toBe('failed');
@@ -478,6 +498,7 @@ function markSchema1(workspace: string, sessionId: string): void {
 test('a schema 2 fold keeps a finished execution when its started event is appended later', () => {
   const workspace = workspaceWithPlan();
   const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
+  const lock = holdSessionLock(workspace, sessionId);
   markSchema2(workspace, sessionId);
   const store = new SessionStore(workspace);
   const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'plan', stageAttempt: null, executionOrder: null, prompt: 'plan' });
@@ -492,6 +513,7 @@ test('a schema 2 fold keeps a finished execution when its started event is appen
     .split('\n')
     .filter((line) => line !== '' && !line.includes('"event":"execution.started"'));
   writeFileSync(path.join(directory, 'events.jsonl'), `${withoutStarted.join('\n')}\n`, 'utf8');
+  lock.release();
   repairSession(workspace, sessionId);
   const status = readStatus(workspace, sessionId);
   expect(status.latest_execution_id).toBe(reviewContext.executionId);
@@ -516,6 +538,7 @@ test('a schema 2 fold keeps a finished execution when its started event is appen
 test('a refused repair does not append reconciled events', () => {
   const workspace = workspaceWithPlan();
   const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
+  const lock = holdSessionLock(workspace, sessionId);
   freezeSessionTask(workspace, sessionId);
   markSchema2(workspace, sessionId);
   const store = new SessionStore(workspace);
@@ -530,6 +553,7 @@ test('a refused repair does not append reconciled events', () => {
   status.task_sha256 = 'b'.repeat(64);
   writeFileSync(path.join(directory, 'status.json'), JSON.stringify(status), 'utf8');
   const before = eventsText(workspace, sessionId);
+  lock.release();
   expect(() => repairSession(workspace, sessionId)).toThrow(/task_sha256 would be dropped/);
   expect(() => repairSession(workspace, sessionId)).not.toThrow(/--accept-task/);
   expect(eventsText(workspace, sessionId)).toBe(before);
@@ -538,6 +562,7 @@ test('a refused repair does not append reconciled events', () => {
 test('a repair that would reveal a torn hash does not seal it', () => {
   const workspace = workspaceWithPlan();
   const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
+  const lock = holdSessionLock(workspace, sessionId);
   freezeSessionTask(workspace, sessionId);
   markSchema2(workspace, sessionId);
   const store = new SessionStore(workspace);
@@ -557,6 +582,7 @@ test('a repair that would reveal a torn hash does not seal it', () => {
   writeFileSync(eventsPath, `${stripped.join('\n')}\n${torn}`, 'utf8');
   const before = readFileSync(eventsPath, 'utf8');
   const hash = readStatus(workspace, sessionId).task_sha256;
+  lock.release();
   expect(() => repairSession(workspace, sessionId)).toThrow(/task_sha256 would be dropped/);
   expect(() => repairSession(workspace, sessionId)).not.toThrow(/--accept-task/);
   expect(readFileSync(eventsPath, 'utf8')).toBe(before);
@@ -566,6 +592,7 @@ test('a repair that would reveal a torn hash does not seal it', () => {
 test('a repair seals a torn tail that the fold keeps', () => {
   const workspace = workspaceWithPlan();
   const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
+  const lock = holdSessionLock(workspace, sessionId);
   freezeSessionTask(workspace, sessionId);
   markSchema2(workspace, sessionId);
   const kept = readStatus(workspace, sessionId).task_sha256;
@@ -584,6 +611,7 @@ test('a repair seals a torn tail that the fold keeps', () => {
     data: { sha256: kept },
   });
   writeFileSync(eventsPath, `${stripped.join('\n')}\n${torn}`, 'utf8');
+  lock.release();
   repairSession(workspace, sessionId);
   const text = readFileSync(eventsPath, 'utf8');
   expect(text).toContain(`${torn}\n`);
@@ -595,12 +623,14 @@ test('a repair seals a torn tail that the fold keeps', () => {
 test('a partial agent status uses the manifest workflow id', () => {
   const workspace = tempDir('migent-fold-');
   const sessionId = createAgentSession(workspace, 'reviewer', 'Think');
+  const lock = holdSessionLock(workspace, sessionId);
   const store = new SessionStore(workspace);
   const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'reviewer', stageAttempt: null, executionOrder: null, prompt: 'think' });
   store.saveExecution(context, record, { status: 'completed', outcome: new StageOutcome('complete') });
   const status = readStatus(workspace, sessionId);
   status.workflow_id = 'plan';
   writeFileSync(path.join(sessionDirectory(workspace, sessionId), 'status.json'), JSON.stringify(status), 'utf8');
+  lock.release();
   const restored = repairSession(workspace, sessionId);
   expect(restored.workflow_id).toBe('agent');
   expect(restored.status).toBe('completed');
@@ -610,12 +640,13 @@ test('a partial agent status uses the manifest workflow id', () => {
 test('a torn event line does not consume the next sequence number', () => {
   const workspace = workspaceWithPlan();
   const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
+  holdSessionLock(workspace, sessionId);
   const directory = sessionDirectory(workspace, sessionId);
   const eventsPath = path.join(directory, 'events.jsonl');
   const before = readParsedEvents(eventsPath);
   const previousSeq = before.at(-1)?.seq ?? 0;
   writeFileSync(eventsPath, `${readFileSync(eventsPath, 'utf8')}{"event":"torn"`, 'utf8');
-  appendLifecycleEvent(directory, {
+  sessionEventLog.record(directory, {
     event: 'task.frozen',
     timestamp: '2026-10-19T00:00:00+00:00',
     data: { sha256: 'ab' },
@@ -631,6 +662,7 @@ test('a torn event line does not consume the next sequence number', () => {
 test('a parseable torn tail is counted before the next sequence', () => {
   const workspace = workspaceWithPlan();
   const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
+  holdSessionLock(workspace, sessionId);
   const directory = sessionDirectory(workspace, sessionId);
   const eventsPath = path.join(directory, 'events.jsonl');
   const previousSeq = readParsedEvents(eventsPath).at(-1)?.seq ?? 0;
@@ -642,7 +674,7 @@ test('a parseable torn tail is counted before the next sequence', () => {
     data: { sha256: 'aa' },
   });
   writeFileSync(eventsPath, `${readFileSync(eventsPath, 'utf8')}${torn}`, 'utf8');
-  appendLifecycleEvent(directory, {
+  sessionEventLog.record(directory, {
     event: 'task.frozen',
     timestamp: '2026-10-19T00:00:01+00:00',
     data: { sha256: 'bb' },
@@ -659,6 +691,7 @@ test('a parseable torn tail is counted before the next sequence', () => {
 test('a parseable torn stream line counts toward the next sequence', () => {
   const workspace = workspaceWithPlan();
   const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
+  holdSessionLock(workspace, sessionId);
   const directory = sessionDirectory(workspace, sessionId);
   const previousSeq = readParsedEvents(path.join(directory, 'events.jsonl')).at(-1)?.seq ?? 0;
   const executionDirectory = path.join(directory, 'executions', '0001-plan--attempt-01');
@@ -673,7 +706,7 @@ test('a parseable torn stream line counts toward the next sequence', () => {
   });
   const streamPath = path.join(executionDirectory, 'stream.jsonl');
   writeFileSync(streamPath, torn, 'utf8');
-  appendLifecycleEvent(directory, {
+  sessionEventLog.record(directory, {
     event: 'task.frozen',
     timestamp: '2026-10-19T00:00:01+00:00',
     data: { sha256: 'bb' },
@@ -688,6 +721,7 @@ test('a parseable torn stream line counts toward the next sequence', () => {
 test('a missing workflow file does not stop the fold', () => {
   const workspace = workspaceWithPlan();
   const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
+  holdSessionLock(workspace, sessionId);
   const directory = sessionDirectory(workspace, sessionId);
   const manifestPath = path.join(directory, 'manifest.yaml');
   writeFileSync(
@@ -715,6 +749,7 @@ test('a missing workflow file does not stop the fold', () => {
 test('a schema 2 fold keeps an earlier decision while a later execution has none', () => {
   const workspace = workspaceWithPlan();
   const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
+  holdSessionLock(workspace, sessionId);
   const store = new SessionStore(workspace);
   const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'plan', stageAttempt: null, executionOrder: null, prompt: 'plan' });
   writeFileSync(path.join(context.artifactDirectory, 'plan.md'), '# Plan\n', 'utf8');
@@ -735,6 +770,7 @@ test('a schema 2 fold keeps an earlier decision while a later execution has none
 test('a blocked stage stays blocked when a later sibling completes', () => {
   const workspace = workspaceWithPlan();
   const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
+  holdSessionLock(workspace, sessionId);
   const store = new SessionStore(workspace);
   let noted: string | null = null;
   try {
@@ -765,6 +801,7 @@ test('a blocked stage stays blocked when a later sibling completes', () => {
 test('a later complete execution of a blocked stage leaves a non-completion stage active', () => {
   const workspace = workspaceWithPlan();
   const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
+  holdSessionLock(workspace, sessionId);
   const store = new SessionStore(workspace);
   let noted: string | null = null;
   try {
@@ -793,6 +830,7 @@ test('a later complete execution of a blocked stage leaves a non-completion stag
 test('repair of two terminal executions appends the blocked session status', () => {
   const workspace = workspaceWithPlan();
   const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
+  const lock = holdSessionLock(workspace, sessionId);
   const store = new SessionStore(workspace);
   let noted: string | null = null;
   try {
@@ -819,6 +857,7 @@ test('repair of two terminal executions appends the blocked session status', () 
       kept.join('\n').endsWith('\n') ? kept.join('\n') : `${kept.join('\n')}\n`,
       'utf8',
     );
+  lock.release();
     repairSession(workspace, sessionId);
     const repaired = eventsText(workspace, sessionId)
       .split('\n')

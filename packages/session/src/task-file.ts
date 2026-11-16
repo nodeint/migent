@@ -6,9 +6,8 @@ import { writeFileAtomic } from '@nodeint/migent-kernel';
 import { ConfigurationError } from '@nodeint/migent-kernel';
 import { MIGENT_DIRNAME, SESSIONS_DIRNAME, utcNow } from '@nodeint/migent-kernel';
 
+import { sessionEventLog } from './event-log.js';
 import { corruptStatusMessage, readStatusFileState } from './query.js';
-import { appendLifecycleEvent } from './session-events.js';
-import { commitFoldedStatus } from './session-fold.js';
 
 export const TASK_FILENAME = 'task.md';
 
@@ -81,12 +80,12 @@ export function freezeSessionTask(
   }
   const hash = createHash('sha256').update(text, 'utf8').digest('hex');
   if (storedHash === '') {
-    appendLifecycleEvent(sessionDirectory, {
+    sessionEventLog.record(sessionDirectory, {
       event: 'task.frozen',
       timestamp: utcNow(),
       data: { sha256: hash },
     });
-    commitFoldedStatus(workspace, sessionDirectory);
+    sessionEventLog.commit(workspace, sessionDirectory);
   } else if (storedHash !== hash) {
     throw new ConfigurationError(`Session ${sessionId} task.md changed after the first stage was dispatched.`);
   }

@@ -14,12 +14,11 @@ import { currentCompleteByStage } from '@nodeint/migent-kernel';
 import { ConfigurationError, isManuallyCompletable, utcNow } from '@nodeint/migent-kernel';
 import { isRecord, isWorkflowV2, type WorkflowDocument } from '@nodeint/migent-workflow';
 
+import { sessionEventLog } from './event-log.js';
 import { sealSessionMetrics } from './metrics.js';
 import { publishNextSuggestions } from './next-handoff.js';
 import { readStatusFileState } from './query.js';
 import { readPendingResumes } from './resume-pending.js';
-import { appendLifecycleEvent } from './session-events.js';
-import { commitFoldedStatus } from './session-fold.js';
 import { readSessionManifest } from './session-fold-read.js';
 import type { LedgerOutput } from './session-ledger.js';
 import type { ManualCompletionResult } from './session-store-types.js';
@@ -131,7 +130,7 @@ function assertCompletableStatus(sessionId: string, from: string): void {
 /** A manual completion closes every pending resume decision without choosing one. */
 function supersedePendingResumes(sessionDirectory: string): void {
   for (const stop of readPendingResumes(sessionDirectory)) {
-    appendLifecycleEvent(sessionDirectory, {
+    sessionEventLog.record(sessionDirectory, {
       event: 'resume.decided',
       timestamp: utcNow(),
       stageId: stop.stageId,
@@ -143,7 +142,7 @@ function supersedePendingResumes(sessionDirectory: string): void {
 function appendManualCompletionEvents(sessionDirectory: string, from: string, plan: ManualCompletionPlan): void {
   const timestamp = utcNow();
   if (plan.outputs.length > 0) {
-    appendLifecycleEvent(sessionDirectory, { event: 'outputs.published', timestamp, data: { outputs: plan.outputs } });
+    sessionEventLog.record(sessionDirectory, { event: 'outputs.published', timestamp, data: { outputs: plan.outputs } });
   }
   const data: Record<string, unknown> = {
     manual: true,
@@ -153,7 +152,7 @@ function appendManualCompletionEvents(sessionDirectory: string, from: string, pl
       : 'Marked completed manually',
   };
   if (plan.missing.length > 0) data.missing_outputs = plan.missing;
-  appendLifecycleEvent(sessionDirectory, { event: 'session.completed', timestamp, data });
+  sessionEventLog.record(sessionDirectory, { event: 'session.completed', timestamp, data });
 }
 
 /** The locked part of `completeManually`: validates the status, publishes outputs, seals, and writes next.json. */
@@ -179,7 +178,7 @@ export function completeManuallyLocked(
     supersedePendingResumes(sessionDirectory);
     appendManualCompletionEvents(sessionDirectory, from, plan);
     ops.rewriteManifestStatus(sessionDirectory, 'completed');
-    const folded = commitFoldedStatus(ops.workspace, sessionDirectory);
+    const folded = sessionEventLog.commit(ops.workspace, sessionDirectory);
     if (ops.metricsClients !== null) sealSessionMetrics(ops.workspace, sessionId, ops.metricsClients);
     const next = publishNextSuggestions(ops.workspace, sessionId);
     return {

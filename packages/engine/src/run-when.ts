@@ -4,7 +4,7 @@ import path from 'node:path';
 import { BYTES_PER_MIB, ConfigurationError } from '@nodeint/migent-kernel';
 import { utcNow } from '@nodeint/migent-kernel';
 import type { SkipDetails } from '@nodeint/migent-session';
-import { appendLifecycleEvent, readParsedEvents, reservedExecutionOrders } from '@nodeint/migent-session';
+import { readParsedEvents, reservedExecutionOrders, sessionEventLog } from '@nodeint/migent-session';
 import type { StageSpec, WorkflowDocument } from '@nodeint/migent-workflow';
 import { compileChangedPathPattern } from '@nodeint/migent-workflow';
 
@@ -78,7 +78,7 @@ export function ensureSessionBaseline(workspace: string, sessionId: string, work
   if (captured.commit === null && hasRunWhen(workflow)) {
     throw new ConfigurationError(`Session ${sessionId} needs a Git commit for run_when: ${captured.error}.`);
   }
-  appendLifecycleEvent(sessionDirectory, {
+  sessionEventLog.record(sessionDirectory, {
     event: 'baseline.captured',
     timestamp: utcNow(),
     data: { commit: captured.commit, error: captured.error },

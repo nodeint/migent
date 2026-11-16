@@ -9,7 +9,7 @@ import { loadFrozenWorkflow } from '../src/session-freeze.ts';
 import { SessionLock } from '../src/session-lock.ts';
 import { activatePreparedSession } from '../src/session-records.ts';
 import { freezeSessionTask } from '../src/task-file.ts';
-import { tempDir, writeSessionConfig } from './support.ts';
+import { holdSessionLock, tempDir, writeSessionConfig } from './support.ts';
 
 const WORKFLOW = 'schema_version: 1\nid: solo\nstages:\n  - id: work\n    role: developer\n';
 const SESSION_NUMBER = /^[1-9][0-9]*$/;
@@ -148,6 +148,7 @@ test('activate keeps a lock the caller already holds', () => {
 test('the first dispatch freezes task.md and a later edit fails', () => {
   const workspace = workspaceWithWorkflow();
   const sessionId = createWorkflowSession(workspace, 'solo', { task: 'Write a plan' });
+  holdSessionLock(workspace, sessionId);
   const directory = path.join(workspace, '.migent', 'sessions', sessionId);
   const frozen = freezeSessionTask(workspace, sessionId);
   expect(frozen.taskFile).toBe(path.join(directory, 'task.md'));
@@ -160,6 +161,7 @@ test('the first dispatch freezes task.md and a later edit fails', () => {
 test('whitespace after the first dispatch is a changed task', () => {
   const workspace = workspaceWithWorkflow();
   const sessionId = createWorkflowSession(workspace, 'solo', { task: 'Write a plan' });
+  holdSessionLock(workspace, sessionId);
   const taskPath = path.join(workspace, '.migent', 'sessions', sessionId, 'task.md');
   freezeSessionTask(workspace, sessionId);
   writeFileSync(taskPath, ' \n', 'utf8');
@@ -172,6 +174,7 @@ test('an activated prepared session does not invent task.md from its id', () => 
   const directory = path.join(workspace, '.migent', 'sessions', sessionId);
   const taskPath = path.join(directory, 'task.md');
   writeFileSync(taskPath, 'Real body\n', 'utf8');
+  holdSessionLock(workspace, sessionId);
   activatePreparedSession(workspace, sessionId);
   unlinkSync(taskPath);
   expect(() => freezeSessionTask(workspace, sessionId)).toThrow(/no task.md/);
@@ -181,6 +184,7 @@ test('an activated prepared session does not invent task.md from its id', () => 
 test('an older session gains task.md from its stored task', () => {
   const workspace = workspaceWithWorkflow();
   const sessionId = createWorkflowSession(workspace, 'solo', { task: 'Write a plan' });
+  holdSessionLock(workspace, sessionId);
   const directory = path.join(workspace, '.migent', 'sessions', sessionId);
   const taskPath = path.join(directory, 'task.md');
   unlinkSync(taskPath);

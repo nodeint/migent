@@ -8,7 +8,7 @@ import { parseStageOutcome,ResponseContractError } from '@nodeint/migent-kernel'
 import { expect, test } from 'vitest';
 
 import { AgentToolRunner } from '../src/index.ts';
-import { registryOf, ScriptedClient, writePlanReviewSession } from './support.ts';
+import { holdSessionLock, registryOf, ScriptedClient, writePlanReviewSession } from './support.ts';
 
 function execution(workspace: string, sessionId: string, executionId: string): Record<string, any> {
   return JSON.parse(readFileSync(
@@ -18,6 +18,7 @@ function execution(workspace: string, sessionId: string, executionId: string): R
 
 async function runPlan(responses: string[], artifacts: (string | null)[]) {
   const [workspace, sessionId] = writePlanReviewSession();
+  holdSessionLock(workspace, sessionId);
   const provider = new ScriptedClient(responses, artifacts);
   const result = await new AgentToolRunner(registryOf({ fake: provider }), 10).run({
     client: 'fake', model: 'm1', prompt: 'plan', workspace, sessionId, stageId: 'plan',

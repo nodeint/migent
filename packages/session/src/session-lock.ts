@@ -152,6 +152,17 @@ export class SessionLockHeldError extends Error {
 
 const held = new Map<string, SessionLock>();
 
+const releaseListeners = new Set<(sessionDirectory: string) => void>();
+
+/** Call `listener` with the resolved directory whenever a session lock is released or abandoned. */
+export function onSessionLockRelease(listener: (sessionDirectory: string) => void): void {
+  releaseListeners.add(listener);
+}
+
+function notifyLockRelease(directory: string): void {
+  for (const listener of releaseListeners) listener(directory);
+}
+
 /** Throw when this process holds the session lock but another process has taken it over. */
 export function assertSessionLockHeld(sessionDirectory: string): void {
   held.get(path.resolve(sessionDirectory))?.assertHeld();
@@ -238,7 +249,10 @@ export class SessionLock {
     if (this.cancelTimer !== null) clearInterval(this.cancelTimer);
     this.cancelTimer = null;
     this.lost = true;
-    if (held.get(this.directory) === this) held.delete(this.directory);
+    if (held.get(this.directory) === this) {
+      held.delete(this.directory);
+      notifyLockRelease(this.directory);
+    }
   }
 
   public release(): void {
@@ -246,7 +260,10 @@ export class SessionLock {
     this.timer = null;
     if (this.cancelTimer !== null) clearInterval(this.cancelTimer);
     this.cancelTimer = null;
-    if (held.get(this.directory) === this) held.delete(this.directory);
+    if (held.get(this.directory) === this) {
+      held.delete(this.directory);
+      notifyLockRelease(this.directory);
+    }
     const current = readLock(this.lockPath);
     if (current !== null && current.nonce === this.info.nonce) {
       removeCancelMarker(this.directory);

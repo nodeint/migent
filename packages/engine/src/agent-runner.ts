@@ -95,6 +95,14 @@ export class AgentToolRunner {
 
   public async run(request: RunRequest): Promise<RunResult> {
     const opened = this.openRun(request);
+    try {
+      return await this.runOpened(request, opened);
+    } finally {
+      opened.store.releaseAllocatedSession();
+    }
+  }
+
+  private runOpened(request: RunRequest, opened: OpenedRun): Promise<RunResult> {
     const { store, context, record, isNew, agentId } = opened;
     const stage = opened.sessionId === null ? null : loadRunStage(store, context.sessionId, opened.stageId);
     const facts = stageFacts(stage);
@@ -216,6 +224,25 @@ export class AgentToolRunner {
     const clientId = request.client;
     const { client, resolvedOptions, profile } = this.resolveClient(clientId, { ...(request.options ?? {}) });
     const store = new SessionStore(workspacePath, undefined, this.registry);
+    try {
+      return this.startRun(
+        request,
+        { client, clientId, resolvedOptions, profile, workspacePath, store, stageAttempt, executionOrder },
+      );
+    } catch (error) {
+      store.releaseAllocatedSession();
+      throw error;
+    }
+  }
+
+  private startRun(
+    request: RunRequest,
+    run: {
+      client: CliClient; clientId: string; resolvedOptions: Record<string, string>; profile: Record<string, string>;
+      workspacePath: string; store: SessionStore; stageAttempt: number | null; executionOrder: number | null;
+    },
+  ): OpenedRun {
+    const { client, clientId, resolvedOptions, profile, workspacePath, store, stageAttempt, executionOrder } = run;
     const [record, isNew, context] = loadOrCreateRun(
       store,
       request,

@@ -7,7 +7,7 @@ import { expect, test } from 'vitest';
 
 import { GrokClient } from '../../adapters/src/clients/grok-client.ts';
 import { AgentToolRunner } from '../src/index.ts';
-import { BlockedClient, FakeClient, MissingOutcomeClient, registryOf, repoWorkflowText, ScriptedClient, tempDir, writePlanReviewSession, writeSessionConfig } from './support.ts';
+import { BlockedClient, FakeClient, holdSessionLock, MissingOutcomeClient, registryOf, repoWorkflowText, ScriptedClient, tempDir, writePlanReviewSession, writeSessionConfig } from './support.ts';
 
 function executionFile(workspace: string, sessionId: string, executionId: string): string {
   return path.join(
@@ -36,6 +36,7 @@ test('resume reuses agent id on a new execution', async () => {
   const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   const tmp = tempDir('migent-runner-');
   const first = await runner.run({ client: 'fake', model: 'm1', prompt: 'first prompt', workspace: tmp });
+  holdSessionLock(tmp, first.session_id);
   const second = await runner.run({
     client: 'fake',
     model: 'm1',
@@ -67,6 +68,7 @@ test('resumes from legacy session checkpoint', async () => {
   const first = await runner.run({ client: 'fake', model: 'm1', prompt: 'first prompt', workspace: tmp });
   const executionDirectory = path.dirname(executionFile(tmp, first.session_id, first.execution_id));
   renameSync(path.join(executionDirectory, 'conversation.json'), path.join(executionDirectory, 'session.json'));
+  holdSessionLock(tmp, first.session_id);
   await runner.run({
     client: 'fake',
     model: 'm1',
@@ -81,6 +83,7 @@ test('resumes from legacy session checkpoint', async () => {
 test('rejects a resume execution from another session', async () => {
   const runner = new AgentToolRunner(registryOf({ fake: new FakeClient() }), 10);
   const tmp = tempDir('migent-runner-');
+  holdSessionLock(tmp, 'run-a');
   const first = await runner.run({
     client: 'fake',
     model: 'm1',
@@ -100,6 +103,17 @@ test('rejects a resume execution from another session', async () => {
   ).rejects.toThrow(/was not found in session/);
 });
 
+test('an omitted session id allocates a numeric session and releases its lock', async () => {
+  const runner = new AgentToolRunner(registryOf({ fake: new FakeClient() }), 10);
+  const tmp = tempDir('migent-runner-');
+  const result = await runner.run({ client: 'fake', model: 'm1', prompt: 'one', workspace: tmp });
+  expect(result.session_id).toMatch(/^[1-9][0-9]*$/);
+  const directory = path.join(tmp, '.migent', 'sessions', result.session_id);
+  expect(existsSync(path.join(directory, 'manifest.yaml'))).toBe(true);
+  expect(existsSync(path.join(directory, 'session.lock'))).toBe(false);
+  expect(readFileSync(path.join(directory, 'events.jsonl'), 'utf8')).toContain('"event":"session.created"');
+});
+
 test('rejects an option change when resuming', async () => {
   const runner = new AgentToolRunner(registryOf({ fake: new FakeClient() }), 10);
   const tmp = tempDir('migent-runner-');
@@ -110,6 +124,7 @@ test('rejects an option change when resuming', async () => {
     workspace: tmp,
     options: { effort: 'high' },
   });
+  holdSessionLock(tmp, first.session_id);
   await expect(
     runner.run({
       client: 'fake',
@@ -126,6 +141,7 @@ test('rejects an option change when resuming', async () => {
 test('records loop executions without overwriting attempts', async () => {
   const runner = new AgentToolRunner(registryOf({ fake: new FakeClient() }), 10);
   const workspace = tempDir('migent-runner-');
+  holdSessionLock(workspace, 'run_loop');
   const first = await runner.run({
     client: 'fake',
     model: 'm1',
@@ -152,6 +168,7 @@ test('records loop executions without overwriting attempts', async () => {
 test('blocks a session after a blocked stage outcome', async () => {
   const runner = new AgentToolRunner(registryOf({ fake: new BlockedClient() }), 10);
   const workspace = tempDir('migent-runner-');
+  holdSessionLock(workspace, 'blocked-run');
   const result = await runner.run({
     client: 'fake',
     model: 'm1',
@@ -189,6 +206,7 @@ test('blocks a session after a blocked stage outcome', async () => {
 
 test('fails a workflow session without a stage status', async () => {
   const workspace = tempDir('migent-runner-');
+  holdSessionLock(workspace, 'missing-status-run');
   const result = await new AgentToolRunner(registryOf({ fake: new MissingOutcomeClient() }), 10).run({
     client: 'fake',
     model: 'm1',
@@ -263,6 +281,7 @@ test('allows another execution on a completed agent session', async () => {
   const runner = new AgentToolRunner(registryOf({ fake: new FakeClient() }), 10);
   const workspace = tempDir('migent-runner-');
   const sessionId = createAgentSession(workspace, 'reviewer', 'review the plan');
+  holdSessionLock(workspace, sessionId);
   const first = await runner.run({
     client: 'fake',
     model: 'm1',
@@ -315,6 +334,7 @@ test('refuses another execution on a completed named workflow session', async ()
 
 test('approved completion publishes the reviewed artifact and the session status becomes completed', async () => {
   const [workspace, sessionId] = writePlanReviewSession();
+  holdSessionLock(workspace, sessionId);
   const runner = new AgentToolRunner(
     registryOf({
       fake: new ScriptedClient(
@@ -350,6 +370,7 @@ test('approved completion publishes the reviewed artifact and the session status
 test('missing or whitespace-only artifact fails that stage', async () => {
   for (const body of [null, '   \n'] as const) {
     const [workspace, sessionId] = writePlanReviewSession();
+    const lock = holdSessionLock(workspace, sessionId);
     const result = await new AgentToolRunner(
       registryOf({
         fake: new ScriptedClient(['status: complete\n\nplanned', 'status: complete\n\nplanned'], body === null ? [null, null] : [body, body]),
@@ -370,11 +391,13 @@ test('missing or whitespace-only artifact fails that stage', async () => {
     expect(String(execution.error)).toContain('artifact missing');
     expect(status.status).toBe('active');
     expect(existsSync(path.join(sessionDirectory, 'outputs'))).toBe(false);
+    lock.release();
   }
 });
 
 test('prose approval without a decision header fails the execution', async () => {
   const [workspace, sessionId] = writePlanReviewSession();
+  holdSessionLock(workspace, sessionId);
   const runner = new AgentToolRunner(
     registryOf({
       fake: new ScriptedClient(
@@ -494,6 +517,7 @@ completion:
     'utf8',
   );
   const sessionId = createWorkflowSession(workspace, 'wf', { task: 'task' });
+  holdSessionLock(workspace, sessionId);
   const runner = new AgentToolRunner(
     registryOf({ fake: new ScriptedClient(['status: complete\n\ndone', 'status: complete\n\ndone', 'status: complete\n\ndone'], ['# notes\n', null, null]) }),
     10,
@@ -542,6 +566,7 @@ test('stage_started records git head and dirty state', async () => {
   const clean = sessionEvents(repo, first.session_id).find((event) => event.event === 'provider.stage_started');
   expect(clean?.details).toMatchObject({ git_head: head, git_dirty: false });
   writeFileSync(path.join(repo, 'untracked.txt'), 'x\n');
+  holdSessionLock(repo, first.session_id);
   await runner.run({
     client: 'fake',
     model: 'm1',
@@ -580,6 +605,7 @@ test('the version command runs once for two executions', async () => {
   };
   const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   const first = await runner.run({ client: 'fake', model: 'm1', prompt: 'one', workspace: tmp });
+  holdSessionLock(tmp, first.session_id);
   await runner.run({ client: 'fake', model: 'm1', prompt: 'two', workspace: tmp, sessionId: first.session_id });
   const versions = sessionEvents(tmp, first.session_id)
     .filter((event) => event.event === 'provider.stage_started')

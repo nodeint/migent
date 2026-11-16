@@ -6,7 +6,7 @@ import { createAgentSession, listSealedMetrics, listSessionMetrics, readSealedMe
 import { expect, test } from 'vitest';
 
 import { AgentToolRunner, executeNamedWorkflow } from '../src/index.ts';
-import { FakeClient, registryOf,ScriptedClient, tempDir } from './support.ts';
+import { FakeClient, holdSessionLock, registryOf, ScriptedClient, tempDir } from './support.ts';
 
 const PLAN = `\
 id: plan
@@ -568,6 +568,7 @@ test('a completed session seals metrics and later normalization leaves the file'
 test('an agent session does not seal metrics', async () => {
   const workspace = tempDir('migent-metrics-agent-');
   const sessionId = createAgentSession(workspace, 'reviewer', 'review the plan');
+  holdSessionLock(workspace, sessionId);
   const result = await new AgentToolRunner(registryOf({ fake: new FakeClient() }), 10).run({
     client: 'fake',
     model: 'm1',

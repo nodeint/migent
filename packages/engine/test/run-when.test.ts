@@ -4,7 +4,7 @@ import path from 'node:path';
 
 import { ConfigurationError } from '@nodeint/migent-kernel';
 import { createWorkflowSession } from '@nodeint/migent-session';
-import { appendLifecycleEvent } from '@nodeint/migent-session';
+import { sessionEventLog } from '@nodeint/migent-session';
 import { SessionLock } from '@nodeint/migent-session';
 import { compileChangedPathPattern, matchesChangedPaths } from '@nodeint/migent-workflow';
 import { parseWorkflowMapping, type WorkflowDocument } from '@nodeint/migent-workflow';
@@ -330,7 +330,7 @@ test('a null-commit baseline event reads back as E2 input', () => {
   const sessionId = sessionIn(repo, WORKFLOW);
   const sessionDirectory = path.join(repo, '.migent', 'sessions', sessionId);
   withLock(repo, sessionId, () => {
-    appendLifecycleEvent(sessionDirectory, {
+    sessionEventLog.record(sessionDirectory, {
       event: 'baseline.captured',
       timestamp: '2026-01-01T00:00:00.000Z',
       data: { commit: null, error: 'HEAD has no commit' },

@@ -17,7 +17,6 @@ import {
   REAP_STILL_RUNNING,
   REAP_UNVERIFIED,
   shouldPublishOutputs,
-  STATUS_PROVIDER_EVENTS,
   utcNow,
   writeFileAtomic,
   writeJsonAtomic,
@@ -25,15 +24,13 @@ import {
 import { VERIFY_ARTIFACT, type WorkflowDocument } from '@nodeint/migent-workflow';
 
 import { TURN_PAD_WIDTH } from './constants.js';
+import { sessionEventLog } from './event-log.js';
 import { completeManuallyLocked, type ManualCompletionOps } from './manual-completion.js';
 import { sealSessionMetrics } from './metrics.js';
 import { publishNextSuggestions } from './next-handoff.js';
 import { readPendingResumes } from './resume-pending.js';
-import { appendRecordedEvent, skipsStatusWrite } from './session-events.js';
 import { writeFailureReport } from './session-failure-report.js';
-import { commitFoldedStatus } from './session-fold.js';
 import { readSessionManifest } from './session-fold-read.js';
-import { createNumericSessionDirectory } from './session-id.js';
 import { planExecutionSave } from './session-ledger.js';
 import { assertSessionLockHeld, SessionLock, SessionLockHeldError } from './session-lock.js';
 import { assertSessionId } from './session-selection.js';
@@ -255,10 +252,7 @@ export class SessionStore extends SessionStoreResume {
 
   public recordProviderEvent(context: ExecutionContext, event: Record<string, unknown>): void {
     const sessionDirectory = path.dirname(path.dirname(context.directory));
-    appendRecordedEvent(sessionDirectory, event);
-    const name = String(event.event);
-    if (!STATUS_PROVIDER_EVENTS.has(name) || skipsStatusWrite(name)) return;
-    commitFoldedStatus(this.workspace, sessionDirectory);
+    sessionEventLog.recordProviderEvent(this.workspace, sessionDirectory, event);
   }
 
   public missingCompletionOutputs(context: ExecutionContext, outcome: StageOutcome | null): string[] {
@@ -434,7 +428,7 @@ export class SessionStore extends SessionStoreResume {
     const { context, sessionDirectory, plan, previousStatus } = input;
     appendExecutionSaveEvents(input);
     if (plan.manifestStatus !== null) this.rewriteManifestStatus(sessionDirectory, plan.manifestStatus);
-    commitFoldedStatus(this.workspace, sessionDirectory);
+    sessionEventLog.commit(this.workspace, sessionDirectory);
     if (
       plan.sessionStatus === 'completed' &&
       previousStatus.workflow_id !== 'agent' &&
@@ -531,7 +525,7 @@ export class SessionStore extends SessionStoreResume {
   private createExecution(input: ExecutionStartInput): ExecutionContext {
     const { client, model, options, sessionId, stageId, stageAttempt, executionOrder, prompt } = input;
     const { resumesExecutionId = null, kind = null } = input;
-    const resolvedSession = sessionId ?? path.basename(createNumericSessionDirectory(this.sessionsDirectory)[1]);
+    const resolvedSession = sessionId ?? this.allocateLockedSession();
     const order = executionOrder ? executionOrder : this.nextExecutionOrder(resolvedSession);
     const attempt = stageAttempt ? stageAttempt : this.nextStageAttempt(resolvedSession, stageId);
     const executionId = executionIdFor(order, stageId, attempt);
@@ -546,7 +540,7 @@ export class SessionStore extends SessionStoreResume {
     if (input.humanInput) writeExecutionInput(context, stageId, input.humanInput);
     const start = { order, stageId, attempt, verifyOnly, client, model, options, resumesExecutionId };
     writeStartedExecution(context, start);
-    commitFoldedStatus(this.workspace, sessionDirectory);
+    sessionEventLog.commit(this.workspace, sessionDirectory);
     return context;
   }
 }
