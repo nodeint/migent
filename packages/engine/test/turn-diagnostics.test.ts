@@ -8,7 +8,7 @@ import { createWorkflowSession } from '@nodeint/migent-session';
 import { expect, test, vi } from 'vitest';
 
 import { AgentToolRunner } from '../src/index.ts';
-import { registryOf,ScriptedClient, tempDir } from './support.ts';
+import { holdSessionLock, registryOf, ScriptedClient, tempDir } from './support.ts';
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -106,7 +106,9 @@ function setup(ask = false): { workspace: string; sessionId: string } {
   mkdirSync(path.join(workspace, '.migent', 'workflows'), { recursive: true });
   writeFileSync(path.join(workspace, '.migent', 'config.yaml'), CONFIG, 'utf8');
   writeFileSync(path.join(workspace, '.migent', 'workflows', 'wf.yaml'), workflowText(ask), 'utf8');
-  return { workspace, sessionId: createWorkflowSession(workspace, 'wf', { task: 'task' }) };
+  const sessionId = createWorkflowSession(workspace, 'wf', { task: 'task' });
+  holdSessionLock(workspace, sessionId);
+  return { workspace, sessionId };
 }
 
 async function run(provider: DiagProvider, workspace: string, sessionId: string) {

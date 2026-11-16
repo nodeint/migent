@@ -3,7 +3,6 @@ import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import type { ClientRegistry } from '@nodeint/migent-kernel';
-import { legacyClientOf } from '@nodeint/migent-kernel';
 import { writeFileAtomic } from '@nodeint/migent-kernel';
 import {
   loadRoleResponsibilities,
@@ -30,8 +29,11 @@ import { parseYamlDocument } from '@nodeint/migent-workflow';
 import { DEFAULT_MAX_VERIFY, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4_DOWNSTREAM, SCHEMA_V5, SCHEMA_V7_ARTIFACTS } from '@nodeint/migent-workflow';
 import { stringify } from 'yaml';
 
+import { type EntryClassifiers, freezeConfigSections, type FrozenSection, readFrozenConfigSections } from './freeze-config-sections.js';
+import { corrupt } from './freeze-corrupt.js';
 import { freezeStagePolicy, frozenPolicyMap, readResumePolicyNames } from './freeze-resume-policy.js';
 import { sessionMapping } from './freeze-session-mapping.js';
+import { readTargets } from './freeze-targets.js';
 
 export { frozenResumePolicy } from './freeze-resume-policy.js';
 
@@ -51,6 +53,8 @@ export interface WorkflowFreeze {
   resumePolicies: Record<string, unknown>;
   /** The name of the policy each stage selected at creation; null when none applies. */
   resumePolicyNames: Record<string, string | null>;
+  /** Registered config sections frozen at creation, by key; empty when none was written. */
+  config: Record<string, FrozenSection>;
 }
 
 export interface WrittenFreeze {
@@ -62,10 +66,12 @@ export interface FreezeSource {
   readonly workspace: string;
   readonly workflow: WorkflowDocument;
   readonly resolveClient?: ClientRegistry;
+  /** Per-entry classifier of each `per_entry` config section, by section key. Absent means none. */
+  readonly classifiers?: EntryClassifiers;
 }
 
 export function writeWorkflowFreeze(sessionDirectory: string, source: FreezeSource): WrittenFreeze {
-  const { workspace, workflow, resolveClient } = source;
+  const { workspace, workflow, resolveClient, classifiers = {} } = source;
   const config = loadWorkspaceConfig(workspace);
   const roles: Record<string, string[]> = {};
   for (const role of roleNames(workflow)) roles[role] = loadRoleResponsibilities(config, role);
@@ -77,6 +83,7 @@ export function writeWorkflowFreeze(sessionDirectory: string, source: FreezeSour
     const policy = freezeStagePolicy(config, stage, target);
     targets[stage.id] = { ...copyTarget(target), ...(resumePolicies === null ? {} : { resume_policy: policy }) };
   }
+  const sections = freezeConfigSections(config, classifiers);
   const sourceSha256 = sourceFileHash(workflow.source);
   const filePath = path.join(sessionDirectory, WORKFLOW_FREEZE_FILE);
   const workflowBody = workflowMapping(workflow);
@@ -89,6 +96,7 @@ export function writeWorkflowFreeze(sessionDirectory: string, source: FreezeSour
       roles,
       targets,
       ...(resumePolicies === null ? {} : { resume_policies: resumePolicies }),
+      ...(sections === null ? {} : { config: sections }),
     },
     { lineWidth: 0 },
   );
@@ -144,6 +152,7 @@ export function readWorkflowFreeze(sessionDirectory: string): WorkflowFreeze | n
     targets: readTargets(parsed.targets, filePath, parsed.schema_version),
     resumePolicies: isRecord(parsed.resume_policies) ? parsed.resume_policies : {},
     resumePolicyNames: readResumePolicyNames(parsed.targets),
+    config: readFrozenConfigSections(parsed.config, (message) => corrupt(filePath, message)),
   };
 }
 
@@ -499,59 +508,6 @@ function readRoles(value: unknown, filePath: string): Record<string, string[]> {
   return roles;
 }
 
-function readTargets(value: unknown, filePath: string, schemaVersion: unknown): Record<string, StageTarget> {
-  if (!isRecord(value)) throw corrupt(filePath, 'targets must be a mapping');
-  const legacy = typeof schemaVersion !== 'number' || schemaVersion < SCHEMA_V2;
-  const targets: Record<string, StageTarget> = {};
-  for (const [stageId, raw] of Object.entries(value)) {
-    if (!isRecord(raw) || typeof raw.model !== 'string') {
-      throw corrupt(filePath, `targets.${stageId} must name a client and model`);
-    }
-    const client = legacy ? legacyTargetClient(raw, filePath, stageId) : raw.client;
-    if (typeof client !== 'string') {
-      throw corrupt(filePath, `targets.${stageId} must name a client and model`);
-    }
-    if (raw.model.trim() === '') {
-      throw corrupt(filePath, `targets.${stageId} must name a client and model`);
-    }
-    targets[stageId] = {
-      client,
-      model: raw.model,
-      options: readOptionStrings(raw.options, filePath, stageId),
-    };
-  }
-  return targets;
-}
-
-/** Freeze schema_version 1 named a provider and optionally the client that actually ran. */
-function legacyTargetClient(
-  raw: Record<string, unknown>,
-  filePath: string,
-  stageId: string,
-): string | null {
-  if ((raw.client !== null && raw.client !== undefined)) {
-    if (typeof raw.client !== 'string' || raw.client.trim() === '') {
-      throw corrupt(filePath, `targets.${stageId}.client must be a non-empty string`);
-    }
-    return raw.client;
-  }
-  if (typeof raw.provider !== 'string' || raw.provider.trim() === '') {
-    throw corrupt(filePath, `targets.${stageId} must name a provider and model`);
-  }
-  return legacyClientOf(raw.provider) ?? '';
-}
-
-function readOptionStrings(value: unknown, filePath: string, stageId: string): Record<string, string> {
-  if ((value === null || value === undefined)) return {};
-  if (!isRecord(value)) throw corrupt(filePath, `targets.${stageId}.options must be a mapping`);
-  const options: Record<string, string> = {};
-  for (const [key, item] of Object.entries(value)) {
-    if (typeof item !== 'string') throw corrupt(filePath, `targets.${stageId}.options.${key} must be a string`);
-    options[key] = item;
-  }
-  return options;
-}
-
 function workflowFile(workspace: string, workflowPath: string): string {
   return path.isAbsolute(workflowPath) ? workflowPath : path.join(workspace, workflowPath);
 }
@@ -575,8 +531,4 @@ function isFile(filePath: string): boolean {
   } catch {
     return false;
   }
-}
-
-function corrupt(filePath: string, message: string): never {
-  throw new ConfigurationError(`Workflow freeze is corrupt: ${filePath} (${message}).`);
 }

@@ -18,6 +18,8 @@ import { corruptStatusMessage, readStatusFileState } from './query.js';
 import { reservedExecutionOrders, reservedStageAttempts } from './session-events.js';
 import { readSessionManifest } from './session-fold-read.js';
 import { loadFrozenWorkflow, readWorkflowFreeze } from './session-freeze.js';
+import { createNumericSessionDirectory } from './session-id.js';
+import { SessionLock } from './session-lock.js';
 import { AgentSessionRecord, ExecutionContext } from './session-store-types.js';
 import { asInt, compareSortKey, isFile, verifyReportPath } from './session-store-util.js';
 import { readJsonObject, textField } from './session-store-util.js';
@@ -31,6 +33,7 @@ function outcomeFields(outcome: unknown): { outcomeStatus: string | null; outcom
 }
 
 export class SessionStoreCore {
+  private readonly allocatedLocks: SessionLock[] = [];
   public readonly workspace: string;
   public readonly sessionsDirectory: string;
   public readonly processInspector: ProcessInspector;
@@ -158,6 +161,18 @@ export class SessionStoreCore {
       if (error instanceof ConfigurationError) return null;
       throw error;
     }
+  }
+
+  /** Claim a new numeric session and lock it until `releaseAllocatedSession`. */
+  protected allocateLockedSession(): string {
+    const [id, directory] = createNumericSessionDirectory(this.sessionsDirectory);
+    this.allocatedLocks.push(SessionLock.acquire(directory));
+    return id;
+  }
+
+  /** Release the locks on every session allocated for a `sessionId: null` run. Safe to repeat. */
+  public releaseAllocatedSession(): void {
+    for (const lock of this.allocatedLocks.splice(0)) lock.release();
   }
 
   protected ensureSessionIsRunnable(sessionId: string | null, allowCancelled = false): void {

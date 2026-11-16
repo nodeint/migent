@@ -7,7 +7,7 @@ import { readExecutions } from '@nodeint/migent-session';
 import { expect, test, vi } from 'vitest';
 
 import { AgentToolRunner } from '../src/index.ts';
-import { FakeClient, registryOf, tempDir } from './support.ts';
+import { FakeClient, holdSessionLock, registryOf, tempDir } from './support.ts';
 
 const ID = '0001-work--attempt-01';
 
@@ -90,6 +90,7 @@ test('a valid legacy override resumes with its native identity', async () => {
   const { workspace, directory } = fixture(['opencode']);
   const client = new FakeClient();
   try {
+    holdSessionLock(workspace, 's1');
     const runner = new AgentToolRunner(registryOf({ opencode: client }), 10);
     await runner.run({ client: 'opencode', model: 'm1', prompt: 'retry', workspace, sessionId: 's1', stageId: 'work', resumeExecutionId: ID });
     expect(client.calls[0]?.agentId).toBe('native-latest');

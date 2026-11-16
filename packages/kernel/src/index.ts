@@ -107,6 +107,7 @@ export {
   placeRoleAgent,
   upsertAgent,
 } from './config-edit.js';
+export { configSectionIssues } from './config-sections.js';
 export { patchConfigText, upgradeConfigText } from './config-text.js';
 export {
   ARGV_USER_OFFSET,
@@ -132,7 +133,6 @@ export { CORRECTION_FAILURE_REASONS } from './correction-policy.js';
 export { debugEnabled, inheritedEnv, migentHomeOverride, noInputRequested, platformHome, skillsChildEnv } from './env.js';
 export type { ConfigurationErrorDetails, SourcePosition } from './errors.js';
 export { ConfigurationError, OutputsMissing } from './errors.js';
-export { STATUS_PROVIDER_EVENTS } from './event-kinds.js';
 export { HandoffFileError, loadHandoffFile } from './handoff.js';
 export {
   clientOfCommand,

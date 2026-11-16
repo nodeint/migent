@@ -13,10 +13,10 @@ import { isRecord } from '@nodeint/migent-workflow';
 import { isWorkflowV2 } from '@nodeint/migent-workflow';
 
 import { MANIFEST_SCHEMA_EVENT_LOG } from './constants.js';
+import { sessionEventLog } from './event-log.js';
 import { publishNextSuggestions } from './next-handoff.js';
 import { pendingResumesOf } from './resume-pending.js';
 import {
-  appendLifecycleEvent,
   EVENT_VERSION,
   type EventDraft,
   eventRecord,
@@ -83,7 +83,7 @@ function planRepairDrafts(
 function writeRepairedEvents(sessionDirectory: string, plan: RepairPlan): void {
   const { inputs, drafts, torn } = plan;
   if (torn) sealSessionEventLogs(sessionDirectory);
-  for (const draft of drafts) appendLifecycleEvent(sessionDirectory, draft);
+  for (const draft of drafts) sessionEventLog.record(sessionDirectory, draft);
   writeExecutionQuestions(sessionDirectory, inputs);
 }
 
@@ -132,7 +132,7 @@ export function repairSessionUnlocked(
   const reasons = replacementRefusal(folded, inputs, { before, acceptTask });
   if (reasons.length > 0) throw new ConfigurationError(repairRefusalMessage(sessionId, reasons));
   writeRepairedEvents(sessionDirectory, { inputs, drafts, torn });
-  writeJsonAtomic(statusPath, folded);
+  sessionEventLog.commitFolded(sessionDirectory, folded);
   if (folded.status === 'completed') publishNextSuggestions(workspace, sessionId);
   return folded;
 }

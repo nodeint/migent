@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
+import { eventKindTraits } from '@nodeint/migent-contracts';
 import { appendLineSynced, isAtomicTempName, sealTornTail } from '@nodeint/migent-kernel';
 import { changeReason, EXECUTIONS_DIRNAME, utcNow } from '@nodeint/migent-kernel';
 import { isRecord } from '@nodeint/migent-workflow';
@@ -13,16 +14,6 @@ export const EVENT_VERSION = 2;
 export const CANCELLED_REPLY = 'cancelled_reply';
 
 const ENVELOPE_KEYS = new Set(['v', 'seq', 'event', 'timestamp', 'data']);
-
-/** Item traces and provider heartbeats are per execution, not session lifecycle. */
-export function isProviderStreamEvent(eventName: string): boolean {
-  return eventName === 'provider.heartbeat' || eventName.startsWith('provider.item_');
-}
-
-/** Heartbeats are appended and never folded into status.json. */
-export function skipsStatusWrite(eventName: string): boolean {
-  return eventName === 'provider.heartbeat' || eventName === 'verify.heartbeat';
-}
 
 export interface EventDraft {
   event: string;
@@ -80,14 +71,16 @@ export function nextEventSequence(sessionDirectory: string): number {
   return count + 1;
 }
 
-export function appendLifecycleEvent(sessionDirectory: string, draft: EventDraft): void {
+/** Internal to the event log. Appends one lifecycle record and returns the line as written. */
+export function appendLifecycleEvent(sessionDirectory: string, draft: EventDraft): Record<string, unknown> {
   assertSessionLockHeld(sessionDirectory);
   const record = eventRecord(assignEventSequence(sessionDirectory), draft);
   appendLineSynced(path.join(sessionDirectory, 'events.jsonl'), JSON.stringify(record));
+  return record;
 }
 
-/** Keep the caller's top-level keys. Stream events go to that execution's stream.jsonl. */
-export function appendRecordedEvent(sessionDirectory: string, event: Record<string, unknown>): void {
+/** Internal to the event log. Keep the caller's top-level keys. Stream events go to that execution's stream.jsonl. */
+export function appendRecordedEvent(sessionDirectory: string, event: Record<string, unknown>): Record<string, unknown> {
   const name = typeof event.event === 'string' ? event.event : '';
   const executionId = typeof event.execution_id === 'string' ? event.execution_id : null;
   assertSessionLockHeld(sessionDirectory);
@@ -101,10 +94,11 @@ export function appendRecordedEvent(sessionDirectory: string, event: Record<stri
     data: {},
   });
   const destination =
-    executionId && isProviderStreamEvent(name)
+    executionId && eventKindTraits(name).stream
       ? path.join(sessionDirectory, EXECUTIONS_DIRNAME, executionId, 'stream.jsonl')
       : path.join(sessionDirectory, 'events.jsonl');
   appendLineSynced(destination, JSON.stringify(record));
+  return record;
 }
 
 export function readParsedEvents(filePath: string): ParsedEvent[] {

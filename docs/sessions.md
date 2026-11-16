@@ -82,7 +82,9 @@ The session-level files have distinct purposes:
   `session run --session` keep using that copy when the live files change, and
   warn on stderr. `--refresh-workflow` replaces it. A missing file means the
   session uses the live workflow and config. Repair does not rebuild it.
-  Agent sessions do not have this file.
+  Agent sessions do not have this file. Its `config` key holds only registered
+  config sections; frozen `roles`, `targets`, and `resume_policies` stay at the
+  top level.
 - `task.md` is the task body. A one-line `session run --workflow --task` writes
   that sentence here. A prepared session creates an empty file for you to write, along with any
   other files that belong next to it. Stage prompts name this path and the

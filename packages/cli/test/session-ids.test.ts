@@ -38,9 +38,9 @@ function rawManifest(workspace: string, id: string): Record<string, unknown> {
 
 function stopSession(workspace: string, sessionId: string): void {
   const store = new SessionStore(workspace);
-  const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'draft', stageAttempt: null, executionOrder: null, prompt: 'draft' });
   const lock = SessionLock.acquire(sessionDir(workspace, sessionId));
   try {
+    const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'draft', stageAttempt: null, executionOrder: null, prompt: 'draft' });
     store.saveExecution(context, record, { status: 'running' });
     writeFileSync(path.join(context.artifactDirectory, 'plan.md'), '# Plan\n', 'utf8');
     store.saveExecution(context, record, { status: 'completed', outcome: new StageOutcome('complete') });
@@ -61,6 +61,19 @@ test('every manifest writer stores ids as YAML strings', () => {
   const [, , context] = fallback.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId: null, stageId: 'draft', stageAttempt: null, executionOrder: null, prompt: 'draft' });
   expect(rawManifest(workspace, context.sessionId).session_id).toBe(context.sessionId);
   expect(context.sessionId).toMatch(/^[1-9][0-9]*$/);
+  fallback.releaseAllocatedSession();
+});
+
+test('repeated automatic allocation on one store releases every session lock', () => {
+  const workspace = workspaceOf();
+  const store = new SessionStore(workspace);
+  const input = { client: 'fake', model: 'model', options: {}, workspace, sessionId: null, stageId: 'draft', stageAttempt: null, executionOrder: null, prompt: 'draft' };
+  const [, , first] = store.loadOrCreate(input);
+  const [, , second] = store.loadOrCreate(input);
+  expect(second.sessionId).not.toBe(first.sessionId);
+  expect(() => SessionLock.acquire(sessionDir(workspace, first.sessionId))).toThrow(/is being run/);
+  store.releaseAllocatedSession();
+  for (const id of [first.sessionId, second.sessionId]) SessionLock.acquire(sessionDir(workspace, id)).release();
 });
 
 test('a numeric prior id survives repair and prepared-session start', async () => {

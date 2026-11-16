@@ -1,5 +1,6 @@
 import path from 'node:path';
 
+import { eventKindTraits } from '@nodeint/migent-contracts';
 import { type PendingResumeStop, writeJsonAtomic } from '@nodeint/migent-kernel';
 import { isStageStop, isStopped, isStopResolutionEvent, manifestStatusToSession } from '@nodeint/migent-kernel';
 import { isRecord } from '@nodeint/migent-workflow';
@@ -10,7 +11,6 @@ import { pendingResumesOf } from './resume-pending.js';
 import {
   CANCELLED_REPLY,
   type ParsedEvent,
-  skipsStatusWrite,
 } from './session-events.js';
 import { EVENT_VERSION } from './session-events.js';
 import { pendingExpiryStatus } from './session-fold-pending.js';
@@ -63,6 +63,7 @@ export function readFoldedStatus(workspace: string, sessionDirectory: string): R
   return foldStatus(loadFoldInputs(workspace, sessionDirectory));
 }
 
+/** Internal to the event log: callers commit through `SessionEventLog.commit`. */
 export function commitFoldedStatus(workspace: string, sessionDirectory: string): Record<string, unknown> {
   const inputs = loadFoldInputs(workspace, sessionDirectory);
   const folded = foldStatus(inputs);
@@ -211,7 +212,7 @@ const SHARED_EVENT_HANDLERS: Readonly<Record<string, SharedEventHandler>> = {
 };
 
 function applyProviderEvent(draft: StatusDraft, event: ParsedEvent, noted: Map<string, RunningStage>): boolean {
-  if (skipsStatusWrite(event.event)) return false;
+  if (eventKindTraits(event.event).skipsStatusWrite) return false;
   draft.set('latest_provider_event', event.raw);
   if (event.executionId) {
     noted.set(event.executionId, {

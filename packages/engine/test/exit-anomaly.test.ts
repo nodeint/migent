@@ -10,7 +10,7 @@ import { ClaudeCodeClient } from '../../adapters/src/clients/claude-code-client.
 import { CodexClient } from '../../adapters/src/clients/codex-client.ts';
 import { AgentToolRunner } from '../src/index.ts';
 import { assertEventsValid } from './event-validation.ts';
-import { registryOf, ScriptedClient, tempDir, writeHandoffFromReply } from './support.ts';
+import { holdSessionLock, registryOf, ScriptedClient, tempDir, writeHandoffFromReply } from './support.ts';
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -89,7 +89,9 @@ function setup(workflow: string): { workspace: string; sessionId: string } {
   mkdirSync(path.join(workspace, '.migent', 'workflows'), { recursive: true });
   writeFileSync(path.join(workspace, '.migent', 'config.yaml'), CONFIG, 'utf8');
   writeFileSync(path.join(workspace, '.migent', 'workflows', 'wf.yaml'), workflow, 'utf8');
-  return { workspace, sessionId: createWorkflowSession(workspace, 'wf', { task: 'task' }) };
+  const sessionId = createWorkflowSession(workspace, 'wf', { task: 'task' });
+  holdSessionLock(workspace, sessionId);
+  return { workspace, sessionId };
 }
 
 async function runStage(provider: ExitProvider, workspace: string, sessionId: string, extra = {}) {

@@ -6,7 +6,7 @@ import { createWorkflowSession, SessionStore } from '@nodeint/migent-session';
 import { expect, test } from 'vitest';
 
 import { ProviderEventReporter } from '../src/index.ts';
-import { tempDir } from './support.ts';
+import { holdSessionLock, tempDir } from './support.ts';
 
 /** Names the integration guard cannot reach with a fake client, written through the real reporter. */
 const CLIENT_EVENTS: [string, Record<string, unknown>][] = [
@@ -29,6 +29,7 @@ test('client events the reporter writes validate against their registered schema
   writeFileSync(path.join(workspace, '.migent', 'config.yaml'), ['schema_version: 7', 'roles:', '  dev:', '    agent: { client: { type: fake }, model: fake }', ''].join('\n'));
   writeFileSync(path.join(workspace, '.migent', 'workflows', 'wf.yaml'), ['schema_version: 3', 'id: wf', 'stages:', '  - { id: one, role: dev }', ''].join('\n'));
   const sessionId = createWorkflowSession(workspace, 'wf', { task: 'Do it' });
+  holdSessionLock(workspace, sessionId);
   const store = new SessionStore(workspace);
   const [, , context] = store.loadOrCreate({
     client: 'fake', model: 'm', options: null, workspace, sessionId, stageId: 'one', stageAttempt: 1, executionOrder: 1, prompt: 'go',

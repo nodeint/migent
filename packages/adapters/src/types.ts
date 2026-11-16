@@ -176,21 +176,6 @@ export interface CliClient {
 
 export const KERNEL_PLACEHOLDER = 'kernel';
 
-export const STATUS_PROVIDER_EVENTS = new Set([
-  'provider.stage_started',
-  'provider.turn_completed',
-  'provider.turn_failed',
-  'provider.quota',
-  'provider.cancelled',
-  'provider.error',
-  'provider.warning',
-  'provider.heartbeat',
-  'verify.started',
-  'verify.heartbeat',
-  'verify.failed',
-  'verify.passed',
-]);
-
 const CONTROL_PLANE_WARNING_MARKERS = ['failed to refresh available models'];
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -213,10 +198,9 @@ export function classifyProviderError(message: string | null): { event: string; 
   let summary = typeof message === 'string' && message.trim() ? message.trim() : '';
   if (!summary) summary = 'provider emitted an error';
   const lowered = summary.toLowerCase();
-  let event = CONTROL_PLANE_WARNING_MARKERS.some((marker) => lowered.includes(marker))
+  const event = CONTROL_PLANE_WARNING_MARKERS.some((marker) => lowered.includes(marker))
     ? 'provider.warning'
     : 'provider.error';
-  if (!STATUS_PROVIDER_EVENTS.has(event)) event = 'provider.error';
   return { event, summary };
 }
 

@@ -338,6 +338,25 @@ export function buildStructuralIndex(config: Record<string, unknown>): Structura
   return index;
 }
 
+function expandRequired(issue: SchemaIssue): SchemaIssue[] {
+  if (issue.keyword !== 'required') return [issue];
+  return (issue.params.requiredProperties as string[]).map((name) => ({ ...issue, path: [...issue.path, name] }));
+}
+
+/**
+ * Structural errors of one registered config section, in the code and path vocabulary of the core
+ * sections. The section is validated as merged, so `ownerOf` attributes each path to its layer.
+ */
+export function sectionIssues(key: string, schema: TSchema, value: unknown): ConfigurationError[] {
+  const root: Field = { label: key, path: [key] };
+  return schemaIssues(schema, value)
+    // `additionalProperties` repeats the per-key issue at the parent, as in `buildStructuralIndex`.
+    .filter((issue) => !['anyOf', 'additionalProperties', 'propertyNames'].includes(issue.keyword))
+    // A missing field is reported at its own path, one error per field.
+    .flatMap(expandRequired)
+    .map((issue) => translate(issue, root));
+}
+
 /** Container problems (`agents`, `roles`), read from the index. */
 export function containerIssues(config: Record<string, unknown>): ConfigurationError[] {
   const index = buildStructuralIndex(config);

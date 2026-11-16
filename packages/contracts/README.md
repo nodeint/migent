@@ -25,6 +25,8 @@ exit codes, and environment variables.
   template suffix types. It cannot see a name built at run time, so keep names literal.
 - `@nodeint/migent-contracts/data` holds plain data (version constants, exit catalog, status unions) and does
   not load `typebox`. The root export re-exports all of it.
+- Core-only: `CONFIG_SECTIONS`, `EVENT_KIND_TRAITS`, `EXIT_CATALOG`, and `SESSION_STATUS_CATALOG` are owned by
+  the core; no runtime registration. See [docs/architecture.md](../../docs/architecture.md).
 - Every Migent environment variable is listed in `ENV_CATALOG`.
 - After changing a schema, `ENV_CATALOG`, `EXIT_CATALOG`, or `SESSION_STATUS_CATALOG`, run `pnpm generate` and commit
   `schemas/` and
@@ -44,6 +46,8 @@ exit codes, and environment variables.
 | `SESSION_EVENT_TEMPLATES`, `SESSION_FILE_EXCLUSIONS` | `src/index-registry.ts` | Templated event heads the inventory checks; persisted names left undescribed, with reasons |
 | `SessionManifest`, `SessionStatusFile`, `SessionExecution`, `SessionEvent` | `src/session-files.ts`, `src/session-events.ts` | TypeBox schemas and `Static` types of the session files and events |
 | `FIXED_LIFECYCLE_EVENTS`, `STATUS_LIFECYCLE_EVENTS`, `RESUME_EVENTS`, `SESSION_CLIENT_EVENT_FORMS` | `src/session-events.ts` | Per-event schemas with concrete types, keyed by event name. Client events expose `schema`, `current` and `historical`. Types: `SessionEventRecord<N>`, `ClientEventCurrent<N>`, `ClientEventHistorical<N>`, `SessionEventName` |
+| `EVENT_KIND_TRAITS`, `eventKindTraits`, `EventKindTraits` | `src/event-kinds.ts` | Read-only trait registry per event kind (`stream`, `folds`, `skipsStatusWrite`, `stderr`), covering every `SESSION_EVENT_SCHEMAS` kind. Kernel, adapters, session and engine read traits here instead of keeping their own lists |
+| `CONFIG_SECTIONS`, `ConfigSection`, `EntryClassifier`, `assertConfigSections` | `src/config-sections.ts` | Static, core-owned list of namespaced config sections (key, TypeBox schema, `deep`/`replace` merge, `frozen`/`live`/`per_entry` freeze). Empty today; keys must match `^[a-z][a-z0-9_]*$` and may not be a core or legacy key, and the module asserts this on load. There is no runtime registration API |
 | `./data` | `src/data/` | Typebox-free subpath: `EXIT_CATALOG`, `ExecutionStatus`, `StageOutcomeStatus`, version constants |
 | `ENV_CATALOG` | `src/env.ts` | `MIGENT_DEBUG`, `MIGENT_NO_INPUT`, `MIGENT_HOME`, `DISABLE_TELEMETRY` |
 | `KNOWN_SHAPES` | `src/known-shapes.ts` | Opt-in shapes for passthrough files |

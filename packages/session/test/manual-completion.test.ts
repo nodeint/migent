@@ -52,6 +52,15 @@ function statusOf(workspace: string, sessionId: string): Record<string, unknown>
   return JSON.parse(readFileSync(path.join(directoryOf(workspace, sessionId), 'status.json'), 'utf8')) as Record<string, unknown>;
 }
 
+function withLock(workspace: string, sessionId: string, action: () => void): void {
+  const lock = SessionLock.acquire(directoryOf(workspace, sessionId));
+  try {
+    action();
+  } finally {
+    lock.release();
+  }
+}
+
 function stageRun(
   workspace: string,
   store: SessionStore,
@@ -61,9 +70,9 @@ function stageRun(
   outcome: StageOutcome | null,
   files: Record<string, string> = {},
 ): void {
-  const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId, stageAttempt: null, executionOrder: null, prompt: stageId });
   const lock = SessionLock.acquire(directoryOf(workspace, sessionId));
   try {
+    const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId, stageAttempt: null, executionOrder: null, prompt: stageId });
     store.saveExecution(context, record, { status: 'running' });
     for (const [name, body] of Object.entries(files)) writeFileSync(path.join(context.artifactDirectory, name), body, 'utf8');
     store.saveExecution(context, record, { status, outcome });
@@ -75,7 +84,7 @@ function stageRun(
 function started(): { workspace: string; store: SessionStore; sessionId: string } {
   const workspace = workspaceWithPlan();
   const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
-  freezeSessionTask(workspace, sessionId);
+  withLock(workspace, sessionId, () => freezeSessionTask(workspace, sessionId));
   return { workspace, store: new SessionStore(workspace, undefined, defaultClients()), sessionId };
 }
 
@@ -200,7 +209,7 @@ test('schema 2-6 outputs and version 1 completion.outputs publish from completed
     writeFileSync(path.join(workspace, '.migent', 'workflows', `${id}.yaml`), text, 'utf8');
     writeSessionConfig(workspace);
     const sessionId = createWorkflowSession(workspace, id, { task: 'Write a plan' });
-    freezeSessionTask(workspace, sessionId);
+    withLock(workspace, sessionId, () => freezeSessionTask(workspace, sessionId));
     const store = new SessionStore(workspace, undefined, defaultClients());
     stageRun(workspace, store, sessionId, 'draft', 'completed', new StageOutcome('complete'), { 'plan.md': '# Plan\n' });
     expect(statusOf(workspace, sessionId).status).toBe('active');

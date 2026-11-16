@@ -35,7 +35,6 @@ export {
   isRecord,
   KERNEL_PLACEHOLDER,
   providerErrorMessage,
-  STATUS_PROVIDER_EVENTS,
 } from './types.js';
 export type { HelpOptionsFormat } from './utils/parse-help-options.js';
 export { parseHelpOptions } from './utils/parse-help-options.js';

@@ -10,7 +10,7 @@ import { loadWorkflowDocument } from '@nodeint/migent-workflow';
 import { expect, test } from 'vitest';
 
 import { AgentToolRunner, executeNamedWorkflow } from '../src/index.ts';
-import { registryOf,ScriptedClient, tempDir } from './support.ts';
+import { holdSessionLock, registryOf, ScriptedClient, tempDir } from './support.ts';
 
 const CONFIG = `\
 agents:
@@ -62,16 +62,21 @@ function setup(workflow: string): { workspace: string; sessionId: string } {
   return { workspace, sessionId: createWorkflowSession(workspace, 'wf', { task: 'task' }) };
 }
 
-function runStage(runner: AgentToolRunner, workspace: string, sessionId: string, extra = {}) {
-  return runner.run({
-    client: 'fake',
-    model: 'm1',
-    prompt: 'go',
-    workspace,
-    sessionId,
-    stageId: 'implement',
-    ...extra,
-  });
+async function runStage(runner: AgentToolRunner, workspace: string, sessionId: string, extra = {}) {
+  const lock = holdSessionLock(workspace, sessionId);
+  try {
+    return await runner.run({
+      client: 'fake',
+      model: 'm1',
+      prompt: 'go',
+      workspace,
+      sessionId,
+      stageId: 'implement',
+      ...extra,
+    });
+  } finally {
+    lock.release();
+  }
 }
 
 interface RawEvent { event: string; stageId?: string; stage_id?: string; data: Record<string, unknown> }
@@ -638,6 +643,7 @@ test('reaper cannot fail an execution between verify commands', async () => {
 
 test('reap skips an in-flight sibling', () => {
   const { workspace, sessionId } = setup(workflowText('node -e "process.exit(0)"'));
+  holdSessionLock(workspace, sessionId);
   const store = new SessionStore(workspace);
   const [, , sibling] = store.loadOrCreate({ client: 'fake', model: 'm1', options: {}, workspace, sessionId, stageId: 'implement', stageAttempt: null, executionOrder: null, prompt: 'go' });
   try {
@@ -657,6 +663,7 @@ test('reap skips an in-flight sibling', () => {
 
 test('a new execution records its owner so a dead owner can be reaped', () => {
   const { workspace, sessionId } = setup(workflowText('node -e "process.exit(0)"'));
+  holdSessionLock(workspace, sessionId);
   const probed: number[] = [];
   const inspector: ProcessInspector = {
     hostname: () => hostname(),

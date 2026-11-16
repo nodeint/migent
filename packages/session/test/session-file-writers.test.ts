@@ -24,14 +24,15 @@ import { parseYamlDocument } from '@nodeint/migent-workflow';
 import { afterEach, expect, test } from 'vitest';
 
 import { MANIFEST_SCHEMA_EVENT_LOG } from '../src/constants.ts';
+import { sessionEventLog } from '../src/event-log.ts';
 import { publishNextSuggestions } from '../src/next-handoff.ts';
 import { EVENT_VERSION } from '../src/session-events.ts';
-import { commitFoldedStatus, readFoldedStatus } from '../src/session-fold.ts';
+import { readFoldedStatus } from '../src/session-fold.ts';
 import { SessionLock } from '../src/session-lock.ts';
 import { createAgentSession, createPreparedSession, createWorkflowSession } from '../src/session-records.ts';
 import { repairSession } from '../src/session-repair.ts';
 import { SessionStore } from '../src/session-store.ts';
-import { SESSION_CONFIG } from './support.ts';
+import { holdSessionLock, SESSION_CONFIG } from './support.ts';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -124,7 +125,9 @@ test('a historical session questions.json still validates and is never rewritten
   ] }, null, 2);
   writeFileSync(file, historical);
   expectValid(SessionQuestions, JSON.parse(historical));
-  commitFoldedStatus(root, sessionDirectory(root, id));
+  const lock = holdSessionLock(root, id);
+  sessionEventLog.commit(root, sessionDirectory(root, id));
+  lock.release();
   repairSession(root, id);
   expect(readFileSync(file, 'utf8')).toBe(historical);
 });
@@ -132,7 +135,8 @@ test('a historical session questions.json still validates and is never rewritten
 test('the fold does not create a session questions.json', () => {
   const root = workspace();
   const id = createWorkflowSession(root, 'plan', { task: 'Plan the work' });
-  commitFoldedStatus(root, sessionDirectory(root, id));
+  holdSessionLock(root, id);
+  sessionEventLog.commit(root, sessionDirectory(root, id));
   expect(existsSync(path.join(sessionDirectory(root, id), 'questions.json'))).toBe(false);
 });
 

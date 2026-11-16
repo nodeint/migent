@@ -4,7 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { BuildCommandInput, CliClient, ClientOption, ClientRegistry, CliModelCatalog, CliRunOutput, CliUsage, CommandSpec, UsageCapture } from '@nodeint/migent-kernel';
-import { createWorkflowSession } from '@nodeint/migent-session';
+import { createAgentSession, createWorkflowSession, SessionLock } from '@nodeint/migent-session';
+import { onTestFinished } from 'vitest';
 
 const optionKey = /^[A-Za-z][A-Za-z0-9_.-]*$/;
 
@@ -442,4 +443,20 @@ export function writeQuestionRequestFromReply(prompt: string, response: string):
   if (!response.startsWith(head) || !response.slice(head.length).startsWith('{')) return response;
   if (target) writeFileSync(target, response.slice(head.length), 'utf8');
   return head + 'The questions are in the request file.';
+}
+
+/** Hold the session lock for the rest of the test, as `migent agent` and `migent session run` do. */
+export function holdSessionLock(workspace: string, sessionId: string): SessionLock {
+  const sessionDirectory = path.join(workspace, '.migent', 'sessions', sessionId);
+  mkdirSync(sessionDirectory, { recursive: true });
+  const lock = SessionLock.acquire(sessionDirectory);
+  onTestFinished(() => lock.release());
+  return lock;
+}
+
+/** A new agent session whose lock this test holds until it finishes. */
+export function lockedAgentSession(workspace: string, role = 'reviewer', task = 'task'): string {
+  const sessionId = createAgentSession(workspace, role, task);
+  holdSessionLock(workspace, sessionId);
+  return sessionId;
 }

@@ -11,7 +11,7 @@ import { parseYamlDocument } from '@nodeint/migent-workflow';
 import { afterEach, expect, test } from 'vitest';
 
 import { AgentToolRunner } from '../src/index.ts';
-import { registryOf,ScriptedClient, SESSION_CONFIG } from './support.ts';
+import { holdSessionLock, registryOf, ScriptedClient, SESSION_CONFIG } from './support.ts';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -209,6 +209,7 @@ async function runGate(responses: string[], artifacts: { body: string; only: str
   writeFileSync(path.join(base, '.migent', 'config.yaml'), SESSION_CONFIG);
   writeFileSync(path.join(workflows, 'gated.yaml'), GATED);
   const sessionId = createWorkflowSession(base, 'gated', { task: 'Go' });
+  holdSessionLock(base, sessionId);
   const client = new ScriptedClient(responses, artifacts);
   const result = await new AgentToolRunner(registryOf({ fake: client }), 10).run({
     client: 'fake', model: 'm1', prompt: 'go', workspace: base, sessionId, stageId: 'write',

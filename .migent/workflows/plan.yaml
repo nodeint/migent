@@ -29,7 +29,8 @@ stages:
     depends_on: [plan]
     instructions:
       - Review against the approved design, acceptance criteria, repository evidence, and the planning skill and template.
-      - Check that each phase is one complete review unit, aims for one commit, and explains its boundary. Flag independently shippable parts grouped without justification.
+      - Check that each phase is one complete review unit, aims for one commit, and explains its boundary.
+      - Flag phases to split (unjustified grouping of independently shippable parts) or merge (too small to review alone, or splitting adds review cost without reducing risk).
       - Check dependency and risk ordering, confirmation of assumptions before use, and a coherent codebase after each phase. No phase may depend on later work to complete or verify its promised outcome.
       - Check that each phase includes its rules, enforcement, needed documentation, implementer inputs, runnable verification, and measurable completion criteria.
       - Check acceptance coverage against the actual phase scope and verification, including final integration. Flag missing or invented coverage and out-of-scope work.

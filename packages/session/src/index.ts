@@ -1,3 +1,7 @@
+export type { SessionEventListener } from './event-log.js';
+export { SessionEventLog, sessionEventLog, subscribeSessionEvents } from './event-log.js';
+export type { EffectiveConfigSection, EntryClassifiers, FrozenSection, LiveEntry, SectionRequest } from './freeze-config-sections.js';
+export { effectiveConfigSection } from './freeze-config-sections.js';
 export type {
   LegacyExecutionClient,
   LegacyExecutionEvidence,
@@ -33,20 +37,15 @@ export { latestDiagnosticsPath, readRecordedDiagnostics } from './session-diagno
 export type { SessionDraft } from './session-draft.js';
 export { locateSessionDirectory, resolveSessionDraft } from './session-draft.js';
 export {
-  appendLifecycleEvent,
-  appendRecordedEvent,
   EVENT_VERSION,
   eventRecord,
   executionIdsStartedInLog,
-  isProviderStreamEvent,
   parseExecutionId,
   readParsedEvents,
-  skipsStatusWrite,
 } from './session-events.js';
 export { reservedExecutionOrders } from './session-events.js';
 export type { FoldExecution, FoldInputs, SessionManifest } from './session-fold.js';
 export {
-  commitFoldedStatus,
   foldStatus,
   readFoldedStatus,
   statusDriftMessage,

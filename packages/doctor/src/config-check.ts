@@ -4,6 +4,7 @@ import {
   buildStructuralIndex,
   type ClientRegistry,
   type ConfigOwner,
+  configSectionIssues,
   ConfigurationError,
   containerIssues,
   hasLocalConfig,
@@ -62,7 +63,7 @@ export function analyzeConfig(
   const { error, fromError } = errorReporters(diagnostics, ownerOf);
 
   try { rejectLegacyConfigKeys(config); } catch (caught) { fromError(caught, ['models']); }
-  for (const issue of containerIssues(config)) fromError(issue);
+  for (const issue of [...containerIssues(config), ...configSectionIssues(config)]) fromError(issue);
   const agents: Record<string, unknown> = isRecord(config.agents) ? config.agents : {};
   const roles: Record<string, unknown> = isRecord(config.roles) ? config.roles : {};
   if (isRecord(config.roles) && Object.keys(roles).length === 0) error('roles-empty', 'roles is empty.', { path: ['roles'] });

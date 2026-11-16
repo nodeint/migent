@@ -1,12 +1,11 @@
 import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
-import { isRecord } from '@nodeint/migent-workflow';
-import { isRoleStage, loadNamedWorkflow, type RoleStageSpec, type StageAgent } from '@nodeint/migent-workflow';
-import { parseYamlDocument } from '@nodeint/migent-workflow';
+import { isRecord, isRoleStage, loadNamedWorkflow, parseYamlDocument, type RoleStageSpec, type StageAgent } from '@nodeint/migent-workflow';
 import { stringify } from 'yaml';
 
 import type { ClientInfo, ClientRegistry } from './cli-client.js';
+import { withSectionOwners } from './config-sections.js';
 import {
   type Field,
   mapping,
@@ -140,7 +139,7 @@ export function mergeConfigLayers(
       }
     }
   }
-  const ownerOf = (path: readonly (string | number)[]): ConfigOwner => {
+  const coreOwnerOf = (path: readonly (string | number)[]): ConfigOwner => {
     if (path[0] === 'schema_version') return 'project';
     let base: unknown = project;
     let over: unknown = layer;
@@ -159,7 +158,7 @@ export function mergeConfigLayers(
     }
     return 'merged';
   };
-  return { config: merged, ownerOf };
+  return { config: merged, ownerOf: withSectionOwners(merged, layer, coreOwnerOf) };
 }
 
 /**

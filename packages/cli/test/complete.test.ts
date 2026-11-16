@@ -42,9 +42,9 @@ function stoppedSession(): { workspace: string; sessionId: string; directory: st
   const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   const directory = path.join(workspace, '.migent', 'sessions', sessionId);
   const store = new SessionStore(workspace);
-  const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'draft', stageAttempt: null, executionOrder: null, prompt: 'draft' });
   const lock = SessionLock.acquire(directory);
   try {
+    const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'draft', stageAttempt: null, executionOrder: null, prompt: 'draft' });
     store.saveExecution(context, record, { status: 'running' });
     writeFileSync(path.join(context.artifactDirectory, 'plan.md'), '# Plan\n', 'utf8');
     store.saveExecution(context, record, { status: 'completed', outcome: new StageOutcome('complete') });

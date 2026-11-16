@@ -12,10 +12,9 @@ import { SCHEMA_V4_DOWNSTREAM } from '@nodeint/migent-workflow';
 import { stringify } from 'yaml';
 
 import { FIRST_SESSION_SUFFIX, MANIFEST_SCHEMA_EVENT_LOG, TURN_PAD_WIDTH } from './constants.js';
+import { sessionEventLog } from './event-log.js';
 import { completedPriorStatus, resolveHandoff, snapshotHandoff } from './next-handoff.js';
 import { corruptStatusMessage, readStatusFileState } from './query.js';
-import { appendLifecycleEvent } from './session-events.js';
-import { commitFoldedStatus } from './session-fold.js';
 import { readSessionManifest } from './session-fold-read.js';
 import { renderWorkflowSource, requireLiveWorkflow, writeWorkflowFreeze } from './session-freeze.js';
 import { createNumericSessionDirectory, quotedSessionId } from './session-id.js';
@@ -156,7 +155,7 @@ export function createWorkflowSession(
         prior_session_id: resolvedPrior,
         handoff: snapshot,
       });
-      commitFoldedStatus(workspace, sessionDirectory);
+      sessionEventLog.commit(workspace, sessionDirectory);
     });
   } catch (error) {
     // This directory was allocated above with a fresh UUID and belongs to this failed creation.
@@ -207,7 +206,7 @@ export function createPreparedSession(workspace: string, input: CreatePreparedSe
         prior_session_id: resolvedPrior,
         prepared: true,
       });
-      commitFoldedStatus(workspace, sessionDirectory);
+      sessionEventLog.commit(workspace, sessionDirectory);
     });
   } catch (error) {
     // This directory was allocated above with a fresh UUID and belongs to this failed creation.
@@ -240,7 +239,7 @@ export function activatePreparedSession(workspace: string, sessionId: string, re
   withSessionLock(sessionDirectory, () => {
     const snapshot = snapshotHandoff(sessionDirectory, handoff);
     const frozen = writeWorkflowFreeze(sessionDirectory, { workspace, workflow, resolveClient });
-    appendLifecycleEvent(sessionDirectory, {
+    sessionEventLog.record(sessionDirectory, {
       event: 'handoff.bound', timestamp: utcNow(), data: { handoff: snapshot, hash: frozen.hash },
     });
     if (snapshot) {
@@ -249,12 +248,12 @@ export function activatePreparedSession(workspace: string, sessionId: string, re
       body.handoff = snapshot;
       writeFileAtomic(manifestPath, stringify(body));
     }
-    appendLifecycleEvent(sessionDirectory, {
+    sessionEventLog.record(sessionDirectory, {
       event: 'session.activated',
       timestamp: utcNow(),
       data: { from: 'prepared' },
     });
-    commitFoldedStatus(workspace, sessionDirectory);
+    sessionEventLog.commit(workspace, sessionDirectory);
     replaceManifestStatus(sessionDirectory, 'running');
   });
 }
@@ -284,7 +283,7 @@ export function createAgentSession(workspace: string, role: string, task: string
       title: taskSummary,
       task: taskSummary,
     });
-    commitFoldedStatus(workspace, sessionDirectory);
+    sessionEventLog.commit(workspace, sessionDirectory);
   });
   return sessionId;
 }
@@ -380,7 +379,7 @@ function appendSessionCreated(sessionDirectory: string, timestamp: string, data:
   for (const [key, value] of Object.entries(data)) {
     if (value !== undefined && value !== null && value !== '') body[key] = value;
   }
-  appendLifecycleEvent(sessionDirectory, {
+  sessionEventLog.record(sessionDirectory, {
     event: 'session.created',
     timestamp,
     data: body,

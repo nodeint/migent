@@ -1,18 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import type { CliClient, ClientRegistry, ExecutionSnapshot } from '@nodeint/migent-kernel';
-import { createNewSession, sessionOptions } from '@nodeint/migent-kernel';
-import { CommandExecutor, DEFAULT_TIMEOUT_SEC, type StopReason } from '@nodeint/migent-kernel';
-import {
-  DEFAULT_INTERRUPT_POLICY,
-  type InterruptPolicy,
-  type InterruptReport,
-  interruptSession,
-  isSettled,
-} from '@nodeint/migent-kernel';
-import { StreamSummarizer } from '@nodeint/migent-kernel';
+import { createNewSession } from '@nodeint/migent-kernel';
+import { CommandExecutor, DEFAULT_TIMEOUT_SEC } from '@nodeint/migent-kernel';
+import { DEFAULT_INTERRUPT_POLICY, type InterruptPolicy } from '@nodeint/migent-kernel';
 import { VerifyRunner } from '@nodeint/migent-kernel';
 import { ConfigurationError } from '@nodeint/migent-kernel';
 import { readCorrectionLedger } from '@nodeint/migent-kernel';
@@ -22,6 +14,7 @@ import {
 } from '@nodeint/migent-prompts';
 import { type ExecutionContext, SessionStore, stringOptions } from '@nodeint/migent-session';
 
+import { bindTarget } from './agent-invocation.js';
 import { ProviderEventReporter } from './provider-events.js';
 import {
   type ContinuedDrive,
@@ -50,7 +43,7 @@ import {
   validateSessionProfile,
 } from './run-setup.js';
 import { TurnLoop } from './turn-loop.js';
-import { finishTurn, forwardProviderEvent, turnDebugStep } from './turn-process.js';
+import { runProviderTurn, turnDebugStep } from './turn-process.js';
 import {
   handoffPath,
   questionRequestPath,
@@ -95,6 +88,14 @@ export class AgentToolRunner {
 
   public async run(request: RunRequest): Promise<RunResult> {
     const opened = this.openRun(request);
+    try {
+      return await this.runOpened(request, opened);
+    } finally {
+      opened.store.releaseAllocatedSession();
+    }
+  }
+
+  private runOpened(request: RunRequest, opened: OpenedRun): Promise<RunResult> {
     const { store, context, record, isNew, agentId } = opened;
     const stage = opened.sessionId === null ? null : loadRunStage(store, context.sessionId, opened.stageId);
     const facts = stageFacts(stage);
@@ -136,7 +137,10 @@ export class AgentToolRunner {
     const stageId = typeof metadata.stage_id === 'string' ? metadata.stage_id : 'agent';
     const clientId = store.executionClient(sessionId, executionId);
     const model = typeof metadata.model === 'string' ? metadata.model : '';
-    const { client, resolvedOptions, profile } = this.resolveClient(clientId, stringOptions(metadata.options));
+    const { client, resolvedOptions, profile } = bindTarget(
+      { client: clientId, model, options: stringOptions(metadata.options) },
+      this.registry,
+    );
     const record = reopenConversation({ store, context }, { clientId, model, workspace: workspacePath });
     const stage = loadRunStage(store, sessionId, stageId);
     const facts = stageFacts(stage);
@@ -214,8 +218,30 @@ export class AgentToolRunner {
     const executionOrder = request.executionOrder ?? null;
     assertRunOrdering(stageAttempt, executionOrder);
     const clientId = request.client;
-    const { client, resolvedOptions, profile } = this.resolveClient(clientId, { ...(request.options ?? {}) });
+    const { client, resolvedOptions, profile } = bindTarget(
+      { client: clientId, model: request.model, options: { ...(request.options ?? {}) } },
+      this.registry,
+    );
     const store = new SessionStore(workspacePath, undefined, this.registry);
+    try {
+      return this.startRun(
+        request,
+        { client, clientId, resolvedOptions, profile, workspacePath, store, stageAttempt, executionOrder },
+      );
+    } catch (error) {
+      store.releaseAllocatedSession();
+      throw error;
+    }
+  }
+
+  private startRun(
+    request: RunRequest,
+    run: {
+      client: CliClient; clientId: string; resolvedOptions: Record<string, string>; profile: Record<string, string>;
+      workspacePath: string; store: SessionStore; stageAttempt: number | null; executionOrder: number | null;
+    },
+  ): OpenedRun {
+    const { client, clientId, resolvedOptions, profile, workspacePath, store, stageAttempt, executionOrder } = run;
     const [record, isNew, context] = loadOrCreateRun(
       store,
       request,
@@ -246,15 +272,6 @@ export class AgentToolRunner {
       this.verifyRunner,
     );
     return loop.drive();
-  }
-
-  private resolveClient(
-    clientId: string,
-    resolvedOptions: Record<string, string>,
-  ): { client: CliClient; resolvedOptions: Record<string, string>; profile: Record<string, string> } {
-    const client = this.registry.get(clientId);
-    client.validateOptions(resolvedOptions);
-    return { client, resolvedOptions, profile: sessionOptions(client, resolvedOptions) };
   }
 
   private eventReporterFor(
@@ -308,60 +325,6 @@ export class AgentToolRunner {
     eventReporter.emit('provider.stage_started', `${clientId}/${model}`, started);
   }
 
-  // Tracks every session id a turn may own on the CLI's server and interrupts them on stop.
-  private trackTurnSessions(
-    turn: { client: CliClient; workspace: string; eventReporter: ProviderEventReporter },
-    expectedId: string | null,
-  ): {
-    observe: (reported: string) => void;
-    reportMismatch: (reported: string) => void;
-    cleanup: (phase: 'before' | 'after', reason: StopReason) => Promise<boolean>;
-  } {
-    const { client, workspace, eventReporter } = turn;
-    // Every id this turn may own on the CLI's server: the one Migent holds, and any
-    // different one the CLI reports. Cleanup targets all of them.
-    const knownIds = new Set<string>(expectedId ? [expectedId] : []);
-    const reports = new Map<string, InterruptReport>();
-    let mismatchReported = false;
-    const reportMismatch = (reported: string) => {
-      if (expectedId === null || reported === expectedId || mismatchReported) return;
-      mismatchReported = true;
-      eventReporter.emit(
-        'provider.warning',
-        `provider reported session ${reported}, not the expected ${expectedId}; both are targeted for cleanup`,
-        { expected_agent_id: expectedId, reported_agent_id: reported },
-      );
-    };
-    const cleanup = async (phase: 'before' | 'after', reason: StopReason): Promise<boolean> => {
-      let attempted = false;
-      for (const id of [...knownIds]) {
-        // After the process is gone, only sessions not yet seen interrupted are asked again.
-        if (phase === 'after' && reports.get(id)?.outcome === 'interrupted') continue;
-        const report = await interruptSession(client, { agentId: id, cwd: workspace }, this.interruptPolicy);
-        if (report === null) continue;
-        attempted = true;
-        reports.set(id, report);
-        const details = { agent_id: id, reason, phase, outcome: report.outcome, attempts: report.attempts };
-        if (isSettled(report)) {
-          eventReporter.emit('provider.interrupt', `session ${id}: ${report.outcome}`, details);
-        } else if (phase === 'after') {
-          eventReporter.emit(
-            'provider.warning',
-            `could not confirm session ${id} stopped (${report.detail}); agent id retained for recovery`,
-            details,
-          );
-        }
-      }
-      return attempted;
-    };
-    const observe = (reported: string): void => {
-      if (knownIds.has(reported)) return;
-      knownIds.add(reported);
-      reportMismatch(reported);
-    };
-    return { observe, reportMismatch, cleanup };
-  }
-
   private cachedCliVersion(client: CliClient, clientId: string, workspace: string): string | null {
     const key = clientId.toLowerCase();
     if (this.cliVersions.has(key)) return this.cliVersions.get(key) ?? null;
@@ -370,71 +333,19 @@ export class AgentToolRunner {
     return version;
   }
 
-  private async runTurn(args: RunTurnArgs): Promise<TurnResult> {
-    const {
-      client,
-      model,
-      workspace,
-      prompt,
-      agentId,
-      newSession,
-      options,
-      eventReporter,
-      store,
-      context,
-      turn,
-    } = args;
-    const tmp = mkdtempSync(path.join(tmpdir(), 'migent_'));
-    try {
-      const promptFile = path.join(tmp, 'prompt.txt');
-      const lastMessageFile = path.join(tmp, 'last_message.txt');
-      writeFileSync(promptFile, prompt, 'utf8');
-      const spec = client.runCommand({
-        model,
-        workspace,
-        prompt,
-        agentId,
-        newAgentId: newSession?.agentId ?? null,
-        promptFile,
-        lastMessageFile,
-        options,
-      });
-      // One parser per turn: a client's parser may keep state between lines.
-      const parseEvent = client.createEventParser();
-      const debugStep = turnDebugStep(store, context, turn);
-      const sessions = this.trackTurnSessions(
-        { client, workspace, eventReporter },
-        agentId || newSession?.agentId || null,
-      );
-      const summarizer = new StreamSummarizer(client.eventLabel !== undefined);
-      const result = await this.executor.run(spec, workspace, {
-        onDebug: debugStep,
-        // Only a client with a server-side interrupt gets hooks, and so the exit grace period.
-        ...(client.interruptCommand === undefined
-          ? {}
-          : {
-              onInterrupt: (reason: StopReason) => sessions.cleanup('before', reason),
-              onStopped: (reason: StopReason) => sessions.cleanup('after', reason),
-            }),
-        onOutput: (line) => {
-          summarizer.add(line, client.eventLabel?.(line) ?? null);
-          const reported = client.sessionIdFromLine?.(line) ?? null;
-          if (reported !== null) sessions.observe(reported);
-          forwardProviderEvent(eventReporter, parseEvent(line));
-        },
-        onHeartbeat: (elapsed) => {
-          eventReporter.emit('provider.heartbeat', `running for ${elapsed}s`, {
-            elapsed_seconds: elapsed,
-          });
-        },
+  private runTurn(args: RunTurnArgs): Promise<TurnResult> {
+    const { store, context, turn, eventReporter, ...call } = args;
+    return runProviderTurn(
+      { executor: this.executor, interruptPolicy: this.interruptPolicy },
+      {
+        ...call,
+        events: eventReporter,
+        onDebug: turnDebugStep(store, context, turn),
         onStart: (info) => {
           store.saveProcessMetadata(context, info);
         },
-      });
-      return finishTurn(client, { result, argv: spec.argv, lastMessageFile, summarizer }, sessions.reportMismatch);
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
+      },
+    );
   }
 }
 
