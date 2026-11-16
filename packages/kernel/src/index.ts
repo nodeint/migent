@@ -107,6 +107,7 @@ export {
   placeRoleAgent,
   upsertAgent,
 } from './config-edit.js';
+export { configSectionIssues } from './config-sections.js';
 export { patchConfigText, upgradeConfigText } from './config-text.js';
 export {
   ARGV_USER_OFFSET,

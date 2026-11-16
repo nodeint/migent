@@ -39,6 +39,7 @@ diagnostics. Depends on the kernel. Internal; no stable public API. Behavior:
 | `sessionLockState`, `withNumberingLock` | `src/session-lock.ts` | Read-only lock state; workspace numbering lock |
 | `retireSessionNumber`, `readLastIdMark` | `src/session-id.ts` | `.last-id` high-water mark so deleted numbers are never reissued |
 | `loadFrozenWorkflow`, `writeWorkflowFreeze` | `src/session-freeze.ts` | Frozen configuration |
+| `effectiveConfigSection`, `EntryClassifiers` | `src/freeze-config-sections.ts` | Freezes registered config sections under the freeze key `config` and resolves one on resume. A `per_entry` section needs a classifier map from the caller (engine passes none while no section exists); a missing one throws. Reports `addedAfterFreeze` and leaves the decision to the caller |
 | `repairSession` | `src/session-repair.ts` | Repair broken state |
 | `selectRunWorkflow`, `selectSessionWorkflow` | `src/session-selection.ts` | Resolve workflow for a run |
 | `publishNextSuggestions`, `resolveHandoff` | `src/next-handoff.ts` | Downstream handoff |

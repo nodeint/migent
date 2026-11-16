@@ -24,6 +24,7 @@ Configuration, authoring, migration, outputs, selection, and process execution f
 | --- | --- | --- |
 | `CliClient`, `CommandSpec` types | `src/cli-client.ts` | Client adapter contract |
 | `loadAgentTarget`, `configPath`, `LOCAL_CONFIG_FILE` | `src/config.ts` | Config resolution |
+| `configSectionIssues`, `mergeConfigLayers` | `src/config-sections.ts`, `src/config.ts` | Config sections from contracts `CONFIG_SECTIONS`: `replace` merge with owner attribution, and validation of the merged section with the core error codes. Unregistered top-level keys stay ignored |
 | `migrateConfig`, `migrateWorkflow` | `src/migration.ts` | Schema migration |
 | authoring exports, `buildDraftSourceMap` | `src/authoring.ts`, `src/draft-source.ts` | Draft validate/render/save |
 | `schedulableStageIds`, `NextStageResult` | `src/selection.ts` | Next-stage selection |

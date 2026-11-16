@@ -1,5 +1,7 @@
 export type { SessionEventListener } from './event-log.js';
 export { SessionEventLog, sessionEventLog, subscribeSessionEvents } from './event-log.js';
+export type { EffectiveConfigSection, EntryClassifiers, FrozenSection, LiveEntry, SectionRequest } from './freeze-config-sections.js';
+export { effectiveConfigSection } from './freeze-config-sections.js';
 export type {
   LegacyExecutionClient,
   LegacyExecutionEvidence,
