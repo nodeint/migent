@@ -28,17 +28,23 @@ export function pullRequestProblems(branch, title) {
   return problems;
 }
 
-export function commitProblem(branch) {
-  return !branch || branch === "main" || branch === "next"
-    ? "Commit on a feature, fix, chore, or release branch. Develop through PRs into next; the release workflow advances main."
-    : branchProblem(branch);
+export function commitProblem(branch, upstream = "") {
+  if (!branch || branch === "main" || branch === "next") {
+    return "Commit on a feature, fix, chore, or release branch. Develop through PRs into next; the release workflow advances main.";
+  }
+  if (upstream && upstream !== `origin/${branch}`) {
+    return `Upstream ${upstream} must be origin/${branch} or unset. Run git branch --unset-upstream or pnpm setup:git.`;
+  }
+  return branchProblem(branch);
 }
 
-export function pushProblems(input, currentRef) {
+const zeroSha = /^0+$/;
+
+export function pushProblems(input, currentRef, isAncestor = () => true) {
   const problems = [];
   for (const line of input.trim().split(/\r?\n/)) {
     if (!line.trim()) continue;
-    const [source, , target] = line.trim().split(/\s+/);
+    const [source, localSha, target, remoteSha] = line.trim().split(/\s+/);
     if (target === "refs/heads/main" || target === "refs/heads/next") {
       problems.push(`Direct pushes to ${target.slice("refs/heads/".length)} are blocked. Push your branch and open a pull request.`);
     } else if (target?.startsWith("refs/heads/") && source !== "(delete)") {
@@ -46,6 +52,9 @@ export function pushProblems(input, currentRef) {
       if (resolved !== target) problems.push(`Branch destination mismatch: ${source} -> ${target}. Push to the same branch name.`);
       const problem = branchProblem(target.slice("refs/heads/".length));
       if (problem) problems.push(problem);
+      if (remoteSha && !zeroSha.test(remoteSha) && !isAncestor(remoteSha, localSha)) {
+        problems.push(`Force-push to ${target.slice("refs/heads/".length)} is blocked. Fetch and integrate the remote branch first.`);
+      }
     }
   }
   return problems;
@@ -64,12 +73,19 @@ if (process.argv[1] && pathToFileURL(path.resolve(process.argv[1])).href === imp
     const branch = head.stdout.trim();
     let problems;
     if (mode === "pre-push") {
-      problems = pushProblems(readFileSync(0, "utf8"), `refs/heads/${branch}`);
-    } else if (mode === "commit-msg") {
-      const subject = readFileSync(process.argv[3], "utf8").split(/\r?\n/)[0];
-      problems = [commitProblem(branch), subjectProblem(subject, branch)].filter(Boolean);
+      const isAncestor = (ancestor, descendant) =>
+        spawnSync("git", ["merge-base", "--is-ancestor", ancestor, descendant], { stdio: "ignore" }).status === 0;
+      problems = pushProblems(readFileSync(0, "utf8"), `refs/heads/${branch}`, isAncestor);
     } else {
-      problems = [commitProblem(branch)].filter(Boolean);
+      const upstream = branch
+        ? spawnSync("git", ["for-each-ref", "--format=%(upstream:short)", `refs/heads/${branch}`], { encoding: "utf8" }).stdout.trim()
+        : "";
+      if (mode === "commit-msg") {
+        const subject = readFileSync(process.argv[3], "utf8").split(/\r?\n/)[0];
+        problems = [commitProblem(branch, upstream), subjectProblem(subject, branch)].filter(Boolean);
+      } else {
+        problems = [commitProblem(branch, upstream)].filter(Boolean);
+      }
     }
     for (const problem of problems) process.stderr.write(`migent: ${problem}\n`);
     process.exitCode = problems.length ? 1 : 0;

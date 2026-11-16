@@ -95,7 +95,6 @@ Blank issues are disabled; write issues in English.
 
 ### Naming conventions
 
-- Types: `feat`, `fix`, `refactor`, `docs`, `chore`; migrations use `feat`.
 - Branch: `<type>/<issue-number>-<slug>`; omit the number without an issue.
   Slug: `[a-z][a-z0-9]*(-[a-z0-9]+)*`; issue number positive, no leading zeros.
 - Commit/PR: `<type>: <imperative summary>`; short English line, no scope or final period.
