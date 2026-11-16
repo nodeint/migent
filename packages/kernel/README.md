@@ -7,6 +7,8 @@ Configuration, authoring, migration, outputs, selection, and process execution f
 
 ## Rules
 
+- Core-only: `mergeConfigLayers`, `schedulableStageIds`, and the session-status policy functions
+  (`session-status-policy.ts`) stay internal. See [docs/architecture.md](../../docs/architecture.md).
 - Read `process.env` only in `src/env.ts` (a test enforces this); add each new variable to `ENV_CATALOG`
   in contracts.
 - Process and lock code uses Node built-ins and `proper-lockfile` only: no native dependencies or libc calls.

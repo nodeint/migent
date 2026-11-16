@@ -9,6 +9,7 @@ and session. Internal; no stable public API.
 
 - Session file formats belong to `@nodeint/migent-session`; use its store, event, and fold functions, and
   write any session file with the kernel's atomic writers.
+- Core-only: `runExecuteLoop`, `AgentToolRunner`, and the turn-pipeline steps stay internal. See [docs/architecture.md](../../docs/architecture.md).
 - Exit codes come from `EXECUTE_EXIT_CODES` / contracts `EXIT_CATALOG`.
 
 ## Key symbols

@@ -25,6 +25,8 @@ exit codes, and environment variables.
   template suffix types. It cannot see a name built at run time, so keep names literal.
 - `@nodeint/migent-contracts/data` holds plain data (version constants, exit catalog, status unions) and does
   not load `typebox`. The root export re-exports all of it.
+- Core-only: `CONFIG_SECTIONS`, `EVENT_KIND_TRAITS`, `EXIT_CATALOG`, and `SESSION_STATUS_CATALOG` are owned by
+  the core; no runtime registration. See [docs/architecture.md](../../docs/architecture.md).
 - Every Migent environment variable is listed in `ENV_CATALOG`.
 - After changing a schema, `ENV_CATALOG`, `EXIT_CATALOG`, or `SESSION_STATUS_CATALOG`, run `pnpm generate` and commit
   `schemas/` and

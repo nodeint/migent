@@ -25,6 +25,7 @@ diagnostics. Depends on the kernel. Internal; no stable public API. Behavior:
   They run synchronously inside the lock window, so keep them fast. A throwing listener is logged and never fails
   the write. A listener that writes events throws. Records still undelivered when the lock is released are dropped;
   a refold delivers nothing. Notifications are an in-process signal: the log is the durable truth.
+- Core-only: `SessionLock`, `sessionEventLog`, `foldStatus`, and the freeze functions are not exposed to plugins. See [docs/architecture.md](../../docs/architecture.md).
 - Files from any past Migent version must stay readable; a schema change needs a read path for old sessions.
 
 ## Key symbols
