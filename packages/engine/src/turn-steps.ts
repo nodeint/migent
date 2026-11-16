@@ -32,9 +32,11 @@ export interface GateEvaluation {
 
 /** What persisting one turn decided. */
 export interface PersistVerdict {
-  needsVerify: boolean;
-  modelResponded: boolean;
-  recordedClassification: FailureClassification | null;
+  readonly needsVerify: boolean;
+  readonly modelResponded: boolean;
+  readonly recordedClassification: FailureClassification | null;
+  /** The classification the loop keeps after this turn: cleared when an exit-only turn was accepted. */
+  readonly classification: FailureClassification | null;
 }
 
 /** How the verify run ends: a repair turn follows, or the execution ends with this outcome. */
@@ -281,7 +283,7 @@ function rejectCandidate(it: Iteration, fresh: FreshTurn): GateEvaluation {
 
 export function verifyFields(
 loop: {
-  verifyCommands: string[]; turn: number; lastResult: 'pass' | 'fail' | null; lastReport: string | null;
+  verifyCommands: readonly string[]; turn: number; lastResult: 'pass' | 'fail' | null; lastReport: string | null;
   verifyRuns: number; red: number; maxVerify: number;
 },
 reason: string | null,
