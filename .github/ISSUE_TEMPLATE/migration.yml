@@ -1,0 +1,42 @@
+name: Migration
+description: Staged compatibility, data transformation, or cutover.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What must move from the current state and why.
+    validations:
+      required: true
+  - type: textarea
+    id: states
+    attributes:
+      label: Current and target state
+      description: Config, session data, contracts, or behavior before and after the migration.
+    validations:
+      required: true
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility and cutover
+      description: Stages, what stays readable or supported during each stage, and when old behavior is removed.
+      placeholder: |
+        1. ...
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: What should be true for users when the migration is complete.
+      placeholder: |
+        - ...
+    validations:
+      required: true
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: Related work this migration does not cover.
+    validations:
+      required: false

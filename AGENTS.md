@@ -42,6 +42,7 @@ Explicit user instructions take precedence over skill guidance.
 | Skill | Load when |
 | :--- | :--- |
 | `migent` | Setting up Migent, or configuring, running, inspecting, or resuming its workflows, roles, models, sessions, stages, or outputs |
+| [`writing`](.agents/skills/writing/SKILL.md) | Creating, changing, splitting, merging, or reviewing Markdown content or file structure |
 | [`eslint`](.agents/skills/eslint/SKILL.md) | Creating or changing `.ts` or `.tsx`, reviewing those files against repository lint rules, or validating ESLint |
 | [`typescript`](.agents/skills/typescript/SKILL.md) | Creating, changing, or reviewing `.ts` or `.tsx` files against TypeScript coding standards |
 | [`create-issue`](.agents/skills/create-issue/SKILL.md) | Creating or rewriting a repository GitHub issue |
@@ -59,7 +60,7 @@ Explicit user instructions take precedence over skill guidance.
 Read these before acting, in this order:
 
 1. [CONTRIBUTING.md](CONTRIBUTING.md): rules for every change, including setup, tests, branches, and pull requests.
-2. The [documentation load map](docs/README.md#start-here): pick the documents for the task.
+2. The [documentation load map](docs/README.md#documents): pick the documents for the task.
    Follow every matching route when the task touches more than one area.
 3. The `README.md` of each package you will change: its rules and key symbols.
 

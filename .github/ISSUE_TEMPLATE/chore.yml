@@ -1,0 +1,33 @@
+name: Chore
+description: Tooling, dependencies, or CI with no product behavior change.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What in tooling, dependencies, or CI needs to change and why.
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: Proposed change
+      description: Tools, packages, versions, or workflows involved.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: What should be true for contributors or CI when this is done.
+      placeholder: |
+        - ...
+    validations:
+      required: true
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: Out of scope
+      description: Related work this chore does not cover.
+    validations:
+      required: false

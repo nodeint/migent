@@ -1,0 +1,26 @@
+name: Documentation
+description: Documentation-only change.
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is missing, wrong, outdated, or hard to find.
+    validations:
+      required: true
+  - type: textarea
+    id: location
+    attributes:
+      label: Affected documents
+      description: Paths or links to the documents to change or add.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: What a reader should be able to learn or do after the change.
+      placeholder: |
+        - ...
+    validations:
+      required: true

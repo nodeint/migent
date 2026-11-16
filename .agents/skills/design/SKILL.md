@@ -7,39 +7,165 @@ description: Resolve behavior, contract, ownership, and architecture choices.
 
 ## Steps
 
-1. Read the requirements and prior decisions. State goal, scope, constraints, and
-   acceptance criteria. Ask about ambiguity affecting scope or behavior. If no
-   consequential choice remains, explain why a design document is unnecessary.
-2. Select the primary work type under repository rules and read its reference below.
-   Ask if an unclear classification changes the approach; do not force other work
-   into these four types.
-3. Read affected package docs and code. Identify owners, contracts, dependencies,
-   actual consumers, and tests. Record paths and symbols supporting the current state.
-4. Trace the relevant behavior or data flow. Separate facts from hypotheses and
-   identify the choices needed to meet the acceptance criteria.
-5. Choose a solution using existing ownership and patterns. Explain consequential
-   trade-offs; present options and a recommendation when user input is needed.
-   Reuse settled decisions and authorization. Surface independently shippable work
-   separately rather than expanding scope.
-6. Describe inputs, state changes, outputs, failure paths, boundaries, and contracts.
-   Mark new paths and justify departures from existing patterns. Include transition
-   ordering and recovery when needed; exclude file-by-file edits and execution tasks.
-7. Map each acceptance criterion and preserved behavior to verification evidence.
-   Give material risks a mitigation or explicit acceptance decision.
-8. Resolve required decisions before completing the design. Keep it as a draft when
-   answers are pending; record the blocker rather than hiding it as an assumption.
-9. Fill the applicable sections of the [design template](references/template.md).
+1. Read requirements and prior decisions. State goal, scope, constraints, and
+   acceptance criteria; ask about ambiguity affecting scope or behavior.
+   If no consequential choice remains, explain why no design is needed.
+2. Pick the primary work type per repository rules; apply its guide below.
+   Ask if unclear classification changes the approach; don't force other
+   work into these four types.
+3. Read affected package docs and code. Identify owners, contracts,
+   dependencies, actual consumers, and tests; cite paths and symbols.
+4. Trace the relevant behavior or data flow. Separate facts from hypotheses;
+   identify choices needed to meet the acceptance criteria.
+5. Choose a solution within existing ownership and patterns. Explain
+   consequential trade-offs; offer options and a recommendation when user
+   input is needed. Reuse settled decisions and authorization. Surface
+   independently shippable work separately instead of expanding scope.
+6. Describe inputs, state changes, outputs, failure paths, boundaries, and
+   contracts. Mark new paths; justify departures from existing patterns.
+   Include transition ordering and recovery when needed; omit file-by-file
+   edits and execution tasks.
+7. Map each acceptance criterion and preserved behavior to verification
+   evidence. Mitigate or explicitly accept each material risk.
+8. Resolve required decisions before completing. While answers are pending,
+   keep a draft and record the blocker; don't hide it as an assumption.
+9. Fill the applicable sections of the [design template](#design-template).
    Distinguish facts, decisions, and assumptions.
 
-## Type references
+## Type guides
 
-- [Feature](references/types/feature.md): add observable behavior.
-- [Bugfix](references/types/bugfix.md): restore an expectation.
-- [Refactor](references/types/refactor.md): preserve behavior while changing structure.
-- [Migration](references/types/migration.md): staged compatibility or data transition.
+### Feature
+
+Add observable behavior.
+
+Investigate:
+
+- Identify users and the missing observable capability.
+- Find existing patterns, domain owners, and affected boundaries.
+
+Design:
+
+- State non-goals and observable acceptance criteria.
+- Define relevant inputs, outputs, states, errors, permissions, and persistence.
+- Resolve product decisions with required user input; do not invent policy.
+- Cover compatibility, flags, telemetry, rollout, and recovery when relevant.
+
+### Bugfix
+
+Restore an expectation.
+
+Investigate:
+
+- Ground the expectation in a contract, invariant, or documented
+  prior behavior.
+- Trace the first violated invariant; separate causes from hypotheses.
+- Check related paths for the same faulty assumption.
+
+Design:
+
+- State expected versus actual behavior, impact, and reproduction.
+- Explain the failing path, root cause, and verification gap.
+- Restore the invariant; limit scope to the fix and necessary support.
+- Require a regression test demonstrating the corrected behavior.
+  If impractical, explain why and provide alternative evidence.
+- Cover state repair, monitoring, and recovery when relevant.
+
+### Refactor
+
+Preserve behavior while changing structure.
+
+Investigate:
+
+- Map owners, exports, actual consumers, and placement rules.
+- Identify consumer compatibility needs and preserved behavior.
+- Check existing patterns and evidence protecting that behavior.
+
+Design:
+
+- Describe current and target ownership, dependencies, and public surface.
+- State non-goals and preserved behavior.
+- Identify verification gaps and required evidence.
+- Define intermediate states when the change cannot land at once.
+- Identify obsolete surfaces and temporary paths to remove.
+- Verify target structure and preserved behavior.
+
+### Migration
+
+Staged compatibility or data transition.
+
+Investigate:
+
+- Map current and target contracts, data, and sources of truth.
+- Inventory producers, consumers, stored data, and deployments.
+- Identify compatibility needs, deployment limits, and irreversible boundaries.
+- Find tests and operational signals proving transition safety.
+
+Design:
+
+- State irreversible boundaries and measurable completion signals.
+- Define phases: changes, source of truth, entry/exit criteria,
+  stop conditions, and rollback.
+- Define reads, writes, version skew, retries, and partial failures.
+- Cover backfill, reconciliation, idempotency, and irreversible
+  recovery when relevant.
+- Assign temporary paths an owner and removal condition.
+- Verify final contracts, data correctness, and cleanup.
 
 ## Output
 
-Keep the design in the conversation unless saving is requested. When saving, update
-its existing artifact. Use repository-relative links without line numbers, preserve
-supplied input paths and relevant earlier references, and flag missing required sources.
+Keep the design in the conversation unless asked to save it; when saving,
+update its existing artifact. Use repository-relative links without line
+numbers, keep supplied input paths and relevant earlier references, and
+flag missing required sources.
+
+## Design template
+
+Keep applicable headings in order; omit empty sections unless a required
+format says otherwise. Replace placeholders concisely; resolve questions
+before completing the design.
+
+```markdown
+# <Type>: <outcome>
+
+## Outcome and scope
+
+<Goal, scope, constraints, and relevant non-goals.>
+
+- AC1: <Observable acceptance criterion.>
+
+## Current state
+
+<Relevant behavior, owners, contracts, consumers, dependencies, and tests.
+Cite evidence; distinguish facts from hypotheses. Include checks already run.>
+
+## Solution
+
+<Show how each AC is met: inputs, state changes, outputs, and failure behavior.
+Define affected responsibilities, boundaries, contracts, and dependencies.
+Mark new paths. Include required transition states and ordering constraints.>
+
+## Decisions and trade-offs
+
+- D1: <Choice, reasoning, realistic alternatives, and material trade-offs.>
+
+<Note prior approvals or conventions that settle choices;
+invent no alternatives.>
+
+## Verification strategy
+
+- AC1: <Evidence, verification layer, and whether it exists or is still needed.>
+
+<Cover relevant preserved behavior and structural constraints.>
+
+## Risks and mitigations
+
+<Risks with mitigations or explicit acceptance. Support assumptions with evidence.
+Include extension and compatibility concerns only when relevant and supported.>
+
+## References
+
+- <Source path>: <Purpose.>
+
+<Use repository-relative paths or supplied input paths. Retain relevant earlier
+references. If none are needed, state why.>
+```

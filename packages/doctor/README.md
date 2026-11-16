@@ -13,7 +13,7 @@ Internal; no stable public API.
 ## Key symbols
 
 | Symbol | File | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `diagnose` | `src/diagnose.ts` | `migent doctor` entry |
 | `Diagnostic`, `DiagnosticList` | `src/check.ts` | Diagnostic model |
 | `validateConfigDraft`, `validateWorkflowDraft` | `src/authoring.ts` | Draft validation |

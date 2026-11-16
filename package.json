@@ -12,19 +12,23 @@
     "setup:git": "node scripts/setup-git.mjs",
     "lint": "node scripts/wrappers/run-eslint.mjs",
     "lint:strict": "node scripts/wrappers/run-eslint.mjs --max-warnings 0",
-    "lint:fix": "node scripts/wrappers/run-eslint.mjs --fix"
+    "lint:fix": "node scripts/wrappers/run-eslint.mjs --fix",
+    "lint:md": "node scripts/docs/lint-md.mjs",
+    "lint:md:fix": "node scripts/docs/lint-md.mjs --fix",
+    "lint:md:links": "node scripts/docs/lint-md-links.mjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
-    "@types/node": "^26.6.5",
     "@nodeint/migent": "workspace:*",
-    "vitest": "^5.0.3",
+    "@types/node": "^26.6.5",
     "eslint": "^10.13.0",
     "eslint-plugin-simple-import-sort": "^14.0.0",
     "eslint-plugin-sonarjs": "^4.2.2",
     "eslint-plugin-unicorn": "^77.0.0",
     "globals": "^17.13.0",
+    "markdownlint-cli2": "^0.24.1",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.72.1"
+    "typescript-eslint": "^8.72.1",
+    "vitest": "^5.0.3"
   }
 }

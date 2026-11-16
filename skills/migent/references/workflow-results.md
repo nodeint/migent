@@ -17,7 +17,8 @@ is not necessarily complete; retain its ID when resolving the cause and retrying
 | 9 | Questions pending | Follow [Answer questions and blockers](session-replies.md). |
 | 130 | Cancelled | Ask before resuming; follow [resume behavior](session-resume.md). |
 
-`session continue` reruns a failed stage immediately, including one that failed on quota; it ignores the recorded reset time.
+`session continue` reruns a failed stage immediately, including one that failed on quota;
+it ignores the recorded reset time.
 If diagnostics report an outdated schema, run `migent migrate --yes`, then validate again.
 
 ## Control execution limits

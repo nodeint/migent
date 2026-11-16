@@ -28,6 +28,10 @@ const link = (identity: string, from: string, title: string) => {
 };
 const cell = (text: string) => text.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
 const code = (text: string) => `\`${cell(text)}\``;
+/** A table row in the compact style: one space around each cell, a single space for an empty one. */
+const tableRow = (cells: readonly string[]) => `|${cells.map((text) => (text === '' ? ' ' : ` ${text} `)).join('|')}|`;
+/** Prose with one sentence per line, so long descriptions stay within the line-length limit. */
+const prose = (text: string) => text.replace(/([.:;]) +(?=[A-Z`(])/g, '$1\n');
 
 interface Row {
   path: string;
@@ -119,29 +123,46 @@ function propertyRows(schema: Node, prefix: string, context: RowsContext): void 
   }
 }
 
-function section(identity: string, node: Node, options: { from: string; extra?: string }): string {
-  const { from, extra = '' } = options;
-  const title = String(node.title ?? schemaPath(identity));
-  const lines = [`<a id="${anchor(identity)}"></a>`, `### ${title}`, '', `Schema: ${code(identity)}`, ''];
-  if (typeof node.description === 'string') lines.push(node.description, '');
-  if (extra) lines.push(extra, '');
+/** Heading title; a derived list title names its item by title rather than by bare schema URL. */
+function titleOf(identity: string, node: Node): string {
+  const title = node.type === 'array' && isNode(node.items) && typeof node.items.title === 'string' ? `List of ${node.items.title}` : String(node.title ?? schemaPath(identity));
+  // Escape `<` so command placeholders such as `<name>` stay text, not HTML.
+  return title.replace(/</g, '\\<');
+}
+
+function section(identity: string, node: Node, options: { from: string; extra?: string; level?: number }): string {
+  const { from, extra = '', level = 2 } = options;
+  const heading = `${'#'.repeat(level)} ${titleOf(identity, node)}`;
+  const lines = [`<a id="${anchor(identity)}"></a>`, '', heading, '', `Schema: ${code(identity)}`, ''];
+  if (typeof node.description === 'string') lines.push(prose(node.description), '');
+  if (extra) lines.push(prose(extra), '');
   lines.push(`Type: ${label(node, from, node)}`, '');
   const out: Row[] = [];
   rows(node, '', { from, root: node, out });
   if (out.length > 0) {
     lines.push('| Field | Type | Required | Notes | Description |', '| --- | --- | --- | --- | --- |');
-    for (const row of out) lines.push(`| ${code(row.path)} | ${row.type} | ${row.required ? 'yes' : 'no'} | ${cell(row.notes)} | ${cell(row.description)} |`);
+    for (const row of out) lines.push(tableRow([code(row.path), row.type, row.required ? 'yes' : 'no', row.notes, cell(row.description)]));
     lines.push('');
   }
   return lines.join('\n');
 }
 
-function sectionsFor(file: string, header: string[], extras: Map<string, string> = new Map()): string {
+/** Join generated parts into a file with single blank lines and one trailing newline. */
+const document = (parts: readonly string[]) => `${parts.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd()}\n`;
+
+interface SectionsOptions {
+  readonly extras?: Map<string, string>;
+  readonly level?: number;
+}
+
+function sectionsFor(file: string, header: string[], options: SectionsOptions = {}): string {
+  const { extras = new Map<string, string>(), level } = options;
   const parts = [BANNER, ...header];
   for (const [identity, node] of collectIdentities()) {
-    if (fileFor(identity) === file) parts.push(section(identity, node, { from: file, extra: extras.get(identity) }));
+    if (fileFor(identity) !== file) continue;
+    parts.push(section(identity, node, { from: file, extra: extras.get(identity), level }));
   }
-  return `${parts.join('\n')}\n`.replace(/\n{3,}/g, '\n\n');
+  return document(parts);
 }
 
 function cliOutput(): string {
@@ -157,7 +178,7 @@ function cliOutput(): string {
     const identity = (shape as Node).$id as string;
     extras.set(identity, 'Opt-in description of a persisted file. No command guarantees it: such files are written by any past Migent version, so treat every field as optional.');
   }
-  return sectionsFor('cli-output.md', ['# CLI output reference', '', 'Fields of every `--json` / `-o json` payload. Output contracts are open: consumers must ignore unknown fields.', ''], extras);
+  return sectionsFor('cli-output.md', ['# CLI output reference', '', 'Fields of every `--json` / `-o json` payload.', 'Output contracts are open: consumers must ignore unknown fields.', ''], { extras });
 }
 
 function config(): string {
@@ -165,7 +186,7 @@ function config(): string {
 }
 
 function workflow(): string {
-  return sectionsFor('workflow.md', ['# Workflow reference', '', 'Structure of a workflow file at the current `schema_version`. Unknown keys are errors.', '']);
+  return sectionsFor('workflow.md', ['# Workflow reference', '', 'Structure of a workflow file at the current `schema_version`.', 'Unknown keys are errors.', '']);
 }
 
 function exitCodes(): string {
@@ -173,7 +194,8 @@ function exitCodes(): string {
   for (const entry of EXIT_CATALOG) {
     for (const family of EXIT_FAMILIES) {
       const text = (entry.descriptions as Record<string, string | undefined>)[family];
-      if (text) lines.push(`| ${entry.code} | ${code(entry.name)} | ${cell(EXIT_FAMILY_TITLES[family])} | ${cell(text)} |`);
+      if (!text) continue;
+      lines.push(tableRow([String(entry.code), code(entry.name), cell(EXIT_FAMILY_TITLES[family]), cell(text)]));
     }
   }
   return `${lines.join('\n')}\n`;
@@ -186,7 +208,7 @@ function env(): string {
     if (item.kind === 'flag') rule = `on for ${item.enabling_values.map(code).join(', ')}`;
     else if (item.kind === 'path') rule = `default ${code(item.default)}`;
     else rule = `default ${code(item.default_value)} for ${code(item.child)}`;
-    lines.push(`| ${code(item.name)} | ${item.kind} | ${rule} | ${item.processes.join(', ')} | ${cell(item.description)} |`);
+    lines.push(tableRow([code(item.name), item.kind, rule, item.processes.join(', '), cell(item.description)]));
   }
   return `${lines.join('\n')}\n`;
 }
@@ -199,9 +221,9 @@ function sessionStatuses(): string {
     const stop: { event: string; from?: string } | null = item.resolution;
     const resolution = [stop?.event, stop?.from && `from ${stop.from}`].filter(Boolean).join(' ');
     const cells = [code(item.name), item.kind, item.precedence === null ? '' : String(item.precedence), item.exit ?? '', ...flags.map((flag) => (item[flag] ? 'yes' : '')), item.manifest ?? '', resolution];
-    lines.push(`| ${cells.join(' | ')} |`);
+    lines.push(tableRow(cells));
   }
-  lines.push('', sectionsFor('session-statuses.md', ['## Row schema', '']).replace(BANNER, '').trim());
+  lines.push('', sectionsFor('session-statuses.md', ['## Row schema', ''], { level: 3 }).replace(BANNER, '').trim());
   return `${lines.join('\n')}\n`;
 }
 
@@ -210,22 +232,25 @@ function sessionFiles(): string {
   const header = [
     '# Session files reference',
     '',
-    'Structure of the files under `.migent/sessions/<id>/` and of every `events.jsonl` record. Objects are open: readers must ignore unknown fields.',
+    'Structure of the files under `.migent/sessions/<id>/` and of every `events.jsonl` record.',
+    'Objects are open: readers must ignore unknown fields.',
     '',
-    'Each entry has a stability class. `guaranteed`: a breaking change needs a major release, and a format change bumps `schema_version` and adds a union member. `known`: an opt-in description, never a guarantee.',
+    'Each entry has a stability class.',
+    '`guaranteed`: a breaking change needs a major release, and a format change bumps `schema_version` and adds a union member.',
+    '`known`: an opt-in description, never a guarantee.',
     '',
   ];
   const parts = [BANNER, ...header, '## Files', ''];
   for (const entry of SESSION_FILES) {
     const node = entry.schema as Node;
-    parts.push(section(node.$id as string, node, { from: file, extra: `Path: ${code(entry.path)}; class: ${entry.class}; framing: ${entry.framing}` }));
+    parts.push(section(node.$id as string, node, { from: file, level: 3, extra: `Path: ${code(entry.path)}; class: ${entry.class}; framing: ${entry.framing}` }));
   }
-  parts.push('## Events', '', 'One record schema per event name. Client events (`provider.*`, `verify.*` and the correction events) accept a current and a historical form.', '');
+  parts.push('## Events', '', 'One record schema per event name.', 'Client events (`provider.*`, `verify.*` and the correction events) accept a current and a historical form.', '');
   for (const entry of SESSION_EVENTS) {
     const node = entry.schema as Node;
-    parts.push(section(node.$id as string, node, { from: file, extra: `Event: ${code(entry.event)}; class: ${entry.class}` }));
+    parts.push(section(node.$id as string, node, { from: file, level: 3, extra: `Event: ${code(entry.event)}; class: ${entry.class}` }));
   }
-  return `${parts.join('\n')}\n`.replace(/\n{3,}/g, '\n\n');
+  return document(parts);
 }
 
 /** `{ "docs/reference/<file>.md": content }`. */

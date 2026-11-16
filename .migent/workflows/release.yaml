@@ -21,7 +21,7 @@ stages:
     max_revisions: 3
     ask: human
     instructions:
-      - Follow Prepare and Notes and review; draft the changelog locally without bumping versions, committing, pushing, or opening a PR.
+      - Follow Prepare and review; draft the changelog locally without bumping versions, committing, pushing, or opening a PR.
       - Confirm a proposed version with the human when none was named. Record the source commit and previous tag.
       - On revisions, apply review findings locally and preserve only expected release edits.
     artifacts: [release_notes]

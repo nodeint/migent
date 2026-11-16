@@ -59,7 +59,6 @@ The kernel resolves an agent to a `{client, model, options}` target through a
 registry lookup. A missing, unknown, unlisted (`client-not-found`), or ambiguous (`client-ambiguous`)
 client is a configuration error, not a silent fallback. `migent get clients` lists the available clients.
 
-
 ## Building and reading a turn
 
 `runCommand(input)` returns a `CommandSpec` with `argv` and optional `stdin`.
@@ -77,7 +76,6 @@ attested `model` text cannot complete a failed turn. Clients may read
 the last-message file when their protocol uses it. Progress is separate:
 `createEventParser()` returns a per-run function that consumes output lines and
 returns a normalized event or null. Stateful parsers must not leak state across runs.
-
 
 ## Sessions and interruption
 

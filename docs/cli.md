@@ -2,7 +2,9 @@
 
 Run commands from the configured project or any of its subdirectories.
 
-Generated tables: [exit codes](reference/exit-codes.md), [`--json` output fields](reference/cli-output.md), [environment variables](reference/env.md).
+Generated tables:
+[exit codes](reference/exit-codes.md), [`--json` output fields](reference/cli-output.md),
+[environment variables](reference/env.md).
 
 ## Session commands
 
@@ -99,7 +101,9 @@ A failed stage stays stopped. `session continue` runs that stage again.
 Exit 3 is `stage_failed`: the command stopped on that failure. A client quota
 is a failure like any other: Migent records `failure_reason: quota`, the reset
 time as `retry_at` (informational only), the known window as `quota_window`, and a
-`provider.quota` event. `failure.md` and `session watch`/`session show` list every stage whose latest execution failed on quota with its message, reset
+`provider.quota` event.
+`failure.md` and `session watch`/`session show` list every stage whose latest execution failed on quota with its
+message, reset
 time and window. Migent
 neither sleeps nor retries. Exit 8 is `quota` for `--once` and `--stage`; a
 full run reports a quota failure as exit 3. `session continue` runs the stage
@@ -282,36 +286,86 @@ they exit 2 and print this instruction.
 
 ## Authoring drafts
 
-```
+```text
 migent config validate|render|save <draft|-> [--scope project|local] [--format yaml|json] [--json]
 migent workflow validate|render|save <draft|-> [--target <file>.yaml | --session <id>] [--format yaml|json] [--json]
 migent {config|workflow} save ... [--base-hash <sha256>]
 migent {config|workflow} render|save ... [--preserve-comments]
 ```
 
-These check an unsaved draft with the rules the runtime uses. A config draft is merged with the other layer on disk; a companion layer that cannot be read adds its own diagnostic and the draft is still checked. A workflow draft is checked against the sibling workflows and the effective config.
+These check an unsaved draft with the rules the runtime uses. A config draft is merged with the other layer on disk;
+a companion layer that cannot be read adds its own diagnostic and the draft is still checked.
+A workflow draft is checked against the sibling workflows and the effective config.
 
-Validation reports every independent problem in the draft in one run, each with its own `path`. A failed field does not hide other fields or entries, and a problem in one stage does not produce follow-on errors from the checks that read it. A syntax error in the draft still stops validation at the first error.
+Validation reports every independent problem in the draft in one run, each with its own `path`.
+A failed field does not hide other fields or entries, and a problem in one stage does not produce follow-on errors from
+the checks that read it. A syntax error in the draft still stops validation at the first error.
 
-- `render` prints canonical YAML (`yaml` stringify, key order kept). `save` writes exactly those bytes. Without `--preserve-comments`, comments are not preserved; replacing a file that has comments adds a `comments-dropped` warning.
-- `save --preserve-comments` keeps the target's comments, key order, and line-ending style. When the draft's data equals the target's, the target's bytes are written back exactly, including whitespace, quoting, and the final newline. After an edit, comments on kept nodes and the order of kept keys survive while the serializer may normalize other formatting (blank lines, quoting, the final newline); keys absent from the draft are removed. When preservation is impossible (for example the target uses anchors, aliases, merge keys, or custom tags, or the result would not match the draft), the file is written in canonical form with a `comments-not-preserved` warning, plus `comments-dropped` when the old file had comments. The written data always equals the draft's data.
+- `render` prints canonical YAML (`yaml` stringify, key order kept). `save` writes exactly those bytes.
+  Without `--preserve-comments`, comments are not preserved;
+  replacing a file that has comments adds a `comments-dropped` warning.
+- `save --preserve-comments` keeps the target's comments, key order, and line-ending style.
+  When the draft's data equals the target's, the target's bytes are written back exactly, including whitespace, quoting,
+  and the final newline.
+  After an edit, comments on kept nodes and the order of kept keys survive while the serializer may normalize other
+  formatting (blank lines, quoting, the final newline); keys absent from the draft are removed.
+  When preservation is impossible (for example the target uses anchors, aliases, merge keys, or custom tags, or the
+  result would not match the draft), the file is written in canonical form with a `comments-not-preserved` warning, plus
+  `comments-dropped` when the old file had comments. The written data always equals the draft's data.
 - `render --preserve-comments` prints exactly the bytes `save --preserve-comments` would write to the same target.
-- `save` without `--base-hash` only creates a file (exclusive hard link; it never overwrites). With `--base-hash` the file must exist and its raw-byte SHA-256 must match, or the save is a `stale-base` conflict. Both run under a file lock. An editor that writes between the hash check and the rename can still be overwritten. With `--preserve-comments`, the hash is checked before rendering, so a stale base writes nothing.
+- `save` without `--base-hash` only creates a file (exclusive hard link; it never overwrites).
+  With `--base-hash` the file must exist and its raw-byte SHA-256 must match, or the save is a `stale-base` conflict.
+  Both run under a file lock. An editor that writes between the hash check and the rename can still be overwritten.
+  With `--preserve-comments`, the hash is checked before rendering, so a stale base writes nothing.
 - A local config draft must carry the current `schema_version`. `--preserve-comments` applies only to `render` and `save`.
-- Exit codes: 0 ok (warnings allowed), 1 invalid draft, 2 invocation or I/O error, 3 conflict (`stale-base`, `already-exists`, `session-locked`).
+- Exit codes:
+  0 ok (warnings allowed), 1 invalid draft, 2 invocation or I/O error, 3 conflict (`stale-base`, `already-exists`,
+  `session-locked`).
 
 ### Session drafts
 
-`workflow validate|render|save ... --session <id>` works on the editable `workflow.yaml` of an existing session instead of a project workflow. It excludes `--target`, applies to `workflow` only, and changes nothing without the flag. The destination is always `.migent/sessions/<id>/workflow.yaml`; a session is never created, and a missing draft is never created.
+`workflow validate|render|save ... --session <id>` works on the editable `workflow.yaml` of an existing session instead
+of a project workflow. It excludes `--target`, applies to `workflow` only, and changes nothing without the flag.
+The destination is always `.migent/sessions/<id>/workflow.yaml`;
+a session is never created, and a missing draft is never created.
 
-- The session must be a workflow session whose manifest records its own `workflow.yaml` as `workflow_path` (as `session prepare` does). An invalid id, an unknown session, a symlinked session directory or draft, a role session, a session that runs a project workflow file, and missing or corrupt manifest or status all exit 2 with a structured diagnostic (`invalid-session-id`, `session-not-found`, `session-not-workflow`, `session-source-unsupported`, `session-metadata-missing`, `session-metadata-corrupt`, `session-draft-missing`, `session-draft-invalid`). Nothing falls back to the project workflow or the frozen copy.
-- The draft is checked like a project draft (schema, document rules, live config bindings, all findings at once, source ranges), except that it is not a catalog entry: it may share its `id` with its project template without a `duplicate-id` finding, while its `downstream` and `requires` references are still checked against the project workflows. Its `id` must equal the session's recorded workflow id (`session-workflow-id-mismatch`, with the draft position). Diagnostics and `file` name `.migent/sessions/<id>/workflow.yaml`, with `draft: true`.
-- `render --preserve-comments` and `save --preserve-comments` use the session draft as the formatting base. Replacing the draft needs its current raw-byte `--base-hash`; without one the save is an `already-exists` conflict, and a stale hash is `stale-base`. A rejected save leaves the draft unchanged.
-- `save` takes the session lock before it reads session state and holds it through validation and the write. A held lock exits 3 with `session-locked`. `validate` and `render` are read-only: no lock, no repair, no freeze.
-- `save` accepts a `prepared` session, and a started session that is not `completed` or `cancelled`, has a `workflow.frozen.yaml`, and whose lock is free (`active`, `blocked`, `question`). A terminal session exits 2 with `session-terminal`; other states with `session-not-savable`. The persisted status alone never proves a session is stopped: the lock decides.
-- **Saving is not applying.** `save` writes only the draft and returns its new `hash`. It does not start or resume the session, rewrite `workflow.frozen.yaml`, touch the manifest, events, or executions, or change `.migent/workflows/`. A prepared session reads the draft at `session run --session <id>`. A started session keeps its freeze until `session continue <id> --refresh-workflow`.
-- `get workflow --session` and `doctor --session` report the effective workflow, which is the frozen copy once the session has started. They do not return the draft and its hash; use the hash returned by `save` (or the SHA-256 of the file's bytes) as the next `--base-hash`.
-- `--json` prints one envelope: `schema_version`, `command`, `valid`, `diagnostics`, and `rendered`, `file`, `hash`, `written` where they apply. Each diagnostic has `severity`, `code`, `message`, and optionally `source` (`project`, `local`, `effective`, `workflow`), `file`, `draft`, `path` (strings and list indices), `line`, `column`. A draft diagnostic whose `path` resolves in the draft text also carries `end_line` and `end_column`; both are one-based and the end is exclusive. A missing key, or a problem in a file other than the draft, has no position.
+- The session must be a workflow session whose manifest records its own `workflow.yaml` as `workflow_path` (as
+  `session prepare` does).
+  An invalid id, an unknown session, a symlinked session directory or draft, a role session, a session that runs a
+  project workflow file, and missing or corrupt manifest or status all exit 2 with a structured diagnostic
+  (`invalid-session-id`, `session-not-found`, `session-not-workflow`, `session-source-unsupported`,
+  `session-metadata-missing`, `session-metadata-corrupt`, `session-draft-missing`, `session-draft-invalid`).
+  Nothing falls back to the project workflow or the frozen copy.
+- The draft is checked like a project draft (schema, document rules, live config bindings, all findings at once, source
+  ranges), except that it is not a catalog entry:
+  it may share its `id` with its project template without a `duplicate-id` finding, while its `downstream` and
+  `requires` references are still checked against the project workflows.
+  Its `id` must equal the session's recorded workflow id (`session-workflow-id-mismatch`, with the draft position).
+  Diagnostics and `file` name `.migent/sessions/<id>/workflow.yaml`, with `draft: true`.
+- `render --preserve-comments` and `save --preserve-comments` use the session draft as the formatting base.
+  Replacing the draft needs its current raw-byte `--base-hash`;
+  without one the save is an `already-exists` conflict, and a stale hash is `stale-base`.
+  A rejected save leaves the draft unchanged.
+- `save` takes the session lock before it reads session state and holds it through validation and the write.
+  A held lock exits 3 with `session-locked`. `validate` and `render` are read-only: no lock, no repair, no freeze.
+- `save` accepts a `prepared` session, and a started session that is not `completed` or `cancelled`, has a
+  `workflow.frozen.yaml`, and whose lock is free (`active`, `blocked`, `question`).
+  A terminal session exits 2 with `session-terminal`; other states with `session-not-savable`.
+  The persisted status alone never proves a session is stopped: the lock decides.
+- **Saving is not applying.** `save` writes only the draft and returns its new `hash`.
+  It does not start or resume the session, rewrite `workflow.frozen.yaml`, touch the manifest, events, or executions, or
+  change `.migent/workflows/`. A prepared session reads the draft at `session run --session <id>`.
+  A started session keeps its freeze until `session continue <id> --refresh-workflow`.
+- `get workflow --session` and `doctor --session` report the effective workflow, which is the frozen copy once the
+  session has started. They do not return the draft and its hash;
+  use the hash returned by `save` (or the SHA-256 of the file's bytes) as the next `--base-hash`.
+- `--json` prints one envelope:
+  `schema_version`, `command`, `valid`, `diagnostics`, and `rendered`, `file`, `hash`, `written` where they apply.
+  Each diagnostic has `severity`, `code`, `message`, and optionally `source` (`project`, `local`, `effective`,
+  `workflow`), `file`, `draft`, `path` (strings and list indices), `line`, `column`.
+  A draft diagnostic whose `path` resolves in the draft text also carries `end_line` and `end_column`;
+  both are one-based and the end is exclusive.
+  A missing key, or a problem in a file other than the draft, has no position.
 
 ## Get
 
@@ -510,7 +564,8 @@ outdated config schema for a draft or live source.
 
 `doctor` checks that each configured model name exists by asking the client
 CLI for its model list. A missing name is a problem for `opencode`, `grok`, and
-`agy`, and a warning for other clients. An unreadable list is a warning. An agent without `client.type` is checked against the client
+`agy`, and a warning for other clients. An unreadable list is a warning.
+An agent without `client.type` is checked against the client
 Migent infers from its model; a model no client lists, or several clients list, is a configuration
 problem (exit 1). See [Agent configuration](agents.md#inferred-client).
 
@@ -622,7 +677,7 @@ process runs is never deleted: it is refused with `migent session cancel <id>`
 as the hint (`running-elsewhere` when the lock belongs to another machine). A
 stale lock does not count as running. Sessions are deleted one at a time; a
 failure is reported and the rest continue. The command ends with
-`Deleted N sessions, freed X.` and ` M failed.` when any failed.
+`Deleted N sessions, freed X.` and `M failed.` when any failed.
 
 Exit 0 when every planned session was deleted, and for `--dry-run`, a declined
 prompt, or an empty filter match. Exit 1 when a session failed to delete, or a
@@ -702,7 +757,8 @@ of the stage's executions. The JSON snapshot has the same data as an
 `exit_anomalies` array (`stage_id`, `execution_id`, `turn`, `exit_code`,
 `accepted`, `count`, `diagnostics`), omitted when empty. `diagnostics` is the
 session-relative `diagnostics.json` of that execution, or `null` when absent. See
-[Session metrics](session-metrics.md#provider-exit-anomalies) for the counters. For a schema 2 session it also prints, on stderr, any drift
+[Session metrics](session-metrics.md#client-exit-anomalies) for the counters.
+For a schema 2 session it also prints, on stderr, any drift
 between `status.json` and the fold of the session files. `session follow` prints
 that snapshot and then follows events until a signal. It merges `events.jsonl`
 with each execution's `stream.jsonl` in timestamp order. Item traces and

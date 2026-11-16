@@ -334,7 +334,6 @@ values, and values that are not strings, numbers or booleans are configuration e
 still work. Command-line option overrides apply after the resolved native
 option. Sessions freeze the resolved native options.
 
-
 `migent doctor` checks that the agent's model exists (see
 [cli.md](cli.md#model-availability)) and checks model effort against the
 selected client's supported values.

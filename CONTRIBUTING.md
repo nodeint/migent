@@ -60,11 +60,6 @@ pnpm lint:strict # zero warnings
 
 Append `-- <paths>` for scoped checks. See `scripts/wrappers/run-eslint.mjs`.
 
-## Issues
-
-Use `.github/ISSUE_TEMPLATE/`: `bug.yml` for bugfixes, `feature.yml` otherwise;
-labels follow Work types. Blank issues are disabled; write issues in English.
-
 ## Work types
 
 Choose one primary type per issue/branch. New types need this table and references
@@ -78,6 +73,11 @@ in the `checkout-issue` and `design` skills updated.
 | migration | Staged compatibility, data transformation, or cutover | `feat/<slug>` | None |
 | docs | Documentation only | `docs/<slug>` | None |
 | chore | Tooling, dependencies, or CI; no product behavior change | `chore/<slug>` | None |
+
+## Issues
+
+Use the `.github/ISSUE_TEMPLATE/` form matching the work type: `<type>.yml`; labels follow Work types.
+Blank issues are disabled; write issues in English.
 
 ## Branch and pull request rules
 
@@ -117,4 +117,4 @@ in the `checkout-issue` and `design` skills updated.
 - npm trusted publisher: `nodeint/migent`, workflow `release.yml`, empty environment,
   action `npm publish`; keep it aligned with workflow, repository, and `repository.url`.
 - Release commits contain only `CHANGELOG.md`, `packages/*/package.json`, and changed
-  `pnpm-lock.yaml`; never edit `packages/cli/src/version.ts` or `docs/backlogs.md` versions.
+  `pnpm-lock.yaml`; never edit `packages/cli/src/version.ts` versions.

@@ -21,7 +21,7 @@ Configuration, authoring, migration, outputs, selection, and process execution f
 ## Key symbols
 
 | Symbol | File | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `CliClient`, `CommandSpec` types | `src/cli-client.ts` | Client adapter contract |
 | `loadAgentTarget`, `configPath`, `LOCAL_CONFIG_FILE` | `src/config.ts` | Config resolution |
 | `migrateConfig`, `migrateWorkflow` | `src/migration.ts` | Schema migration |

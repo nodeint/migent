@@ -14,7 +14,7 @@ Contracts: [docs/adpaters.md](../../docs/adpaters.md).
 ## Key symbols
 
 | Symbol | File | Purpose |
-|---|---|---|
+| --- | --- | --- |
 | `createClient`, `clientIds` | `src/clients/registry.ts` | Client registry |
 | `ClaudeCodeClient`, `CodexClient`, `GrokClient`, `OpencodeClient`, `AgyClient` | `src/clients/` | Clients |
 | `ModelCatalog` | `src/catalog.ts` | Model discovery |

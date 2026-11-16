@@ -6,56 +6,114 @@
 
 ### Breaking
 
-- Migent no longer writes or reads the session-level `questions.json`; old files stay as they are and the `SessionQuestions` schema stays published as historical. Migrate by reading pending questions from `status.json` or `migent session show --json`, each asked batch from `executions/<id>/questions.json`, and answers from `executions/<id>/input.json`. ([#146](https://github.com/nodeint/migent/pull/146))
+- Migent no longer writes or reads the session-level `questions.json`;
+  old files stay as they are and the `SessionQuestions` schema stays published as historical.
+  Migrate by reading pending questions from `status.json` or `migent session show --json`, each asked batch from
+  `executions/<id>/questions.json`, and answers from `executions/<id>/input.json`.
+  ([#146](https://github.com/nodeint/migent/pull/146))
 
 ### Added
 
-- `executions/<id>/input.json` records the human input an attempt opened with: what the agent received, what the human typed, and structured answers. Replies to a blocked stage add `data.reply` to its `session.active` resume event, and replies to a cancelled stage add `data.origin` (`human` or `cut_off`). ([#146](https://github.com/nodeint/migent/pull/146))
-- TypeBox schemas, generated JSON Schema and a [reference page](https://github.com/nodeint/migent/blob/main/docs/reference/session-files.md) for the session files and every `events.jsonl` event, a typebox-free `@nodeint/migent-contracts/data` subpath. ([#144](https://github.com/nodeint/migent/pull/144))
-- `migent session delete` removes stopped sessions by ID or by `--older-than` and `--status` filters, with `--dry-run`, `--yes`, and `--json`. It never deletes a running session, and a deleted numeric ID is never reissued ([CLI](https://github.com/nodeint/migent/blob/main/docs/cli.md#inspect-sessions)). ([#139](https://github.com/nodeint/migent/pull/139))
+- `executions/<id>/input.json` records the human input an attempt opened with:
+  what the agent received, what the human typed, and structured answers.
+  Replies to a blocked stage add `data.reply` to its `session.active` resume event, and replies to a cancelled stage add
+  `data.origin` (`human` or `cut_off`). ([#146](https://github.com/nodeint/migent/pull/146))
+- TypeBox schemas, generated JSON Schema and a
+  [reference page](https://github.com/nodeint/migent/blob/main/docs/reference/session-files.md) for the session files
+  and every `events.jsonl` event, a typebox-free `@nodeint/migent-contracts/data` subpath.
+  ([#144](https://github.com/nodeint/migent/pull/144))
+- `migent session delete` removes stopped sessions by ID or by `--older-than` and `--status` filters, with `--dry-run`,
+  `--yes`, and `--json`.
+  It never deletes a running session, and a deleted numeric ID is never reissued
+  ([CLI](https://github.com/nodeint/migent/blob/main/docs/cli.md#inspect-sessions)).
+  ([#139](https://github.com/nodeint/migent/pull/139))
 
 ## 0.7.0
 
 ### Added
 
-- Once the prompt cache has expired, a resumed role can ask, start fresh or resume anyway. Define a `resume_policies` entry with `cache_ttl`, then set `resume_policy` on an agent or let `default` apply; answer a pending `ask` with `migent session resume <session> <decision>` ([configuration](https://github.com/nodeint/migent/blob/main/docs/agents.md#resume-policies)). ([#135](https://github.com/nodeint/migent/pull/135))
+- Once the prompt cache has expired, a resumed role can ask, start fresh or resume anyway.
+  Define a `resume_policies` entry with `cache_ttl`, then set `resume_policy` on an agent or let `default` apply;
+  answer a pending `ask` with `migent session resume <session> <decision>`
+  ([configuration](https://github.com/nodeint/migent/blob/main/docs/agents.md#resume-policies)).
+  ([#135](https://github.com/nodeint/migent/pull/135))
 
 ## 0.6.0
 
 ### Breaking
 
-- `migent init` now takes agents from the project template, and the per-role flags (`--planner-*`, `--reviewer-*`, `--developer-*`, `--client`, `--model`, `--effort`, `--option`, `--*provider`) are rejected. Use `--agent NAME=CLIENT:MODEL`, `--agent-effort NAME=EFFORT` and `--agent-option NAME:KEY=VALUE` with the names `planning`, `review` and `coding`, e.g. `--agent planning=codex:gpt-5`. ([#128](https://github.com/nodeint/migent/pull/128))
-- Stage `verify` commands now run in cmd.exe (`%ComSpec%`) on Windows instead of `sh`; other systems still use `/bin/sh`. On Windows, rewrite POSIX-only `verify` commands (`&&` chains with `$VAR`, `test`, `grep`, `rm`) in cmd.exe syntax or call a script that works there, e.g. `node scripts/check.mjs`. ([#127](https://github.com/nodeint/migent/pull/127))
+- `migent init` now takes agents from the project template, and the per-role flags (`--planner-*`, `--reviewer-*`,
+  `--developer-*`, `--client`, `--model`, `--effort`, `--option`, `--*provider`) are rejected.
+  Use `--agent NAME=CLIENT:MODEL`, `--agent-effort NAME=EFFORT` and `--agent-option NAME:KEY=VALUE` with the names
+  `planning`, `review` and `coding`, e.g. `--agent planning=codex:gpt-5`.
+  ([#128](https://github.com/nodeint/migent/pull/128))
+- Stage `verify` commands now run in cmd.exe (`%ComSpec%`) on Windows instead of `sh`;
+  other systems still use `/bin/sh`.
+  On Windows, rewrite POSIX-only `verify` commands (`&&` chains with `$VAR`, `test`, `grep`, `rm`) in cmd.exe syntax or
+  call a script that works there, e.g. `node scripts/check.mjs`. ([#127](https://github.com/nodeint/migent/pull/127))
 
 ### Changed
 
-- The generated project has an `agents` section (`planning`, `review`, `coding`) that roles refer to by name; `planner` is renamed `architect` and a new `operator` role shares `coding` with `developer`. Existing projects are unchanged. ([#128](https://github.com/nodeint/migent/pull/128))
-- For `agy`, `claude-code`, `grok` and `opencode`, valid options now come from the installed CLI's headless help, and `migent doctor`, `migent init` and the agent commands report `option-unknown`, `option-value-invalid`, `option-conflict` and `option-unverified`. Offline checks only refuse flags Migent sets itself, so a wrong option value reaches the client CLI unless doctor ran first. ([#124](https://github.com/nodeint/migent/pull/124))
+- The generated project has an `agents` section (`planning`, `review`, `coding`) that roles refer to by name;
+  `planner` is renamed `architect` and a new `operator` role shares `coding` with `developer`.
+  Existing projects are unchanged. ([#128](https://github.com/nodeint/migent/pull/128))
+- For `agy`, `claude-code`, `grok` and `opencode`, valid options now come from the installed CLI's headless help, and
+  `migent doctor`, `migent init` and the agent commands report `option-unknown`, `option-value-invalid`,
+  `option-conflict` and `option-unverified`.
+  Offline checks only refuse flags Migent sets itself, so a wrong option value reaches the client CLI unless doctor ran
+  first. ([#124](https://github.com/nodeint/migent/pull/124))
 
 ### Fixed
 
-- A Claude Code role can set any option `claude -p --help` lists, such as `autocompact: 200000`, and pass `migent doctor`. Numbers and booleans in YAML option values are stored as strings. ([#124](https://github.com/nodeint/migent/pull/124))
-- Windows no longer needs Git Bash's `sh` on `PATH` to run `verify` commands, which previously failed with "Unable to start the verify shell". ([#127](https://github.com/nodeint/migent/pull/127))
+- A Claude Code role can set any option `claude -p --help` lists, such as `autocompact: 200000`, and pass
+  `migent doctor`. Numbers and booleans in YAML option values are stored as strings.
+  ([#124](https://github.com/nodeint/migent/pull/124))
+- Windows no longer needs Git Bash's `sh` on `PATH` to run `verify` commands, which previously failed with "Unable to
+  start the verify shell". ([#127](https://github.com/nodeint/migent/pull/127))
 
 ## 0.5.6
 
 ### Added
 
-- `migent session rename <session> "<title>"` changes a session's display title at any time, including during a live run. It writes only `title.json`; the task, events, and status are untouched, and `session list`, `show`, and `follow` show the new title at once. `--json` prints `{session_id, title, previous_title}`.
+- `migent session rename <session> "<title>"` changes a session's display title at any time, including during a live
+  run. It writes only `title.json`;
+  the task, events, and status are untouched, and `session list`, `show`, and `follow` show the new title at once.
+  `--json` prints `{session_id, title, previous_title}`.
 
 ### Changed
 
-- New sessions get short incrementing numeric ids (`1`, `2`, `3`, …) instead of UUIDs: the next id is the highest numeric session directory name plus one, starting at `1`. Sessions written by earlier versions (UUID, timestamp or `session_<hex>` ids) keep working unchanged and do not affect numbering. `session_id` and `prior_session_id` are now written as quoted strings in `manifest.yaml`, and the manifest reader also accepts an unquoted integer. A role run without a session id (library use) now also gets a numeric id.
+- New sessions get short incrementing numeric ids (`1`, `2`, `3`, …) instead of UUIDs:
+  the next id is the highest numeric session directory name plus one, starting at `1`.
+  Sessions written by earlier versions (UUID, timestamp or `session_<hex>` ids) keep working unchanged and do not affect
+  numbering.
+  `session_id` and `prior_session_id` are now written as quoted strings in `manifest.yaml`, and the manifest reader also
+  accepts an unquoted integer. A role run without a session id (library use) now also gets a numeric id.
 
 ## 0.5.5
 
 ### Added
 
-- Stage replies that the agent can fix get one correction turn per failure kind instead of failing at once: a response-contract violation, a missing or empty required artifact or completion output, and an unusable question file. Exhausted corrections fail the stage with `response_contract_invalid`, `stage_output_missing` or `question_file_invalid`. `execution.json` records them under `corrections`; older `question_correction` entries are still read. New events: `response.contract_invalid`, `stage.output_missing`.
+- Stage replies that the agent can fix get one correction turn per failure kind instead of failing at once:
+  a response-contract violation, a missing or empty required artifact or completion output, and an unusable question
+  file.
+  Exhausted corrections fail the stage with `response_contract_invalid`, `stage_output_missing` or
+  `question_file_invalid`. `execution.json` records them under `corrections`;
+  older `question_correction` entries are still read. New events: `response.contract_invalid`, `stage.output_missing`.
 
 ### Changed
 
-- **Response protocol 3.** A stage now reports its outcome (`complete`, `blocked` or `question`) by writing one JSON file, `handoff.json`, in its execution directory, instead of `status:`/`decision:`/`blocker:` header lines plus a separate `question-request.json`. The response text is a free-form report. An unusable handoff (missing, empty, not JSON, not matching the schema, a decision the stage does not allow, or a question on a stage without `ask: human`) gets one correction turn, recorded as `corrections.handoff`, then fails with `handoff_file_invalid`. New event: `handoff.file_invalid`. The handoff document's JSON Schema is published as `HandoffDocument` in `@nodeint/migent-contracts`. A conversation keeps the protocol it started with: existing sessions finish their conversations on protocol 2 (headers and `question-request.json`, with the earlier corrections), and `execution.json` records `response_protocol`. Only a stage that starts with no source execution uses protocol 3. Custom clients and scripts that fake a stage reply must now write `handoff.json`.
+- **Response protocol 3.** A stage now reports its outcome (`complete`, `blocked` or `question`) by writing one JSON
+  file, `handoff.json`, in its execution directory, instead of `status:`/`decision:`/`blocker:` header lines plus a
+  separate `question-request.json`. The response text is a free-form report.
+  An unusable handoff (missing, empty, not JSON, not matching the schema, a decision the stage does not allow, or a
+  question on a stage without `ask: human`) gets one correction turn, recorded as `corrections.handoff`, then fails with
+  `handoff_file_invalid`. New event: `handoff.file_invalid`.
+  The handoff document's JSON Schema is published as `HandoffDocument` in `@nodeint/migent-contracts`.
+  A conversation keeps the protocol it started with:
+  existing sessions finish their conversations on protocol 2 (headers and `question-request.json`, with the earlier
+  corrections), and `execution.json` records `response_protocol`.
+  Only a stage that starts with no source execution uses protocol 3.
+  Custom clients and scripts that fake a stage reply must now write `handoff.json`.
 - The missing-status error lists every status the stage allows, including `question` when the stage has `ask: human`.
 
 ## Older versions
