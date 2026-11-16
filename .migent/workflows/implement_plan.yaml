@@ -28,7 +28,7 @@ stages:
       - Include the phase's rules and enforcement, run its Verify commands, and record the fields in the phase_report artifact description.
     artifacts: [phase_report]
     verify:
-      - pnpm lint:strict
+      - pnpm lint
       - pnpm test:unit
       - pnpm build
       - pnpm test:integration

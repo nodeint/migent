@@ -5,19 +5,32 @@ description: Write and validate TypeScript against repository ESLint rules.
 
 # ESLint
 
-## Steps
+Run commands from the repository root.
 
-1. Read contribution rules, package scripts, ESLint config, and the lint wrapper.
-   Determine the package manager, working directory, target syntax, and strict command.
-   Do not assume wrappers forward arguments unchanged; ask if required commands
-   or prerequisites cannot be established.
-2. Select the requested TypeScript files or their owning directories. For implementation
-   work, lint after editing.
-3. Run the strict command on that scope, treating warnings as failures. Record the
-   command, paths, and result. Follow repository stop rules when it fails.
-4. When edits are authorized and continuation is permitted, fix violations or run
-   supported automatic fixes. Inspect the diff; do not weaken config or suppress
-   findings merely to pass.
-5. Rerun strict verification on the same scope after fixes.
-6. Report commands, target paths, results, and anything unverified. Claim strict
-   verification passed only when it ran successfully for the requested scope.
+## Commands
+
+Apply ESLint's supported automatic fixes when the task authorizes file changes:
+
+```bash
+pnpm lint:fix -- <paths>
+```
+
+Verify selected files or directories with warnings treated as failures:
+
+```bash
+pnpm lint -- <paths>
+```
+
+Arguments after `--` go to ESLint:
+
+- Paths are files or directories; ignored paths are skipped without a warning.
+- Flags pass through unchanged. Give a flag's value with `=`, for example `pnpm lint -- --format=json <paths>`;
+  a separate value is read as a path.
+
+Omit `<paths>` to run any command against the repository.
+For a scoped task, pass the changed `.ts` and `.tsx` files or their owning directories.
+
+## Handoff
+
+When a command fails, use its reported rule IDs and file locations to correct the source, then rerun the same command.
+

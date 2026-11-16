@@ -7,7 +7,8 @@ import { type HumanInput, type QuestionAnswerRecord, SessionStore, watchSnapshot
 
 import { formatResumeDecision, printNotice } from '../display.js';
 import { EXIT_RESUME_EXPIRED } from '../exits.js';
-import type { AgentProfile, ContinueState } from './agent.js';
+import type { AgentProfile } from './agent.js';
+import type { ContinueState } from './agent-continue.js';
 
 export type RoleGate = { verdict: 'resume' | 'fresh' | 'ask'; stamp: RolePolicy | null; skipped: { source_execution_id: string; reason: 'expired' } | null };
 

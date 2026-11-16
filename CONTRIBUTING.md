@@ -53,9 +53,8 @@ pnpm test             # both; focused: pnpm vitest run <file> [-t "<name>"]
 ## Lint
 
 ```bash
-pnpm lint        # inspect
-pnpm lint:fix    # automatic fixes
-pnpm lint:strict # zero warnings
+pnpm lint:fix    # automatic fixes; fails on remaining warnings
+pnpm lint        # inspect; fails on any warning
 ```
 
 Append `-- <paths>` for scoped checks. See `scripts/wrappers/run-eslint.mjs`.

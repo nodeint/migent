@@ -17,7 +17,7 @@ stages:
       - With a plan, implement its phases in order and report each outcome.
     artifacts: [implement_summary]
     verify:
-      - pnpm lint:strict
+      - pnpm lint
       - pnpm test:unit
       - pnpm build
       - pnpm test:integration

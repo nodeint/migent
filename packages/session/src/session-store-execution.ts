@@ -2,7 +2,7 @@
 import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 
-import type { ExecutionStatus } from '@nodeint/migent-contracts';
+import { EXECUTION_INPUT_SCHEMA_VERSION, type ExecutionStatus } from '@nodeint/migent-contracts';
 import type { StageOutcome } from '@nodeint/migent-kernel';
 import {
   EXECUTION_SCHEMA_VERSION,
@@ -18,7 +18,7 @@ import { ORDER_PAD_WIDTH, TURN_PAD_WIDTH } from './constants.js';
 import { appendLifecycleEvent } from './session-events.js';
 import { quotedSessionId } from './session-id.js';
 import type { PlannedExecutionSave } from './session-ledger.js';
-import { ExecutionContext, type SkipDetails } from './session-store-types.js';
+import { ExecutionContext, type HumanInput, type SkipDetails } from './session-store-types.js';
 
 /** Inputs for the events, fold, and sealing that follow a final execution file. */
 export interface FinishExecutionSaveInput {
@@ -253,5 +253,20 @@ export function writeStartedExecution(
     client,
     model,
     resumes_execution_id: resumesExecutionId,
+  });
+}
+
+/** Records the human input a turn carries; written before execution.json. */
+export function writeExecutionInput(context: ExecutionContext, stageId: string, human: HumanInput): void {
+  writeJsonAtomic(path.join(context.directory, 'input.json'), {
+    schema_version: EXECUTION_INPUT_SCHEMA_VERSION,
+    execution_id: context.executionId,
+    stage_id: stageId,
+    kind: human.kind,
+    responds_to_execution_id: human.respondsToExecutionId,
+    recorded_at: utcNow(),
+    sent: human.sent,
+    input: human.input,
+    ...(human.answers ? { answers: human.answers } : {}),
   });
 }

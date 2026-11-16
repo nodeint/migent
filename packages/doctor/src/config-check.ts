@@ -168,19 +168,23 @@ function reportEffortCheck(ctx: AnalysisContext, entry: AgentEntry, effortCheck:
   }
 }
 
+/** A model the environment rejects drops its effort, so the index verdict on `effort` no longer applies. */
+function definitionToLoad(
+  definition: unknown,
+  effortCheck: ModelEffortCheck | undefined,
+  structure: StructuralIndex | undefined,
+): { definition: unknown; verdicts: StructuralIndex | undefined } {
+  if (!effortCheck?.problem || !isRecord(definition)) return { definition, verdicts: structure };
+  const { effort, ...rest } = definition;
+  return { definition: rest, verdicts: undefined };
+}
+
 /** Loads one agent definition and reports a binding failure; returns the client's executable when it binds. */
 function checkAgentEntry(ctx: AnalysisContext, entry: AgentEntry): { client: string; command: string } | null {
-  const { clients, structure, error, fromError } = ctx;
+  const { clients, error, fromError } = ctx;
   const effortCheck = ctx.effortChecks[entry.key];
   reportEffortCheck(ctx, entry, effortCheck);
-  let definition = entry.value;
-  // A model the environment rejects drops its effort, so the index verdict on `effort` no longer applies.
-  let verdicts: StructuralIndex | undefined = structure;
-  if (effortCheck?.problem && isRecord(definition)) {
-    const { effort, ...rest } = definition;
-    definition = rest;
-    verdicts = undefined;
-  }
+  const { definition, verdicts } = definitionToLoad(entry.value, effortCheck, ctx.structure);
   let target;
   try {
     target = loadAgentDefinition(
@@ -202,7 +206,7 @@ function checkAgentEntry(ctx: AnalysisContext, entry: AgentEntry): { client: str
     );
   }
   if (bound.client !== undefined && bound.failure === undefined) {
-    reportNativeOptions(ctx, bound.client, target.options, [...entry.path, 'client', 'options']);
+    reportNativeOptions(ctx, { client: bound.client, options: target.options, path: [...entry.path, 'client', 'options'] });
   }
   return bound.client === undefined ? null : { client: target.client, command: bound.client.command };
 }
@@ -210,10 +214,13 @@ function checkAgentEntry(ctx: AnalysisContext, entry: AgentEntry): { client: str
 /** Reports what the client's help says about the effective options of one agent or role. */
 function reportNativeOptions(
   ctx: AnalysisContext,
-  client: Parameters<typeof analyzeNativeOptions>[0],
-  options: Readonly<Record<string, string>>,
-  path: readonly (string | number)[],
+  target: {
+    client: Parameters<typeof analyzeNativeOptions>[0];
+    options: Readonly<Record<string, string>>;
+    path: readonly (string | number)[];
+  },
 ): void {
+  const { client, options, path } = target;
   for (const finding of analyzeNativeOptions(client, options, ctx.nativeOptionFacts)) {
     // A role that resolves to an analyzed agent repeats its findings: one root cause, one message.
     if (ctx.diagnostics.items.some((item) => item.code === finding.code && item.message === finding.message)) continue;
@@ -251,14 +258,9 @@ interface RoleCheck {
 
 /** Checks one role: its cascade, responsibilities, description and client binding. */
 function checkRole(ctx: AnalysisContext, roleKey: string, role: unknown): RoleCheck {
-  const { config, clients, effortChecks, structure, unmapped, fromError } = ctx;
-  const roleAgent = isRecord(role) ? role.agent : undefined;
-  if (typeof roleAgent === 'string' && unmapped.has(roleAgent)) return { known: true, description: null };
-  if (typeof roleAgent === 'string' && effortChecks[roleAgent]?.problem) {
-    try { loadRoleResponsibilities(config, roleKey, structure); loadRoleDescription(config, roleKey, structure); } catch (caught) { fromError(caught, ['roles', roleKey]); }
-    return { known: false, description: null };
-  }
-  if (effortChecks[`roles.${roleKey}.agent`]?.problem) return { known: false, description: null };
+  const { config, clients, structure, fromError } = ctx;
+  const skipped = skippedRoleCheck(ctx, roleKey, role);
+  if (skipped !== null) return skipped;
   let resolved;
   let description: string | null;
   try {
@@ -272,9 +274,22 @@ function checkRole(ctx: AnalysisContext, roleKey: string, role: unknown): RoleCh
   const bound = resolveEffectiveClient(clients, resolved);
   reportRoleBinding(ctx, roleKey, bound);
   if (bound.client !== undefined && bound.failure === undefined) {
-    reportNativeOptions(ctx, bound.client, resolved.options, ['roles', roleKey, 'options']);
+    reportNativeOptions(ctx, { client: bound.client, options: resolved.options, path: ['roles', roleKey, 'options'] });
   }
   return { known: true, description };
+}
+
+/** A role on an unmapped agent counts as known; a role whose model the environment rejects is not bound. */
+function skippedRoleCheck(ctx: AnalysisContext, roleKey: string, role: unknown): RoleCheck | null {
+  const { config, effortChecks, structure, unmapped, fromError } = ctx;
+  const roleAgent = isRecord(role) ? role.agent : undefined;
+  if (typeof roleAgent === 'string' && unmapped.has(roleAgent)) return { known: true, description: null };
+  if (typeof roleAgent === 'string' && effortChecks[roleAgent]?.problem) {
+    try { loadRoleResponsibilities(config, roleKey, structure); loadRoleDescription(config, roleKey, structure); } catch (caught) { fromError(caught, ['roles', roleKey]); }
+    return { known: false, description: null };
+  }
+  if (effortChecks[`roles.${roleKey}.agent`]?.problem) return { known: false, description: null };
+  return null;
 }
 
 function reportRoleBinding(
@@ -329,9 +344,9 @@ export interface ConfigCheckResult {
 export function checkConfig(
   workspace: string,
   clients: ClientRegistry,
-  effortChecks: Readonly<Record<string, ModelEffortCheck>>,
-  nativeOptionFacts?: NativeOptionFacts,
+  facts: { effortChecks: Readonly<Record<string, ModelEffortCheck>>; nativeOptionFacts?: NativeOptionFacts },
 ): ConfigCheckResult {
+  const { effortChecks, nativeOptionFacts } = facts;
   let merged;
   try {
     merged = loadMergedConfig(workspace);

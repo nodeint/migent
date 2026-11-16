@@ -3,8 +3,8 @@ import path from 'node:path';
 
 import { RoleRunResult, RoleRunResults } from '@nodeint/migent-contracts';
 import { AgentToolRunner, type RunResult } from '@nodeint/migent-engine';
-import { buildStageReplyPrompt, CancellationRequested, ConfigurationError, legacyClientOf, log, resolveRoleTarget, type TurnKind } from '@nodeint/migent-kernel';
-import { createAgentSession, type HumanInput, isSessionLockLost, type QuestionAnswerRecord, repairSessionUnlocked, requireAgentSession, SessionLock, SessionStore, stringOptions } from '@nodeint/migent-session';
+import { CancellationRequested, ConfigurationError, legacyClientOf, log, resolveRoleTarget } from '@nodeint/migent-kernel';
+import { createAgentSession, type HumanInput, isSessionLockLost, repairSessionUnlocked, requireAgentSession, SessionLock, SessionStore, stringOptions } from '@nodeint/migent-session';
 import { type OptionValues } from 'commander';
 
 import { clientRegistry, parseOptions } from '../client.js';
@@ -16,7 +16,8 @@ import { requireCurrentSchema } from '../migrate.js';
 import { bindCancellationSignals } from '../signals.js';
 import { optionalText, stringList } from '../text.js';
 import { findWorkspace, invocationCwdPath, resolvePrompt } from '../workspace.js';
-import { answersInput, freshRolePrompt, gateRole, judgeRoleCancelled, newRolePolicy, recordAnswer, replyInput, resumeSource, rolePrompt, roleResumeExpired, runFreshAttempt } from './agent-resume.js';
+import { continueState, continueTurn } from './agent-continue.js';
+import { answersInput, freshRolePrompt, gateRole, judgeRoleCancelled, newRolePolicy, recordAnswer, resumeSource, rolePrompt, roleResumeExpired, runFreshAttempt } from './agent-resume.js';
 
 export const CLIENT_MAPPING = 'claude→claude-code, codex→codex, grok→grok, agy→agy, opencode→opencode';
 
@@ -199,16 +200,6 @@ export async function continueAgent(
   return withSessionLock(workspace, args.sessionId, (lock) => continueLocked(workspace, args, lock));
 }
 
-export type ContinueState = {
-  role: string;
-  sessionStatus: string;
-  cancelledReply: { executionId: string; text: string; human: HumanInput | null } | null;
-  pending: { executionId: string } | undefined;
-  reply: string | null;
-  /** The saved answer when the reply answers a question that was answered before this run. */
-  savedAnswer: QuestionAnswerRecord | null;
-};
-
 async function continueLocked(
   workspace: string,
   args: { sessionId: string; reply: string | null; runner?: AgentToolRunner | null },
@@ -261,108 +252,6 @@ async function continueLocked(
     printAgent({ ...result }, { role: role, client: profile.client, model: profile.model }, workspace);
     return finishRole(args.sessionId, roleExitCode(result.outcome_status));
   });
-}
-
-function continueState(store: SessionStore, sessionId: string, explicitReply: string | null): ContinueState {
-  const status = store.readSessionStatus(sessionId);
-  let sessionStatus = typeof status.status === 'string' ? status.status : '';
-  const role = typeof status.role === 'string' ? status.role : '';
-  if (role === '') throw new ConfigurationError(`Session ${sessionId} has no role.`);
-  // A reply to a stopped turn supersedes it: the cancelled execution stays cancelled
-  // and the reply runs as a new turn.
-  let cancelledReply: ContinueState['cancelledReply'] = null;
-  const pendingCancelled = store.pendingCancelledReply(sessionId, role);
-  if (explicitReply !== null && (sessionStatus === 'cancelled' || pendingCancelled !== null)) {
-    const target = store.cancelledStages(sessionId).find((row) => row.stageId === role);
-    if (!target) throw new ConfigurationError(`Session ${sessionId} has no cancelled execution to reply to.`);
-    store.supersedeCancelled(sessionId, role, { text: explicitReply, origin: 'human' });
-    cancelledReply = {
-      executionId: target.executionId, text: explicitReply, human: replyInput(explicitReply, target.executionId),
-    };
-  } else if (pendingCancelled !== null) {
-    // Cut-off text and replies saved before origin existed are re-sent but are not human input.
-    const human = pendingCancelled.origin === 'human' ? replyInput(pendingCancelled.reply, pendingCancelled.executionId) : null;
-    cancelledReply = { executionId: pendingCancelled.executionId, text: pendingCancelled.reply, human };
-  }
-  if (cancelledReply !== null) sessionStatus = 'active';
-  if (sessionStatus === 'completed' && explicitReply === null) {
-    return { role, sessionStatus, cancelledReply, pending: undefined, reply: null, savedAnswer: null };
-  }
-  const pending = cancelledReply === null
-    ? store.questionStages(sessionId).find((row) => row.stageId === role)
-    : undefined;
-  const savedAnswer = explicitReply === null && pending ? store.questionAnswer(sessionId, pending.executionId) : null;
-  const reply = explicitReply ?? savedAnswer?.formatted ?? null;
-  return { role, sessionStatus, cancelledReply, pending, reply, savedAnswer };
-}
-
-function continueTurn(
-  context: {
-    workspace: string;
-    store: SessionStore;
-    sessionId: string;
-    explicitReply: string | null;
-    /** The saved answer, when `recordAnswer` already saved it. */
-    recordedAnswer?: QuestionAnswerRecord | null;
-  },
-  state: ContinueState,
-  latest: { executionId: string; directory: string },
-): { prompt: string; turn: TurnKind | null; resumeId: string; human: HumanInput | null } {
-  const { workspace, store, sessionId } = context;
-  const { role, sessionStatus, cancelledReply, pending, reply } = state;
-  if (cancelledReply !== null) {
-    log(`session ${sessionId} was stopped during ${cancelledReply.executionId}. Sending your reply to ${role}.`);
-    const prompt = rolePrompt(workspace, role, buildStageReplyPrompt(cancelledReply.text, { interrupted: true }));
-    return { prompt, turn: 'reply', resumeId: cancelledReply.executionId, human: cancelledReply.human };
-  }
-  if (reply !== null) {
-    if (sessionStatus === 'blocked') resumeBlockedWithReply(context, role, reply);
-    const answers = pending !== undefined && context.explicitReply !== null;
-    const saved = answers ? (context.recordedAnswer ?? store.resumeQuestion(sessionId, role, reply)) : null;
-    // A saved answer recovered with no explicit reply is a reply of the human's too.
-    const answered = saved ?? state.savedAnswer;
-    const text = saved?.formatted ?? reply;
-    const prompt = rolePrompt(workspace, role, buildStageReplyPrompt(text, { answers }));
-    const human = answered ? answersInput(answered) : replyInput(reply, latest.executionId);
-    return { prompt, turn: answers ? 'answers' : 'reply', resumeId: latest.executionId, human };
-  }
-  if (sessionStatus === 'blocked') {
-    return { prompt: blockedPrompt(context, role, latest), turn: 'continue', resumeId: latest.executionId, human: null };
-  }
-  if (sessionStatus === 'active') {
-    log(`session ${sessionId} is active. Resuming ${role} with its last prompt.`);
-    const prompt = lastUserPrompt(workspace, sessionId, latest.executionId);
-    return { prompt, turn: null, resumeId: latest.executionId, human: null };
-  }
-  throw new ConfigurationError(`Session ${sessionId} is ${sessionStatus || 'unknown'}.`);
-}
-
-/** A reply to a blocked turn reactivates the session first, so the reply turn can be created and recorded. */
-function resumeBlockedWithReply(
-  context: { store: SessionStore; sessionId: string },
-  role: string,
-  reply: string,
-): void {
-  for (const item of context.store.resumeBlockedSession(context.sessionId, role, reply)) {
-    log(`session ${context.sessionId} was blocked by ${item.executionId}. Sending your reply to ${role}.`);
-  }
-}
-
-function blockedPrompt(
-  context: { workspace: string; store: SessionStore; sessionId: string },
-  role: string,
-  latest: { executionId: string; directory: string },
-): string {
-  const { workspace, store, sessionId } = context;
-  const blocker = executionBlocker(latest.directory);
-  const resumed = store.resumeBlockedSession(sessionId);
-  for (const item of resumed) {
-    log(`session ${sessionId} was blocked by ${item.executionId}. Resuming ${role}.`);
-  }
-  const lines = ['Previous attempt:', `- execution: ${latest.executionId}`];
-  if (blocker) lines.push(`- blocker: ${blocker}`);
-  lines.push('That attempt ended blocked. The blocker was handled outside this session. Continue.');
-  return rolePrompt(workspace, role, lines.join('\n'));
 }
 
 /**
@@ -429,22 +318,6 @@ async function runCancelledRole(
   return typeof finished === 'number' ? finished : reportRoleResults({ workspace, sessionId }, finished, spec);
 }
 
-function lastUserPrompt(workspace: string, sessionId: string, executionId: string): string {
-  const context = new SessionStore(workspace).executionContext(sessionId, executionId);
-  if (context === null) throw new ConfigurationError(`Execution ${executionId} was not found.`);
-  const raw = JSON.parse(readFileSync(context.conversationReadPath, 'utf8')) as unknown;
-  let history: unknown[] = [];
-  if (Array.isArray(raw)) history = raw;
-  else if (isRecord(raw) && Array.isArray(raw.history)) history = raw.history;
-  for (let index = history.length - 1; index >= 0; index -= 1) {
-    const entry = history[index];
-    if (isRecord(entry) && entry.role === 'user' && typeof entry.content === 'string' && entry.content !== '') {
-      return entry.content;
-    }
-  }
-  throw new ConfigurationError(`Execution ${executionId} has no prompt to resume.`);
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -473,16 +346,6 @@ function executionProfile(directory: string, executionId: string): AgentProfile 
 function roleExitCode(status: unknown): number {
   if (status === 'complete') return 0;
   return status === 'question' ? EXIT_QUESTION : 1;
-}
-
-function executionBlocker(directory: string): string | null {
-  try {
-    const raw = JSON.parse(readFileSync(path.join(directory, 'execution.json'), 'utf8')) as unknown;
-    if (!isRecord(raw) || !isRecord(raw.outcome)) return null;
-    return typeof raw.outcome.blocker === 'string' && raw.outcome.blocker !== '' ? raw.outcome.blocker : null;
-  } catch {
-    return null;
-  }
 }
 
 function resolveSession(
