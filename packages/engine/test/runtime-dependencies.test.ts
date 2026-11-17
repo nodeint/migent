@@ -35,7 +35,7 @@ describe('operation runtime dependencies', () => {
 
   it('names no execution operation and branches on no scenario', () => {
     for (const { name, text } of sources) {
-      expect(text, name).not.toMatch(/agent\.turn|reply\.gate|verify\.run|verify-only|role execution/i);
+      expect(text, name).not.toMatch(/agent\.turn|reply\.gate|verify\.run|run\.verify|verify-only|role execution/i);
     }
   });
 });

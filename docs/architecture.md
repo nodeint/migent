@@ -45,12 +45,14 @@ Migent: nothing subscribes, nothing registers a config section, and `invokeOnce`
 | Event-kind traits | `contracts` `src/event-kinds.ts` | One read-only registry (`stream`, `folds`, `skipsStatusWrite`, `stderr`) derived from the event catalog. Other packages read traits here. |
 | Config sections | `contracts` `src/config-sections.ts` | Static list of namespaced sections, empty today. Kernel merges and validates them, doctor reports them, session freezes them. There is no runtime registration API. |
 | Agent invocation | `engine` `src/agent-invocation.ts` | `targetFromAgent`, `bindTarget`, and `invokeOnce` run one provider turn with no stage. The stage runner binds targets through `bindTarget`. |
-| Turn-pipeline steps | `engine` `src/turn-flow-steps.ts`, `src/turn-persist-steps.ts`, `src/turn-steps.ts` | Named steps with typed inputs and results. `TurnLoop` keeps the state and the step order. There is no step registry. |
+| Operation runtime | `engine` `src/runtime/` | Generic cycle: validate the request, evaluate the policy once, run the handler, validate its output, let the definition decide, authorize the transition against declared edges, apply the changes, continue. It names no operation and imports nothing from `src/execution/`. Exceptions, including cancellation, propagate. |
+| Execution layer | `engine` `src/execution/` | Three operations (`agent.turn`, `reply.gate`, `run.verify`), the role and verify-only definitions, and `ExecutionApplier`. `agent.turn` runs the provider and the gates over its fresh reply; `reply.gate` gates a saved reply a resumed execution starts from. Handlers and definitions propose changes; the applier alone writes the conversation, status, progress, turn files, diagnostics, report publication, and verdict events, in list order and synchronously. A handler's own effects are controlled and limited to process metadata, stream events and heartbeats. Pure helpers stay in `src/turn-steps.ts`. |
+| Cancellation and crash limit | `engine` `src/execution/cancel.ts` | The session lock and the global cancellation request belong to the session layer (see [Sessions](sessions.md) for the persisted lifecycle). Cancellation is observed only inside the provider and the verify runner, which are the handlers' own awaits. The handler commits the cancelled writes through the applier and rethrows; the runtime never catches it. A commit is one synchronous unit, so a cooperative interruption cannot split it. A process death in the middle of a commit is not covered: the writes already made stay, and recovery of that case is deferred, exactly as before the runtime. |
 
 ## Boundary rules
 
-- Plugins never receive internal objects such as `SessionLock`, store handles, or `TurnLoop` state.
-  A seam passes detached, frozen data or typed step inputs.
+- Plugins never receive internal objects such as `SessionLock`, store handles, or execution state.
+  A seam passes detached, frozen data; operation inputs and outputs are plain data.
 - Session events are recorded only through the event log, and `status.json` is derived from them by the fold.
   Both run under the session lock. Other session files are written by their owning `session` functions.
 - Resume reads the frozen core workflow, `roles`, `targets`, and `resume_policies`, not live files. A registered

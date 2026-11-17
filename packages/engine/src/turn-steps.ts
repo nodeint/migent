@@ -1,22 +1,38 @@
 /**
- * Turn-loop steps that run on a snapshot of loop state: turn assessment, gates, turn events,
- * diagnostics, verify fields, the repair prompt, and the run result.
+ * Pure turn helpers: provider-turn assessment, the output and outcome gates, verify fields, and the repair prompt.
+ * Nothing here writes: the execution layer proposes every write as a change.
  */
-import { readFileSync, statSync } from 'node:fs';
+import { statSync } from 'node:fs';
 import path from 'node:path';
 
 import {
-  buildTurnDiagnostics, buildVerifyRepairPrompt, classifyGateError, type FailureClassification, type GateFailure,
-  type Gates, HandoffFileError, nonemptyArtifact, observeTurn, QuestionFileError, resolveStageOutcome,
+  buildVerifyRepairPrompt, classifyGateError, CORRECTION_FAILURE_REASONS, type FailureClassification, type GateFailure,
+  type Gates, HandoffFileError, nonemptyArtifact, QuestionFileError, resolveStageOutcome,
   type ResponseSource, type StageOutcome, truncateText,
 } from '@nodeint/migent-kernel';
-import type { AgentSessionRecord, ExecutionContext, SessionStore } from '@nodeint/migent-session';
+import type { ExecutionContext, SessionStore } from '@nodeint/migent-session';
 import { isWorkflowV2, stageArtifactsFor, type StageSpec } from '@nodeint/migent-workflow';
 
-import type { ProviderEventReporter } from './provider-events.js';
-import { type FreshTurn, frozenDocument, type Iteration, type RunResult, type TurnResult } from './turn-types.js';
+import { frozenDocument, type TurnResult } from './turn-types.js';
 
-export type Step = 'continue' | 'stop' | 'proceed';
+/** What one pass of the loop produced. */
+export interface Iteration {
+  readonly responseText: string;
+  readonly outcome: StageOutcome | null;
+  readonly invokeError: string | null;
+  readonly gateFailure: GateFailure | null;
+  readonly eligible: boolean;
+  readonly pendingGate: boolean;
+  readonly needsVerify: boolean;
+}
+
+/** What the gates of one fresh turn start from, and what they may change. */
+export interface GateSeed {
+  readonly gates: Gates;
+  readonly candidate: boolean;
+  readonly anomalyReason: string | null;
+  readonly turnError: string | null;
+}
 
 /** The gate verdicts an output check produced, and the failure that goes with them. */
 export interface OutputCheck {
@@ -27,20 +43,8 @@ export interface OutputCheck {
 /** What the gates decided about one fresh turn. */
 export interface GateEvaluation {
   iteration: Iteration;
-  fresh: FreshTurn;
+  seed: GateSeed;
 }
-
-/** What persisting one turn decided. */
-export interface PersistVerdict {
-  readonly needsVerify: boolean;
-  readonly modelResponded: boolean;
-  readonly recordedClassification: FailureClassification | null;
-  /** The classification the loop keeps after this turn: cleared when an exit-only turn was accepted. */
-  readonly classification: FailureClassification | null;
-}
-
-/** How the verify run ends: a repair turn follows, or the execution ends with this outcome. */
-export type VerifyVerdict = { kind: 'repair'; report: string } | { kind: 'end'; outcome: StageOutcome | null };
 
 // The artifact and completion-output gates. Fresh turns and resumed saved replies both run them.
 export function checkOutputs(
@@ -76,135 +80,6 @@ export function checkOutputs(
   return { failure: null, gates: { ...gates, completion_outputs: { state: 'passed' } } };
 }
 
-// Turn completed or failed, quota, and exit anomaly events. Emitted before persistTurn resets the classification.
-export function emitTurnEvents(
-  loop: { eventReporter: ProviderEventReporter; classification: FailureClassification | null; turn: number },
-  it: Iteration,
-  fresh: FreshTurn,
-): void {
-  const { eventReporter, classification } = loop;
-  const { turnError, turnDetails, exitOnly, anomalyReason } = fresh;
-  const { exitCode } = fresh.turnResult;
-  eventReporter.emit(
-    turnError === null ? 'provider.turn_completed' : 'provider.turn_failed',
-    turnError === null ? 'completed' : turnError,
-    turnDetails,
-  );
-  if (classification?.kind === 'quota') {
-    const resetAt = classification.resetAt ?? '';
-    eventReporter.emit(
-      'provider.quota',
-      [classification.message, resetAt].filter((item) => item !== '').join(' '),
-      {
-        retry_at: resetAt,
-        client: eventReporter.client,
-        ...(classification.window ? { window: classification.window } : {}),
-      },
-    );
-  }
-  if (exitOnly) {
-    eventReporter.emit(
-      'provider.exit_anomaly',
-      it.invokeError === null || anomalyReason === null
-        ? `exit ${exitCode} with a usable reply; accepted`
-        : `exit ${exitCode}; rejected: ${anomalyReason}`,
-      {
-        turn: loop.turn,
-        client: eventReporter.client,
-        exit_code: exitCode,
-        signal: null,
-        origin: 'exit-only',
-        accepted: anomalyReason === null,
-        reason: anomalyReason,
-      },
-    );
-  }
-}
-
-// The only writer of diagnostics.json: once this turn's gates have run, before any verify or follow-up turn.
-export function writeTurnDiagnostics(
-  loop: {
-    record: AgentSessionRecord; store: SessionStore; context: ExecutionContext;
-    artifactName: string | null; turn: number;
-  },
-  it: Iteration,
-  fresh: FreshTurn,
-): void {
-  if (!fresh.recordsTurn) return;
-  const { record, store, context, artifactName } = loop;
-  const { turnResult, exitOnly, anomalyReason, recordedClassification } = fresh;
-  const accepted = exitOnly && anomalyReason === null;
-  store.saveDiagnostics(context, buildTurnDiagnostics({
-    turn: loop.turn,
-    agentId: record.agentId || null,
-    ...(turnResult.failure ? { failure: turnResult.failure } : {}),
-    ...(turnResult.facts ? { facts: turnResult.facts } : {}),
-    classification: recordedClassification,
-    stream: summarizeTurnStream(fresh),
-    resultState: {
-      observed: observeTurn({
-        source: fresh.parsedSource,
-        responseText: it.responseText,
-        artifactPath: artifactName ? path.join(context.artifactDirectory, artifactName) : null,
-        responseWritten: fresh.modelResponded,
-        conversationTurns: record.history.filter((item) => item.role === 'assistant').length,
-      }),
-      gates: fresh.gates,
-      turn_verdict: accepted ? 'accepted' : 'failed',
-      reason: turnVerdictReason(fresh),
-    },
-  }));
-}
-
-// The recorded reason of a turn: the anomaly of an exit-only turn, otherwise the provider failure.
-function turnVerdictReason(fresh: FreshTurn): string | null {
-  if (fresh.exitOnly) return fresh.anomalyReason === null ? null : truncateText(fresh.anomalyReason);
-  return truncateText(fresh.recordedClassification?.message ?? fresh.exitMessage ?? 'provider failure');
-}
-
-// The stdout stream summary of a turn, with the provider-reported error when there is one.
-function summarizeTurnStream(fresh: FreshTurn): ReturnType<TurnResult['summarizer']['finish']> {
-  const { turnResult, recordedClassification } = fresh;
-  const errors = recordedClassification?.origin === 'provider-error' ? [recordedClassification.message] : [];
-  return turnResult.summarizer.finish(
-    { bytes: turnResult.facts?.stdoutBytes ?? 0, lines: turnResult.facts?.stdoutLines ?? 0 },
-    errors,
-  );
-}
-
-export function buildRunResult(
-  loop: {
-    record: AgentSessionRecord; store: SessionStore; context: ExecutionContext;
-    eventReporter: ProviderEventReporter; classification: FailureClassification | null;
-    failureReason: string; failureDetail: string;
-  },
-  it: Iteration,
-): RunResult {
-  const { record, store, context, eventReporter, classification } = loop;
-  const { outcome } = it;
-  const sessionStatus = store.readSessionStatus(context.sessionId);
-  return {
-    agent_id: record.agentId || '',
-    options: { ...record.options },
-    session_id: context.sessionId,
-    execution_id: context.executionId,
-    artifact_directory: context.artifactDirectory,
-    outcome_status: outcome?.status ?? '',
-    ...(outcome?.status === 'question' ? {
-      questions: outcome.questions, questions_file: path.join(context.directory, 'questions.json'),
-    } : {}),
-    outcome_decision: outcome?.decision ?? '',
-    session_status: typeof sessionStatus.status === 'string' ? sessionStatus.status : '',
-    response: it.responseText,
-    failure_reason: loop.failureReason,
-    ...(loop.failureDetail === '' ? {} : { failure_detail: loop.failureDetail }),
-    failure_kind: classification?.kind ?? '',
-    reset_at: classification?.kind === 'quota' && classification.resetAt ? classification.resetAt : '',
-    client: eventReporter.client,
-    execution_status: record.status,
-  };
-}
-
 // Outcome resolution, the artifact and completion-output gates, and candidate rejection.
 export function evaluateGates(
   loop: {
@@ -213,17 +88,17 @@ export function evaluateGates(
     checkOutputs: (reply: StageOutcome) => OutputCheck;
   },
   it: Iteration,
-  fresh: FreshTurn,
+  seed: GateSeed,
 ): GateEvaluation {
-  const resolved = it.invokeError === null ? resolveOutcomeGate(loop, it) : { ...it, outcomeGate: fresh.gates.outcome };
-  const gates: Gates = { ...fresh.gates, outcome: resolved.outcomeGate };
+  const resolved = it.invokeError === null ? resolveOutcomeGate(loop, it) : { ...it, outcomeGate: seed.gates.outcome };
+  const gates: Gates = { ...seed.gates, outcome: resolved.outcomeGate };
   if (loop.artifactName === null) gates.artifact = { state: 'not-applicable' };
   else if (gates.outcome.state !== 'not-evaluated' && resolved.outcome?.status !== 'complete') {
     gates.artifact = { state: 'not-applicable' };
   }
   const { outcome, invokeError, gateFailure } = resolved;
   const checked = checkOutputGates(loop, { outcome, invokeError, gateFailure }, gates);
-  return rejectCandidate({ ...it, ...checked.iteration }, { ...fresh, gates: checked.gates });
+  return rejectCandidate({ ...it, ...checked.iteration }, { ...seed, gates: checked.gates });
 }
 
 type GateResult = Pick<Iteration, 'outcome' | 'invokeError' | 'gateFailure'>;
@@ -271,45 +146,80 @@ function checkOutputGates(
 }
 
 // A candidate turn that failed a gate is rejected: the error is the model text, the failed gate the reason.
-function rejectCandidate(it: Iteration, fresh: FreshTurn): GateEvaluation {
+function rejectCandidate(it: Iteration, seed: GateSeed): GateEvaluation {
   const { invokeError, gateFailure } = it;
   const rejection = invokeError ?? (gateFailure === null ? null : `${gateFailure.errorKind}: ${gateFailure.detail}`);
-  if (!fresh.candidate || rejection === null) return { iteration: it, fresh };
+  if (!seed.candidate || rejection === null) return { iteration: it, seed };
   return {
     iteration: { ...it, invokeError: it.responseText },
-    fresh: { ...fresh, anomalyReason: rejection, turnError: it.responseText },
+    seed: { ...seed, anomalyReason: rejection, turnError: it.responseText },
   };
 }
 
-export function verifyFields(
-loop: {
-  verifyCommands: readonly string[]; turn: number; lastResult: 'pass' | 'fail' | null; lastReport: string | null;
-  verifyRuns: number; red: number; maxVerify: number;
-},
-reason: string | null,
-): Record<string, unknown> | null {
-if (loop.verifyCommands.length === 0) return null;
-  const fields: Record<string, unknown> = { turns: loop.turn };
-  if (loop.lastResult !== null && loop.lastReport !== null) {
+/** The verify counters the execution fields report. */
+export interface VerifyFacts {
+  readonly verifyCommands: readonly string[];
+  readonly turn: number;
+  readonly lastResult: 'pass' | 'fail' | null;
+  readonly lastReport: string | null;
+  readonly verifyRuns: number;
+  readonly red: number;
+  readonly maxVerify: number;
+}
+
+export function verifyFields(facts: VerifyFacts, reason: string | null): Record<string, unknown> | null {
+  if (facts.verifyCommands.length === 0) return null;
+  const fields: Record<string, unknown> = { turns: facts.turn };
+  if (facts.lastResult !== null && facts.lastReport !== null) {
     fields.verify = {
-      runs: loop.verifyRuns,
-      red: loop.red,
-      max_verify: loop.maxVerify,
-      last_result: loop.lastResult,
-      last_report: loop.lastReport,
+      runs: facts.verifyRuns,
+      red: facts.red,
+      max_verify: facts.maxVerify,
+      last_result: facts.lastResult,
+      last_report: facts.lastReport,
     };
   }
   if (reason !== null) fields.failure_reason = reason;
   return fields;
 }
 
-// The repair prompt that follows a failed verify run.
+// The last provider turn this execution ran; failure.md joins diagnostics.json to it.
+export function finalFields(turn: number, extra: Record<string, unknown> | null): Record<string, unknown> {
+  return { ...(extra ?? {}), final_turn: turn };
+}
+
+// The failure fields a finished stage saves. A quota classification sets the failure reason as a side result.
+export function outcomeFields(
+  facts: VerifyFacts,
+  failure: { failureReason: string; classification: FailureClassification | null },
+): { fields: Record<string, unknown> | null; failureReason: string } {
+  if (CORRECTION_FAILURE_REASONS.includes(failure.failureReason)) {
+    return {
+      fields: { ...(verifyFields(facts, null) ?? {}), failure_reason: failure.failureReason },
+      failureReason: failure.failureReason,
+    };
+  }
+  const { classification } = failure;
+  if (classification?.kind !== 'quota') {
+    return { fields: verifyFields(facts, null), failureReason: failure.failureReason };
+  }
+  return {
+    fields: {
+      ...(verifyFields(facts, null) ?? {}),
+      failure_reason: 'quota',
+      retry_at: classification.resetAt,
+      ...(classification.window ? { quota_window: classification.window } : {}),
+    },
+    failureReason: 'quota',
+  };
+}
+
+// The repair prompt that follows a failed verify run. The report text is passed in: the applier has not saved it yet.
 export function buildRepairPrompt(
   loop: { context: ExecutionContext; artifactName: string | null; red: number; maxVerify: number },
-  lastReport: string,
+  report: string,
 ): string {
   const { context, artifactName } = loop;
-  const report = readFileSync(path.join(context.directory, lastReport), 'utf8');
   const sessionDirectory = path.dirname(path.dirname(context.directory));
   const taskFile = path.join(sessionDirectory, 'task.md');
   let taskPointer: string | null = null;
@@ -329,20 +239,38 @@ export function buildRepairPrompt(
   );
 }
 
-// The exit-only/candidate/eligibility computation for one provider turn; records its agent and profile.
+/** What one provider turn means before any gate runs. */
+export interface TurnAssessment {
+  readonly responseText: string;
+  readonly invokeError: string | null;
+  readonly exitCode: number | null;
+  readonly parsedSource: ResponseSource | undefined;
+  readonly source: ResponseSource;
+  readonly classification: FailureClassification | null;
+  /** The conversation's agent id once this turn is recorded. */
+  readonly agentId: string | null;
+  readonly turnDetails: Record<string, unknown>;
+  readonly recordsTurn: boolean;
+  readonly exitOnly: boolean;
+  readonly candidate: boolean;
+  readonly eligible: boolean;
+  readonly anomalyReason: string | null;
+  readonly exitMessage: string | null;
+  readonly turnError: string | null;
+}
+
+// The exit-only/candidate/eligibility computation for one provider turn.
 export function assessProviderTurn(
-  loop: {
-    record: AgentSessionRecord; model: string; profile: Record<string, string>;
-    workspacePath: string; turn: number;
-  },
+  loop: { priorAgentId: string | null; turn: number },
   turnResult: TurnResult,
-): GateEvaluation {
-  const { source: parsedSource, exitCode, responseText } = turnResult;
-  const { classification } = turnResult;
+): TurnAssessment {
+  const { source: parsedSource, exitCode, responseText, classification } = turnResult;
   // An abnormal provider turn leaves a record whatever the gates decide: a failed start or
   // exit, or a provider-reported error at exit 0. A timeout or an unpassable argument has neither.
   const recordsTurn = turnResult.failure !== undefined || (exitCode === 0 && classification !== null);
-  const turnDetails = recordProviderTurn(loop, turnResult);
+  const agentId = turnResult.sessionId || loop.priorAgentId;
+  const turnDetails: Record<string, unknown> = { turn: loop.turn, agent_id: agentId, argv: turnResult.argv };
+  if (turnResult.usage !== null) turnDetails.usage = turnResult.usage;
   // A provider that does not attest the source of its text is trusted only on a clean exit.
   const source: ResponseSource = parsedSource ?? (classification === null ? 'model' : 'none');
   const exitOnly = classification?.origin === 'exit-only';
@@ -351,59 +279,13 @@ export function assessProviderTurn(
   const candidate = exitOnly && source === 'model' && responseText.trim() !== '';
   // Only a reply the model wrote can be corrected: no start failure, timeout or provider verdict.
   const eligible = candidate || (classification === null && exitCode === 0 && turnResult.failure === undefined);
-  const exitMessage = turnResult.invokeError;
   const { invokeError, anomalyReason } = exitOnlyVerdict(turnResult, candidate, exitOnly);
-  // The turn event follows the provider verdict only; later gates never rename it.
-  const turnError = invokeError;
   return {
-    iteration: {
-      responseText,
-      outcome: null,
-      invokeError,
-      gateFailure: null,
-      eligible,
-      pendingGate: false,
-      needsVerify: false,
-    },
-    fresh: {
-      turnResult,
-      parsedSource,
-      source,
-      recordsTurn,
-      exitOnly,
-      candidate,
-      exitMessage,
-      anomalyReason,
-      turnError,
-      gates: {
-        outcome: { state: 'not-evaluated' },
-        artifact: { state: 'not-evaluated' },
-        completion_outputs: { state: 'not-evaluated' },
-      },
-      turnDetails,
-      modelResponded: false,
-      recordedClassification: null,
-    },
+    responseText, invokeError, exitCode, parsedSource, source, classification, agentId, turnDetails, recordsTurn,
+    exitOnly, candidate, eligible, anomalyReason, exitMessage: turnResult.invokeError,
+    // The turn event follows the provider verdict only; later gates never rename it.
+    turnError: invokeError,
   };
-}
-
-// Records the provider turn's agent, model, and profile; returns the turn event details.
-function recordProviderTurn(
-  loop: Parameters<typeof assessProviderTurn>[0],
-  turnResult: TurnResult,
-): Record<string, unknown> {
-  const { record } = loop;
-  record.agentId = turnResult.sessionId || record.agentId;
-  const turnDetails: Record<string, unknown> = {
-    turn: loop.turn,
-    agent_id: record.agentId,
-    argv: turnResult.argv,
-  };
-  if (turnResult.usage !== null) turnDetails.usage = turnResult.usage;
-  record.model = loop.model;
-  record.options = loop.profile;
-  record.workspace = loop.workspacePath;
-  return turnDetails;
 }
 
 // A candidate clears the provider error; any other exit-only turn records why it is not accepted.

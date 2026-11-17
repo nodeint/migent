@@ -1,15 +1,17 @@
-import type { ClientRegistry } from '@nodeint/migent-kernel';
-import { CancellationRequested } from '@nodeint/migent-kernel';
-import { formatClock, log } from '@nodeint/migent-kernel';
-import { VERIFY_FAILED } from '@nodeint/migent-kernel';
-import { StageOutcome } from '@nodeint/migent-kernel';
-import { formatVerifyReport, VerifyRunner, type VerifyRunResult } from '@nodeint/migent-kernel';
-import { AgentSessionRecord, type ExecutionContext,SessionStore } from '@nodeint/migent-session';
+import type { ClientRegistry, VerifyRunner } from '@nodeint/migent-kernel';
+import { formatClock, log, VERIFY_FAILED } from '@nodeint/migent-kernel';
+import { AgentSessionRecord, type ExecutionContext, SessionStore } from '@nodeint/migent-session';
 import { parseExecutionId } from '@nodeint/migent-session';
 import type { VerifyOnlyStageSpec } from '@nodeint/migent-workflow';
 
 import type { RunResult } from './agent-runner.js';
+import { ExecutionApplier } from './execution/applier.js';
+import { createVerifyRunOperation } from './execution/handlers.js';
+import { debugTrace } from './execution/run-role.js';
+import { VERIFY_RUN,type VerifyInput } from './execution/types.js';
+import { verifyOnlyDefinition } from './execution/verify-only-definition.js';
 import { ProviderEventReporter } from './provider-events.js';
+import { OperationRuntime } from './runtime/operation-runtime.js';
 
 const VERIFY_TURN = 1;
 
@@ -29,100 +31,34 @@ export async function runVerifyOnlyStage(input: {
   if ((input.executionId === null || input.executionId === undefined)) {
     log(startLine(input.stage, parseExecutionId(context.executionId)?.attempt ?? null));
   }
-  const reporter = new ProviderEventReporter({ store, context }, { client: '', model: '' });
-  reporter.emit('verify.started', `${input.stage.verify.length} command(s)`, {
-    turn: VERIFY_TURN,
-    commands: input.stage.verify,
-  });
+  const eventReporter = new ProviderEventReporter({ store, context }, { client: '', model: '' });
   const record = new AgentSessionRecord({ client: '', model: '', workspace: input.workspace, status: 'running' });
-  const result = await runVerifyCommands(input, { store, context, record, reporter });
-  const passed = result.passed && result.infraError === null;
-  const red = passed ? 0 : 1;
-  const report = store.saveTurnVerify(
-    context,
-    VERIFY_TURN,
-    formatVerifyReport(result, {
-      run: 1,
-      red,
-      maxVerify: 1,
-      timeoutSec: input.stage.verifyTimeoutSec,
-    }),
-  );
-  if (passed) {
-    reporter.emit('verify.passed', 'all commands passed', { turn: VERIFY_TURN, report });
-    const outcome = new StageOutcome('complete');
-    store.saveExecution(context, record, { status: 'completed', outcome });
-    store.publishVerifyReport(context, VERIFY_TURN);
-    return executionJson(store, context, { outcomeStatus: 'complete', failureReason: '' });
-  }
-  return recordVerifyFailure({ store, context, record, reporter }, result, report);
-}
-
-// Runs the stage's verify list, marking the execution cancelled when the run is cancelled.
-async function runVerifyCommands(
-  input: { workspace: string; stage: VerifyOnlyStageSpec; verifyRunner: VerifyRunner },
-  target: {
-    store: SessionStore;
-    context: ExecutionContext;
-    record: AgentSessionRecord;
-    reporter: ProviderEventReporter;
-  },
-): Promise<VerifyRunResult> {
-  const { store, context, record, reporter } = target;
-  try {
-    return await input.verifyRunner.run({
-      commands: input.stage.verify,
-      workspace: input.workspace,
-      executionDirectory: context.directory,
-      turnDirectory: store.turnDirectory(context, VERIFY_TURN),
-      timeoutSec: input.stage.verifyTimeoutSec,
-      onStart: (info) => {
-        store.saveProcessMetadata(context, info);
-      },
-      onEnd: () => {
-        store.clearProcessEndpoint(context);
-      },
-      onHeartbeat: (command, elapsed) => {
-        reporter.emit('verify.heartbeat', `${command} running for ${elapsed}s`, {
-          turn: VERIFY_TURN,
-          command,
-          elapsed_seconds: elapsed,
-        });
-      },
-    });
-  } catch (error) {
-    if (error instanceof CancellationRequested) {
-      record.status = 'cancelled';
-      store.saveExecution(context, record, { status: 'cancelled' });
-      log(`Execution ${context.executionId} marked cancelled.`);
-    }
-    throw error;
-  }
-}
-
-// Reports the failed command and marks the execution failed.
-function recordVerifyFailure(
-  target: {
-    store: SessionStore;
-    context: ExecutionContext;
-    record: AgentSessionRecord;
-    reporter: ProviderEventReporter;
-  },
-  result: VerifyRunResult,
-  report: string,
-): RunResult {
-  const { store, context, record, reporter } = target;
-  const failed = result.commands.find((item) => item.status === 'fail' || item.status === 'timed_out');
-  const error = result.infraError ?? `Verify failed: ${failed?.command ?? 'verify'}`;
-  reporter.emit('verify.failed', `${failed?.command ?? 'verify'} failed`, {
-    turn: VERIFY_TURN,
-    command: failed?.command ?? null,
-    status: failed?.status ?? null,
-    exit_code: failed?.exitCode ?? null,
-    report,
+  const applier = new ExecutionApplier({ record, store, context, eventReporter });
+  const runtime = new OperationRuntime({
+    applier,
+    trace: debugTrace(store, context),
+    operations: [createVerifyRunOperation({
+      store, context, eventReporter, verifyRunner: input.verifyRunner, workspace: input.workspace, applier,
+      cancel: 'verify-only',
+    })],
   });
-  store.saveExecution(context, record, { status: 'failed', error, extra: { failure_reason: VERIFY_FAILED } });
-  return executionJson(store, context, { outcomeStatus: '', failureReason: VERIFY_FAILED });
+  const verifyInput: VerifyInput = {
+    turn: VERIFY_TURN, commands: input.stage.verify, timeoutSec: input.stage.verifyTimeoutSec, run: 1,
+    redIfPassed: 0, redIfFailed: 1, maxVerify: 1,
+  };
+  // A verify-only execution has one logical attempt (D10).
+  const end = await runtime.run({
+    scope: { sessionId: context.sessionId, stageId: input.stage.id, role: '' },
+    definition: verifyOnlyDefinition,
+    state: { turn: VERIFY_TURN },
+    request: {
+      identity: { executionId: context.executionId, operationId: VERIFY_RUN, attempt: 1 },
+      input: verifyInput,
+    },
+  });
+  return executionJson(store, context, end.passed
+    ? { outcomeStatus: 'complete', failureReason: '' }
+    : { outcomeStatus: '', failureReason: VERIFY_FAILED });
 }
 
 function openContext(

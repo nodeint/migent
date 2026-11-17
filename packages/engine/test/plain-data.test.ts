@@ -114,6 +114,10 @@ describe('plain data at compile time', () => {
     expect(diagnosticsFor(fixture('exhaustive.ts'))).toEqual([]);
   });
 
+  it('requires the built-in definitions to decide every outcome variant', () => {
+    expect(diagnosticsFor(fixture('outcomes.ts'))).toEqual([]);
+  });
+
   it('fails the check when an expected rejection does not happen', () => {
     const messages = diagnosticsFor(fixture('wrong.ts'));
     expect(messages).toEqual(["Unused '@ts-expect-error' directive."]);
