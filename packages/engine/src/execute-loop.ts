@@ -17,6 +17,7 @@ import {
   selectedStage,
   text,
 } from './dispatch.js';
+import { holdsPending } from './plugin-host/holds.js';
 
 
 /**
@@ -35,6 +36,7 @@ export async function runExecuteOnce(
   const sessionStatus = text(status.status);
   const scoped = options.scoped === true && stageId !== null;
   if (!scoped && endsScheduling(sessionStatus)) return executeFinal(status, stopReasonFor(sessionStatus), []);
+  if (holdsPending(status)) return executeFinal(status, 'plugin_hold', []);
   const chosen = isWorkflowV2(workflow)
     ? version2OnceStage(run, { snapshots, status: schedulingStatus(status, scoped) }, stageId)
     : version1OnceStage(run, { snapshots, status: schedulingStatus(status, scoped) }, stageId);
@@ -177,8 +179,12 @@ export interface LoopLimits {
   readonly verifyOnlyTriedSeed?: readonly string[];
 }
 
+function schedulingInputs(run: ExecuteRun, status: Record<string, unknown>) {
+  return { sessionStatus: text(status.status), ...resumeInputs(run.workspace, run.sessionId) };
+}
+
 export async function runExecuteLoop(run: ExecuteRun, limits: LoopLimits): Promise<ExecuteResult> {
-  const { workspace, store, workflow, sessionId, tasks } = run;
+  const { store, workflow, sessionId, tasks } = run;
   if (isWorkflowV2(workflow)) return runVersion2Pool(run, limits);
   const stages: Record<string, unknown>[] = [];
   let dispatched = limits.alreadyDispatched ?? 0;
@@ -191,18 +197,13 @@ export async function runExecuteLoop(run: ExecuteRun, limits: LoopLimits): Promi
       return executeFinal(store.readSessionStatus(sessionId), VERIFY_EXHAUSTED, stages);
     }
     return null;
-    return null;
   };
   while (true) {
     cancellationSignal().throwIfCancelled();
     store.reapOrphanedExecutions(sessionId, 'raise');
     const snapshots = store.executionSnapshots(sessionId);
     const status = store.readSessionStatus(sessionId);
-    const selected = selectedStage(
-      workflow,
-      snapshots,
-      { sessionStatus: text(status.status), ...resumeInputs(workspace, sessionId) },
-    );
+    const selected = holdsPending(status) ? new Stop('plugin_hold') : selectedStage(workflow, snapshots, schedulingInputs(run, status));
     if (selected instanceof Stop) return executeFinal(status, selected.reason, stages);
     if (
       revisionStop(workflow, snapshots, { stageId: selected.stageId, revisionBaselines: revisionBaselines(status) })
@@ -260,10 +261,8 @@ class Version2Pool {
     const snapshots = store.executionSnapshots(sessionId);
     const status = store.readSessionStatus(sessionId);
     const sessionStatus = text(status.status);
-    if (sessionStatus === 'cancelled') {
-      await this.settleAll();
-      return executeFinal(status, 'cancelled', []);
-    }
+    const stopped = await this.settleStop(status);
+    if (stopped) return stopped;
     const capped = await this.settleCeiling();
     if (capped) return capped;
     const baselines = revisionBaselines(status);
@@ -274,6 +273,16 @@ class Version2Pool {
     if (this.flights.length === 0) return idleResult(this.run, { snapshots, status, stages: this.stages }, schedule);
     await Promise.race(this.flights.map((flight) => flight.promise));
     return null;
+  }
+
+  // A cancelled session or a plugin hold dispatches nothing new. In-flight stages finish, then the run ends.
+  private async settleStop(status: Record<string, unknown>): Promise<ExecuteResult | null> {
+    const cancelled = text(status.status) === 'cancelled';
+    if (!cancelled && !holdsPending(status)) return null;
+    await this.settleAll();
+    if (cancelled) return executeFinal(status, 'cancelled', []);
+    await this.observe();
+    return executeFinal(this.run.store.readSessionStatus(this.run.sessionId), 'plugin_hold', this.stages);
   }
 
   // Starts as many runnable stages as concurrency and the dispatch ceiling allow.

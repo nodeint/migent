@@ -41,6 +41,7 @@ diagnostics. Depends on the kernel. Internal; no stable public API. Behavior:
 | `retireSessionNumber`, `readLastIdMark` | `src/session-id.ts` | `.last-id` high-water mark so deleted numbers are never reissued |
 | `loadFrozenWorkflow`, `writeWorkflowFreeze` | `src/session-freeze.ts` | Frozen configuration |
 | `effectiveConfigSection`, `EntryClassifiers` | `src/freeze-config-sections.ts` | Freezes registered config sections under the freeze key `config` and resolves one on resume. A `per_entry` section needs a classifier map from the caller (engine passes none while no section exists); a missing one throws. Reports `addedAfterFreeze` and leaves the decision to the caller |
+| `applyPluginHolds`, `unresolvedPluginHolds`, `PLUGIN_HOLD_RESOLUTION` | `src/session-fold-holds.ts` | Folds `plugin.failed` (`stop`/`fail`) into `status.json` `plugin_holds`; `session.active` with `from: 'plugin_hold'` resolves them |
 | `repairSession` | `src/session-repair.ts` | Repair broken state |
 | `selectRunWorkflow`, `selectSessionWorkflow` | `src/session-selection.ts` | Resolve workflow for a run |
 | `publishNextSuggestions`, `resolveHandoff` | `src/next-handoff.ts` | Downstream handoff |

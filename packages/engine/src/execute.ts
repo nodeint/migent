@@ -22,6 +22,8 @@ import {
 import { runExecuteLoop, runExecuteOnce, startTracked, trackDispatch } from './execute-loop.js';
 import { verifyOnlyExecution } from './execute-reply.js';
 import { type ExecuteRequest, HeldSession, openExecuteSession } from './execute-session.js';
+import { PLUGIN_HOLD_STOP } from './execute-state.js';
+import { holdsPending } from './plugin-host/holds.js';
 import { judgeCancelled } from './resume-reopen.js';
 import { runVerifyOnlyStage } from './verify-only.js';
 
@@ -90,12 +92,23 @@ async function executeLocked(
   };
   try {
     const scoped = request.resumeTarget === true;
-    return await runOpened(run, { limits, resumeCancelled, reopenLatestCancelled, scoped });
+    return heldResult(store, await runOpened(run, { limits, resumeCancelled, reopenLatestCancelled, scoped }));
   } catch (error) {
     return await handleExecuteError(error, { store, sessionId, tasks });
   } finally {
     removeSignalHandlers();
   }
+}
+
+/** The result and exit code follow the committed status: an unresolved plugin hold ends the run with exit 1. */
+function heldResult(store: SessionStore, result: ExecuteResult): ExecuteResult {
+  if (result.sessionId === '' || result.stopReason === 'configuration' || result.stopReason === 'cancelled') return result;
+  const status = store.readSessionStatus(result.sessionId);
+  if (!holdsPending(status)) return result;
+  // A hold outranks a clean finish and the dispatch ceiling. Stage failures, questions and quota keep their exit.
+  const outranked = result.code === 0 || result.stopReason === 'dispatch_limit';
+  if (!outranked) return { ...result, status: text(status.status) };
+  return { ...result, code: exitCode('blocked'), stopReason: PLUGIN_HOLD_STOP, status: text(status.status) };
 }
 
 // Sends a pending reply, reopens cancelled executions when asked, then dispatches onward.

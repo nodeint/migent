@@ -13,6 +13,7 @@ import {
   type ParsedEvent,
 } from './session-events.js';
 import { EVENT_VERSION } from './session-events.js';
+import { applyPluginHolds } from './session-fold-holds.js';
 import { pendingExpiryStatus } from './session-fold-pending.js';
 import { loadFoldInputs, readSessionManifest } from './session-fold-read.js';
 import type { FoldExecution, FoldInputs, SessionManifest } from './session-fold-types.js';
@@ -30,6 +31,7 @@ import { effectiveTitleFrom, overlayTitle } from './session-title.js';
 
 export function foldStatus(inputs: FoldInputs): Record<string, unknown> {
   const draft = inputs.schemaVersion >= MANIFEST_SCHEMA_EVENT_LOG ? foldSchema2(inputs) : foldV1(inputs);
+  if (inputs.schemaVersion >= MANIFEST_SCHEMA_EVENT_LOG) applyPluginHolds(draft, inputs.events);
   applyManualCompletion(draft, inputs.events);
   draft.applyTitle(effectiveTitleFrom(inputs.titleRecord, inputs.manifest.title));
   draft.addPathOnlyOutputs(inputs.outputFiles);

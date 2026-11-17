@@ -153,7 +153,7 @@ const agentCall = Type.Object({
 });
 const agentCalls = { agent_calls: opt(Type.Array(agentCall)) };
 
-/** `plugin.*` and `plugins.frozen`. Only `plugin.failed` will fold, and the fold lands with the hold work. */
+/** `plugin.*` and `plugins.frozen`. Only `plugin.failed` folds: a `stop` or `fail` failure is a plugin hold. */
 export const PLUGIN_EVENTS = {
   'plugin.hook_invoked': lifecycle('plugin.hook_invoked', {
     plugin: str(), version: str(), hook: str(), trigger_seq: nullable(Type.Number()),

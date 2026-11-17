@@ -52,6 +52,7 @@ export {
   readFoldedStatus,
   statusDriftMessage,
 } from './session-fold.js';
+export { PLUGIN_HOLD_RESOLUTION, type PluginHold, unresolvedPluginHolds } from './session-fold-holds.js';
 export { readExecutions, readSessionManifest, sessionSchemaVersion } from './session-fold-read.js';
 export type { FreezeSource, LiveWorkflowRef, WorkflowFreeze } from './session-freeze.js';
 export { collectFrozenDrift,WORKFLOW_FREEZE_FILE } from './session-freeze.js';

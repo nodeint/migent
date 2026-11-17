@@ -50,7 +50,7 @@ export const EXIT_CATALOG = [
     code: 1,
     name: 'blocked',
     descriptions: {
-      run: 'when the session is blocked. session continue runs that stage again.',
+      run: 'when the session is blocked, or a plugin `fail` hold ends the run. session continue runs that stage again.',
       run_once: 'when the stage is not complete, or the session is blocked.',
       role_run: 'when the outcome is not complete.',
       authoring: 'for an invalid draft.',

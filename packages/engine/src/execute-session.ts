@@ -12,6 +12,7 @@ import { isWorkflowV2, loadNamedWorkflow, type WorkflowDocument } from '@nodeint
 import { executeFinal, type ExecuteResult, PendingStageReply, resumeInputs, selectedStage, text } from './dispatch.js';
 import { resolveStageReply, UNCHANGED_REPLY } from './execute-reply.js';
 import { pluginFreezeInput } from './plugin-host/freeze.js';
+import { resolvePluginHolds } from './plugin-host/holds.js';
 import { type PluginSelection, selectPlugins } from './plugin-host/selection.js';
 
 export function preflightFailed(sessionId: string): ExecuteResult {
@@ -325,6 +326,8 @@ function openExistingSession(
   }
   held.acquire(workspace, sessionId);
   repairSessionUnlocked(workspace, sessionId);
+  // Any run on an existing session resolves plugin holds first, so the status below is the one dispatch uses.
+  resolvePluginHolds(workspace, sessionId);
   if (request.refreshWorkflow && !request.startPrepared) refreshSessionWorkflow(
     workspace,
     sessionId,

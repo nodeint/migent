@@ -13,6 +13,9 @@ export const EXECUTE_EXIT_CODES: Record<string, number> = {
 };
 
 
+/** Stop reason of a run ended by an unresolved plugin hold. It exits with the `blocked` code. */
+export const PLUGIN_HOLD_STOP = 'plugin_hold';
+
 /**
  * A human reply waiting for its stage. The stage that receives it takes the text once; the
  * run asks `consumed` afterwards to learn whether the reply was sent.
@@ -97,7 +100,7 @@ export function executeFinal(
   stages: Record<string, unknown>[],
 ): ExecuteResult {
   return {
-    code: EXECUTE_EXIT_CODES[stopReason] ?? exitCode('config'),
+    code: stopReason === PLUGIN_HOLD_STOP ? exitCode('blocked') : EXECUTE_EXIT_CODES[stopReason] ?? exitCode('config'),
     status: text(status.status),
     stopReason,
     sessionId: text(status.session_id),
