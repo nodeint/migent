@@ -92,6 +92,13 @@ The session-level files have distinct purposes:
   freeze hash and the entry versions and pinned agent targets. A freeze file
   that no longer matches the last event, or a missing or upgraded plugin, stops
   the resume with exit code 2.
+- Plugin hooks run during a run and are recorded in `events.jsonl`. `session.started` fires when the run
+  creates or activates the session, `execution.finished` for each finished execution, and `session.stopped` once
+  scheduling ends, only when the run dispatched work. Each invocation records `plugin.hook_invoked`, then
+  `plugin.decision` (the applied intents) or `plugin.failed`. An `output` intent is written to
+  `plugins/<id>/<name>`, where `<name>` is one safe file name. `on_error` decides a failure: `ignore` records it,
+  `stop` and `fail` set a plugin hold. An advisory plugin always uses `ignore`. Hooks are not replayed on resume,
+  and every invocation settles before the session lock is released.
 - `task.md` is the task body. A one-line `session run --workflow --task` writes
   that sentence here. A prepared session creates an empty file for you to write, along with any
   other files that belong next to it. Stage prompts name this path and the

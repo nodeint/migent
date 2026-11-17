@@ -209,8 +209,10 @@ export type SessionOpenResult =
       stageReply: PendingStageReply | null;
       resumeCancelled: boolean;
       reopenLatestCancelled: boolean;
-      /** Which plugin entries run in this session. No hook is dispatched yet. */
+      /** Which plugin entries run in this session. */
       plugins: PluginSelection;
+      /** This run created or activated the session, so `session.started` fires. */
+      started: boolean;
     };
 
 /** What opening an existing session binds: its workflow id, stored status, and session status. */
@@ -241,13 +243,13 @@ export async function openExecuteSession(
     if ('code' in created) return { kind: 'final', result: created };
     const { sessionId, workflow } = created;
     const plugins = selectSessionPlugins(workspace, sessionId, { pluginRegistry, registry });
-    opened = { sessionId, workflow, workflowId: workflow.id, plugins, ...UNCHANGED_REPLY };
+    opened = { sessionId, workflow, workflowId: workflow.id, plugins, started: true, ...UNCHANGED_REPLY };
   }
   const { sessionId, workflow, workflowId } = opened;
   const session = { store, sessionId, stageId, opened: workflow, workflowId };
   const prepared = prepareSessionWorkflow(workspace, request, session);
-  const { stageReply, resumeCancelled, reopenLatestCancelled, plugins } = opened;
-  return { kind: 'ready', sessionId, workflow: prepared, workflowId, stageReply, resumeCancelled, reopenLatestCancelled, plugins };
+  const { stageReply, resumeCancelled, reopenLatestCancelled, plugins, started } = opened;
+  return { kind: 'ready', sessionId, workflow: prepared, workflowId, stageReply, resumeCancelled, reopenLatestCancelled, plugins, started };
 }
 
 /** The plugins a session runs with, selected before any dispatch. */
@@ -269,6 +271,7 @@ interface OpenedSession {
   resumeCancelled: boolean;
   reopenLatestCancelled: boolean;
   plugins: PluginSelection;
+  started: boolean;
 }
 
 /** Existing session: open, resolve the reply, start if prepared, resume blockers, stop when terminal. */
@@ -305,7 +308,10 @@ async function resumeExistingSession(
   if (stops) return { result: executeFinal(existing.status, stopReasonFor(sessionStatus), []) };
   const resumeCancelled = request.resumeTarget === true || reopened || sessionStatus === 'cancelled' || resolved.resumeCancelled;
   const { workflowId } = existing;
-  return { sessionId, workflow: null, workflowId, stageReply, resumeCancelled, reopenLatestCancelled, plugins };
+  return {
+    sessionId, workflow: null, workflowId, stageReply, resumeCancelled, reopenLatestCancelled, plugins,
+    started: request.startPrepared === true,
+  };
 }
 
 /** A session that ends scheduling stops the run, unless cancelled work will be reopened or a decision is scoped. */
