@@ -51,6 +51,7 @@ stages:
           artifacts:
             review:
               file: review.md
+              description: Write only when the decision is revise; skip when approved.
 
   - id: commit_phase
     role: operator

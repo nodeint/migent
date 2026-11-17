@@ -24,7 +24,9 @@ description: Review work against task requirements, workflow rules, and applicab
 ## Report
 
 - Use the template below unless another format is required. Include workflow-required fields and decision values.
-- Report in the conversation unless another location is required. Write `None` for empty sections.
+- Report in the conversation unless another location is required. Omit sections with nothing to report.
+- Keep the report short: record results and evidence once, cite earlier reviews by path instead of restating them,
+  and list only unmet or unverified requirements.
 - Preserve required references and usable snapshot paths; use repository-relative paths for repository files.
 
 ### Template
@@ -32,19 +34,11 @@ description: Review work against task requirements, workflow rules, and applicab
 ```markdown
 # Review
 
-## Verdict and scope
-
 - Verdict: <Approved, changes required, or blocked; use workflow decision values when applicable.>
-- Task or stage: <Identifier and required input reference.>
-- Reviewed scope: <Artifacts or paths and revision; branch and comparison base for code.>
+- Scope: <Task or stage, artifacts or paths, and revision; branch and comparison base for code.>
+- Summary: <One or two sentences on why the verdict follows.>
 
-## Acceptance coverage
-
-| Requirement or criterion | Status | Evidence |
-| --- | --- | --- |
-| <Requirement or reference> | <Met, unmet, or unverified> | <Inspected content or observed result> |
-
-## Required findings
+## Findings
 
 ### <Finding ID>: <Title>
 
@@ -53,23 +47,15 @@ description: Review work against task requirements, workflow rules, and applicab
 - Impact: <Consequence and affected cases.>
 - Required correction: <Outcome needed to resolve the finding.>
 
-## Optional observations
+## Notes
 
-- <Location, observation, and benefit; not required for approval.>
+- <Optional observations, prior finding status, unverified areas, and next action; not required for approval.>
 
 ## Verification
 
-| Command or check | Source | Result | Evidence or limitation |
-| --- | --- | --- | --- |
-| <Exact command or check> | <Run during review or reported> | <Pass, fail, or not run> | <Evidence or reason> |
-
-## Limits and follow-up
-
-- Blockers and unverified areas: <Missing inputs, evidence, or review limits and their impact.>
-- Revision findings: <Prior finding IDs, resolved or open, with evidence.>
-- Next action: <Required corrections, missing inputs, or readiness for the next stage.>
+- <Exact command or check>: <Pass, fail, or not run>; <run during review or reported; limitation if any.>
 
 ## References
 
-- <Link or path>: <Purpose and relevant section.>
+- <Link or path>: <Purpose.>
 ```
