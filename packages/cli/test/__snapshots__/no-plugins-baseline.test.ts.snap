@@ -1,0 +1,167 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`a run without a plugins key: frozen bytes, events, status, show and exit code > events 1`] = `
+[
+  "session.created",
+  "baseline.captured",
+  "task.frozen",
+  "execution.started",
+  "execution.running",
+  "provider.stage_started",
+  "provider.turn_completed",
+  "execution.completed",
+  "stage.complete",
+  "execution.started",
+  "execution.running",
+  "provider.stage_started",
+  "provider.turn_completed",
+  "execution.completed",
+  "stage.complete",
+  "session.completed",
+]
+`;
+
+exports[`a run without a plugins key: frozen bytes, events, status, show and exit code > frozen 1`] = `
+"schema_version: 2
+source_sha256: 9d18202be2a8a212b7513040d5559ccd02690b031ec304a117360d74621a8e31
+workflow:
+  schema_version: 7
+  id: wf
+  concurrency: 1
+  constraints: []
+  stages:
+    - id: one
+      depends_on: []
+      role: planner
+    - id: two
+      depends_on:
+        - one
+      role: reviewer
+roles:
+  planner: []
+  reviewer: []
+targets:
+  one:
+    client: fake
+    model: m1
+    options:
+      effort: medium
+  two:
+    client: fake
+    model: m1
+    options:
+      effort: medium
+"
+`;
+
+exports[`a run without a plugins key: frozen bytes, events, status, show and exit code > show json 1`] = `
+{
+  "baseline": {
+    "captured_at": "<time>",
+    "commit": null,
+    "error": "<git error>",
+  },
+  "blocked_by_execution_ids": [],
+  "blocker": null,
+  "events_cursor": "<cursor>",
+  "execution_id": "0002-two--attempt-01",
+  "execution_status": "completed",
+  "latest_execution_id": "0002-two--attempt-01",
+  "latest_execution_status": "completed",
+  "outcome": {
+    "status": "complete",
+  },
+  "outputs": {},
+  "outputs_not_produced": [],
+  "questions": [],
+  "running_stages": [],
+  "session_id": "1",
+  "skipped_stages": [],
+  "status": "completed",
+  "title": "Task",
+  "updated_at": "<time>",
+  "workflow_id": "wf",
+}
+`;
+
+exports[`a run without a plugins key: frozen bytes, events, status, show and exit code > show text 1`] = `
+"session_id  1
+title  Task
+status  completed
+workflow  wf
+task  Task
+execution  0002-two--attempt-01 · completed
+outcome  complete
+updated_at  <time>
+outputs  none
+events_cursor  <cursor>
+"
+`;
+
+exports[`a run without a plugins key: frozen bytes, events, status, show and exit code > status.json 1`] = `
+{
+  "baseline": {
+    "captured_at": "<time>",
+    "commit": null,
+    "error": "<git error>",
+  },
+  "completion_method": "agent",
+  "created_at": "<time>",
+  "latest_execution_id": "0002-two--attempt-01",
+  "latest_execution_status": "completed",
+  "latest_provider_event": {
+    "client": "fake",
+    "data": {},
+    "details": {
+      "agent_id": "native-session-1",
+      "argv": [
+        "<node>",
+        "-e",
+        "process.stdout.write("{\\"call\\":1}")",
+      ],
+      "turn": 1,
+    },
+    "event": "provider.turn_completed",
+    "execution_id": "0002-two--attempt-01",
+    "seq": 13,
+    "session_id": "1",
+    "stage_id": "two",
+    "summary": "completed",
+    "timestamp": "<time>",
+    "v": 2,
+  },
+  "latest_stage_id": "two",
+  "session_id": "1",
+  "status": "completed",
+  "task": "Task",
+  "task_sha256": "fcfd2c90c99943783f109b5df9e3af2697dc12a6102030512f15e79b6db4383e",
+  "terminal_execution_id": "0002-two--attempt-01",
+  "title": "Task",
+  "updated_at": "<time>",
+  "workflow_id": "wf",
+  "workflow_path": ".migent/workflows/wf.yaml",
+}
+`;
+
+exports[`continue and --refresh-workflow on a session without plugins keep their exit codes and freeze > events after refresh 1`] = `
+[
+  "session.created",
+  "baseline.captured",
+  "task.frozen",
+  "execution.started",
+  "execution.running",
+  "provider.stage_started",
+  "provider.turn_completed",
+  "execution.completed",
+  "stage.complete",
+  "workflow.refreshed",
+  "revisions.reset",
+  "execution.started",
+  "execution.running",
+  "provider.stage_started",
+  "provider.turn_completed",
+  "execution.completed",
+  "stage.complete",
+  "session.completed",
+]
+`;
