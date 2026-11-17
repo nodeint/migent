@@ -15,6 +15,7 @@ import {
   type RunCommand,
   type Which,
 } from '@nodeint/migent-doctor';
+import type { AgentToolRunner } from '@nodeint/migent-engine';
 import {
   type CliClient,
   type ClientRegistry,
@@ -22,10 +23,12 @@ import {
   ConfigurationError,
   killProcessTree,
   type ModelClientLookup,
+  type PluginRegistry,
   spawnProvider,
   spawnProviderSync,
   whichSync,
 } from '@nodeint/migent-kernel';
+import { createPluginRegistry } from '@nodeint/migent-plugins';
 
 import { cliHooks } from './hooks.js';
 
@@ -273,3 +276,13 @@ export const runOptionsCommand: RunCommand = (argv, input) => {
   if (completed.status !== 0) throw new ClientCommandFailed(output.trim() || `${command} exited ${completed.status}.`);
   return output;
 };
+
+/** The static plugin registry of the CLI composition root, injected into engine and doctor. */
+export function pluginRegistry(): PluginRegistry {
+  return createPluginRegistry();
+}
+
+/** Gives a production runner the plugin registry. A runner a test injected keeps its own. */
+export function withPlugins(runner: AgentToolRunner): AgentToolRunner {
+  return Object.assign(runner, { pluginRegistry: pluginRegistry() });
+}

@@ -32,16 +32,7 @@ stages:
     depends_on:
       - design
     instructions:
-      - Review against the task, repository evidence, and shared constraints.
-      - Trace each acceptance criterion through the solution's behavior and verification evidence.
-      - Check affected ownership, contracts, dependencies, compatibility, and required transition states.
-      - Flag scope expansion, unsupported extension points, and unnecessary complexity.
-      - Flag implementation or test mechanics fixed without a correctness or material trade-off reason; leave routine choices to the implementer.
-      - Require resolved solution decisions, applicable approvals, and risks with mitigation or explicit acceptance.
-      - Check that cited evidence and required artifact references are usable.
-      - Report substantive gaps together with their impact and required corrections; do not demand execution task lists or code.
-      - Keep comments observational; do not defer required corrections or solution decisions to later work.
-      - Require applicable template sections; allow empty sections to be omitted. Do not revise for stylistic preferences.
+      - Follow .agents/skills/review/SKILL.md and the design skill, matching type guide, and template to review design.md against the task and prior issue or prd artifacts.
     decision:
       - approved:
           when: The solution meets the review criteria, required decisions and approvals are resolved, and no comments remain.

@@ -22,6 +22,9 @@ import {
 import { runExecuteLoop, runExecuteOnce, startTracked, trackDispatch } from './execute-loop.js';
 import { verifyOnlyExecution } from './execute-reply.js';
 import { type ExecuteRequest, HeldSession, openExecuteSession } from './execute-session.js';
+import { PLUGIN_HOLD_STOP } from './execute-state.js';
+import { logHostProblem, PluginHost } from './plugin-host/dispatch.js';
+import { holdsPending } from './plugin-host/holds.js';
 import { judgeCancelled } from './resume-reopen.js';
 import { runVerifyOnlyStage } from './verify-only.js';
 
@@ -72,29 +75,68 @@ async function executeLocked(
   const {registry} = activeRunner;
   const limits = dispatchLimits(request);
   const store = new SessionStore(workspace);
-  const opened = await openExecuteSession(workspace, request, { held, registry, store });
+  const opened = await openExecuteSession(
+    workspace, request, { held, registry, store, pluginRegistry: activeRunner.pluginRegistry },
+  );
   if (opened.kind === 'final') return opened.result;
   const { sessionId, workflow, workflowId, stageReply, resumeCancelled, reopenLatestCancelled } = opened;
+  const host = new PluginHost(
+    { workspace, sessionId },
+    opened.plugins,
+    { plugins: activeRunner.pluginRegistry, clients: activeRunner.registry },
+  );
   const removeSignalHandlers = installSignalHandlers(held);
   const tasks = new Map<string, Promise<unknown>>();
   const run: ExecuteRun = {
-    workspace,
-    store,
-    workflow,
-    workflowId,
-    sessionId,
-    runner: activeRunner,
-    tasks,
-    reply: stageReply,
+    workspace, store, workflow, workflowId, sessionId, runner: activeRunner, tasks, reply: stageReply,
   };
   try {
-    const scoped = request.resumeTarget === true;
-    return await runOpened(run, { limits, resumeCancelled, reopenLatestCancelled, scoped });
+    const opts = { limits, resumeCancelled, reopenLatestCancelled, scoped: request.resumeTarget === true };
+    return heldResult(store, await runWithHooks(host, opened.started, () => runOpened(run, opts)));
   } catch (error) {
-    return await handleExecuteError(error, { store, sessionId, tasks });
+    return await settleFailedRun(host, error, { store, sessionId, tasks });
   } finally {
+    await host.close().catch(logHostProblem);
     removeSignalHandlers();
   }
+}
+
+/** Maps a failed run to its result. A run that ended by cancellation still did work, so `session.stopped` settles. */
+async function settleFailedRun(
+  host: PluginHost,
+  error: unknown,
+  scope: { store: SessionStore; sessionId: string; tasks: Map<string, Promise<unknown>> },
+): Promise<ExecuteResult> {
+  const result = await handleExecuteError(error, scope);
+  await host.finish({ fireStopped: true }).catch(logHostProblem);
+  return result;
+}
+
+/**
+ * Runs scheduling with plugin hooks active. After scheduling ends `session.stopped` fires, and every invocation
+ * settles before the caller releases the session lock.
+ */
+async function runWithHooks(
+  host: PluginHost,
+  started: boolean,
+  schedule: () => Promise<ExecuteResult>,
+): Promise<ExecuteResult> {
+  host.start();
+  if (started) host.fireSessionStarted();
+  const result = await schedule();
+  await host.finish({ fireStopped: true });
+  return result;
+}
+
+/** The result and exit code follow the committed status: an unresolved plugin hold ends the run with exit 1. */
+function heldResult(store: SessionStore, result: ExecuteResult): ExecuteResult {
+  if (result.sessionId === '' || result.stopReason === 'configuration' || result.stopReason === 'cancelled') return result;
+  const status = store.readSessionStatus(result.sessionId);
+  if (!holdsPending(status)) return result;
+  // A hold outranks a clean finish and the dispatch ceiling. Stage failures, questions and quota keep their exit.
+  const outranked = result.code === 0 || result.stopReason === 'dispatch_limit';
+  if (!outranked) return { ...result, status: text(status.status) };
+  return { ...result, code: exitCode('blocked'), stopReason: PLUGIN_HOLD_STOP, status: text(status.status) };
 }
 
 // Sends a pending reply, reopens cancelled executions when asked, then dispatches onward.

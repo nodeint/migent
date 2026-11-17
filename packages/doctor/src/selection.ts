@@ -1,4 +1,4 @@
-import { type ClientRegistry,whichSync } from '@nodeint/migent-kernel';
+import { type ClientRegistry, type PluginRegistry, whichSync } from '@nodeint/migent-kernel';
 import { type SessionSelection } from '@nodeint/migent-session';
 import { loadWorkflowCatalog } from '@nodeint/migent-workflow';
 
@@ -13,6 +13,8 @@ import { stageAgentDefinitions } from './stage-agents.js';
 
 export interface DiagnoseHooks {
   clients: ClientRegistry;
+  /** The static plugin registry. Absent means none registered. */
+  plugins?: PluginRegistry;
   /** Defaults to the real PATH lookup. */
   which?: Which | null;
   /** Reads client catalogs. Without it models are not looked up. */
@@ -53,7 +55,8 @@ export async function diagnoseSelection(
         pinned: Object.values(selection.freeze?.targets ?? {}).map((target) => target.client),
       }),
     });
-  return diagnoseSession(workspace, selection, { clients: hooks.clients, which, modelEffortChecks, nativeOptionFacts });
+  const { clients, plugins } = hooks;
+  return diagnoseSession(workspace, selection, { clients, plugins, which, modelEffortChecks, nativeOptionFacts });
 }
 
 /** The checks of `migent doctor`: config, workflows and clients, with every model looked up. */
@@ -73,5 +76,6 @@ export async function diagnoseWorkspace(
     runCommand: hooks.helpCommand ?? hooks.runCommand,
     only: usedClientIds(workspace, hooks.clients, { extra: stageAgentDefinitions(documents) }),
   });
-  return diagnose(workspace, { clients: hooks.clients, which, modelEffortChecks, nativeOptionFacts });
+  const { clients, plugins } = hooks;
+  return diagnose(workspace, { clients, plugins, which, modelEffortChecks, nativeOptionFacts });
 }

@@ -12,6 +12,8 @@ import { effectiveConfigSection as resolveSection } from '../src/freeze-config-s
 import { readWorkflowFreeze, WORKFLOW_FREEZE_FILE, writeWorkflowFreeze } from '../src/session-freeze.ts';
 
 const registered = CONFIG_SECTIONS as ConfigSection[];
+const production = [...CONFIG_SECTIONS];
+const restoreProduction = (): void => { registered.splice(0, registered.length, ...production); };
 const schema = (value: object): TSchema => value as TSchema;
 const Entry = schema({ type: 'object', properties: { enabled: { type: 'boolean' } }, required: ['enabled'] });
 type Frozen = Parameters<typeof resolveSection>[0];
@@ -28,7 +30,7 @@ beforeEach(() => {
 });
 const dirs: string[] = [];
 afterEach(() => {
-  registered.length = 0;
+  restoreProduction();
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true });
 });
 
@@ -107,11 +109,11 @@ test('an invalid merged section is refused at freeze time', () => {
 });
 
 test('an unregistered top-level key and an unregistered config entry are ignored', () => {
-  const workspace = workspaceWith('plugins: { a: 1 }\npinned: { level: 1 }\n');
+  const workspace = workspaceWith('future_section: { a: 1 }\npinned: { level: 1 }\n');
   freeze(workspace);
   rewrite(workspace, (mapping) => { (mapping.config as Record<string, unknown>).unknown_section = 5; });
   expect(Object.keys(readWorkflowFreeze(workspace)?.config ?? {})).toEqual(['pinned']);
-  expect(readFileSync(fileOf(workspace), 'utf8')).not.toContain('plugins');
+  expect(readFileSync(fileOf(workspace), 'utf8')).not.toContain('future_section');
 });
 
 test('an old freeze without config reads as no sections', () => {

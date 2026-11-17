@@ -6,7 +6,7 @@ import { ConfigurationError, CORRECTION_FAILURE_REASONS,formatDuration, isSessio
 import { FAILURE_FILENAME, formatNextCommand,publishNextSuggestions, SessionStore, watchSnapshot } from '@nodeint/migent-session';
 import { type OptionValues } from 'commander';
 
-import { clientRegistry } from '../client.js';
+import { clientRegistry, withPlugins } from '../client.js';
 import { formatQuestion, formatResumeDecision, printError, printReplyCommand, printResumeCommand } from '../display.js';
 import { EXIT_BLOCKED, EXIT_CANCELLED, EXIT_CONFIG, EXIT_QUOTA, EXIT_STAGE_FAILED, EXIT_VERIFY, EXIT_VERIFY_FAILED } from '../exits.js';
 import { cliHooks } from '../hooks.js';
@@ -41,7 +41,7 @@ export async function executeWorkflow(workspace: string, options: ExecuteWorkflo
   const startPrepared = options.startPrepared === true;
   const sessionId = text(options.sessionId);
   const creating = !startPrepared && (options.action === 'start' || (once && sessionId === null));
-  const runner = options.runner ?? cliHooks.runner ?? new AgentToolRunner(clientRegistry());
+  const runner = options.runner ?? cliHooks.runner ?? withPlugins(new AgentToolRunner(clientRegistry()));
   runner.itemProgress = options.itemProgress === true;
   const result = await executeNamedWorkflow(
     workspace,
@@ -112,7 +112,7 @@ function preflightHook(
       process.stderr.write('preflight skipped (--skip-preflight)\n');
       return true;
     }
-    return runPreflight(workspace, target, { clients: runner.registry });
+    return runPreflight(workspace, target, { clients: runner.registry, plugins: runner.pluginRegistry });
   };
 }
 

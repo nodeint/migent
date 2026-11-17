@@ -13,6 +13,7 @@ import { stringify } from 'yaml';
 
 import { FIRST_SESSION_SUFFIX, MANIFEST_SCHEMA_EVENT_LOG, TURN_PAD_WIDTH } from './constants.js';
 import { sessionEventLog } from './event-log.js';
+import { type PluginFreezeInput, recordPluginsFrozen } from './freeze-plugins.js';
 import { completedPriorStatus, resolveHandoff, snapshotHandoff } from './next-handoff.js';
 import { corruptStatusMessage, readStatusFileState } from './query.js';
 import { readSessionManifest } from './session-fold-read.js';
@@ -103,6 +104,7 @@ export interface CreateWorkflowSessionOptions {
   readonly task: string | null | undefined;
   readonly priorSessionId?: string | null;
   readonly resolveClient?: ClientRegistry;
+  readonly plugins?: PluginFreezeInput;
 }
 
 function selectTaskSummary(task: string | null | undefined, handoffTask: string | null | undefined): string {
@@ -119,7 +121,7 @@ export function createWorkflowSession(
   workflowId: string,
   options: CreateWorkflowSessionOptions,
 ): string {
-  const { task, priorSessionId, resolveClient } = options;
+  const { task, priorSessionId, resolveClient, plugins } = options;
   const workflow = loadNamedWorkflow(workspace, workflowId);
   const resolvedId = workflow.id;
   const resolvedPrior = resolvePriorSessionId(workspace, workflow, priorSessionId);
@@ -145,7 +147,7 @@ export function createWorkflowSession(
       if (snapshot) manifestLines.push(`handoff: ${JSON.stringify(snapshot)}`);
       writeFileAtomic(path.join(sessionDirectory, 'manifest.yaml'), `${manifestLines.join('\n')}\n`);
       writeTaskFile(taskFilePath(workspace, sessionId), taskSummary);
-      const frozen = writeWorkflowFreeze(sessionDirectory, { workspace, workflow, resolveClient });
+      const frozen = writeWorkflowFreeze(sessionDirectory, { workspace, workflow, resolveClient, plugins });
       appendSessionCreated(sessionDirectory, createdAt, {
         workflow_id: resolvedId,
         workflow_path: workflowRelativePath,
@@ -155,6 +157,7 @@ export function createWorkflowSession(
         prior_session_id: resolvedPrior,
         handoff: snapshot,
       });
+      recordPluginsFrozen(sessionDirectory, frozen);
       sessionEventLog.commit(workspace, sessionDirectory);
     });
   } catch (error) {
@@ -216,7 +219,12 @@ export function createPreparedSession(workspace: string, input: CreatePreparedSe
   return sessionId;
 }
 
-export function activatePreparedSession(workspace: string, sessionId: string, resolveClient?: ClientRegistry): void {
+export function activatePreparedSession(
+  workspace: string,
+  sessionId: string,
+  freezeOptions: { resolveClient?: ClientRegistry; plugins?: PluginFreezeInput } = {},
+): void {
+  const { resolveClient, plugins } = freezeOptions;
   requireTaskBody(workspace, sessionId);
   const sessionDirectory = path.join(workspace, '.migent', 'sessions', sessionId);
   const statusPath = path.join(sessionDirectory, 'status.json');
@@ -238,10 +246,11 @@ export function activatePreparedSession(workspace: string, sessionId: string, re
   const handoff = resolveHandoff(workspace, workflow.id, prior);
   withSessionLock(sessionDirectory, () => {
     const snapshot = snapshotHandoff(sessionDirectory, handoff);
-    const frozen = writeWorkflowFreeze(sessionDirectory, { workspace, workflow, resolveClient });
+    const frozen = writeWorkflowFreeze(sessionDirectory, { workspace, workflow, resolveClient, plugins });
     sessionEventLog.record(sessionDirectory, {
       event: 'handoff.bound', timestamp: utcNow(), data: { handoff: snapshot, hash: frozen.hash },
     });
+    recordPluginsFrozen(sessionDirectory, frozen);
     if (snapshot) {
       const manifestPath = path.join(sessionDirectory, 'manifest.yaml');
       const body = parseYamlDocument(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>;

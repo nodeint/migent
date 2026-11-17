@@ -39,3 +39,13 @@ describe('operation runtime dependencies', () => {
     }
   });
 });
+
+describe('runtime and plugin host boundary', () => {
+  it('imports nothing from plugin-host', () => {
+    for (const { name, text } of sources) {
+      for (const specifier of importSpecifiers(text)) {
+        expect(specifier.includes('plugin-host'), `${name} imports ${specifier}`).toBe(false);
+      }
+    }
+  });
+});

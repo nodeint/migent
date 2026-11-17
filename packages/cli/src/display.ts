@@ -236,6 +236,49 @@ function attentionLines(snapshot: Record<string, unknown>): Line[] {
   return lines;
 }
 
+function pluginResultText(result: Record<string, unknown>): string {
+  const target = nonEmptyString(result.path) ? ` ${result.path}` : '';
+  const reason = nonEmptyString(result.reason) ? ` (${result.reason})` : '';
+  return `${String(result.kind)} ${String(result.status)}${target}${reason}`;
+}
+
+function pluginActiveText(row: Record<string, unknown>): string {
+  const flags = [row.enabled === false ? 'disabled' : '', row.advisory === true ? 'advisory' : ''].filter(Boolean);
+  return `${String(row.id)}@${nonEmptyString(row.version) ? row.version : '?'}${flags.length > 0 ? ` (${flags.join(', ')})` : ''}`;
+}
+
+function pluginInvocationText(row: Record<string, unknown>): string {
+  const hook = nonEmptyString(row.hook) ? row.hook : '?';
+  const parts = [`${String(row.plugin)} ${hook}`, String(row.status)];
+  const failure = isRecord(row.failure) ? row.failure : null;
+  if (failure !== null) {
+    parts.push(`${String(failure.reason)} (on_error ${String(failure.on_error)})`);
+    if (nonEmptyString(failure.error)) parts.push(failure.error);
+  }
+  for (const result of recordList(row.results)) parts.push(pluginResultText(result));
+  if (typeof row.agent_calls === 'number' && row.agent_calls > 0) parts.push(`${row.agent_calls} agent call${row.agent_calls === 1 ? '' : 's'}`);
+  return parts.join(' · ');
+}
+
+/** The `plugins` section of a snapshot: one line per fact, absent when the session has no plugin data. */
+function pluginLines(snapshot: Record<string, unknown>): Line[] {
+  const {plugins} = snapshot;
+  if (!isRecord(plugins)) return [];
+  const lines: Line[] = [];
+  const active = recordList(plugins.active).map(pluginActiveText);
+  lines.push(['plugins', active.length === 0 ? 'none' : active.join(', ')]);
+  for (const row of recordList(plugins.invocations)) lines.push(['plugin', pluginInvocationText(row)]);
+  if (nonEmptyString(plugins.live_unavailable)) lines.push(['plugin_live_unavailable', plugins.live_unavailable]);
+  const added = Array.isArray(plugins.added_after_freeze) ? plugins.added_after_freeze.map(String) : [];
+  if (added.length > 0) lines.push(['plugin_added_after_freeze', added.join(', ')]);
+  for (const hold of recordList(plugins.holds)) {
+    const where = nonEmptyString(hold.hook) ? `${String(hold.plugin)} (${hold.hook})` : String(hold.plugin);
+    lines.push(['plugin_hold', `${where} · on_error ${String(hold.on_error)}${nonEmptyString(hold.error) ? ` · ${hold.error}` : ''}`]);
+  }
+  if (nonEmptyString(plugins.freeze_mismatch)) lines.push(['plugin_freeze_mismatch', plugins.freeze_mismatch]);
+  return lines;
+}
+
 function outcomeLines(snapshot: Record<string, unknown>): Line[] {
   const {outcome} = snapshot;
   if (!isRecord(outcome) || typeof outcome.status !== 'string') return [];
@@ -268,6 +311,7 @@ export function printWatchSnapshot(snapshot: Record<string, unknown>): void {
     ...executionLines(snapshot),
     ...attentionLines(snapshot),
     ...outcomeLines(snapshot),
+    ...pluginLines(snapshot),
     ...recordList(snapshot.quota_failures).map((quota): Line => ['quota', formatQuotaFailure(quota)]),
   ];
   if (nonEmptyString(snapshot.diagnostics)) lines.push(['diagnostics', snapshot.diagnostics]);
@@ -298,12 +342,24 @@ function expiredDecision(event: Record<string, unknown>, sessionId: string): str
 export function printWatchEvent(event: Record<string, unknown>, sessionId = '<session>'): void {
   const eventName = event.event;
   const stageId = event.stage_id;
-  if (typeof eventName !== 'string' || typeof stageId !== 'string') return;
+  if (typeof eventName !== 'string') return;
+  if (eventName.startsWith('plugin') && typeof stageId !== 'string') {
+    printPluginEvent(event, eventName);
+    return;
+  }
+  if (typeof stageId !== 'string') return;
   const decision = eventName === 'resume.expired' ? expiredDecision(event, sessionId) : null;
   const text = decision ?? (typeof event.summary === 'string' ? event.summary : '');
   const summary = text === '' ? '' : ` · ${text}`;
   const label = eventName.replace(/^provider\./, '').replaceAll('_', ' ');
   process.stdout.write(`${formatWatchTimestamp(event.timestamp)} ${stageId} ${label}${summary}\n`);
+}
+
+function printPluginEvent(event: Record<string, unknown>, eventName: string): void {
+  const data = isRecord(event.data) ? event.data : {};
+  const detail = [data.plugin, data.hook, data.reason].filter(nonEmptyString).join(' ');
+  const summary = typeof event.summary === 'string' && event.summary !== '' ? ` · ${event.summary}` : '';
+  process.stdout.write(`${formatWatchTimestamp(event.timestamp)} ${eventName}${detail === '' ? '' : ` ${detail}`}${summary}\n`);
 }
 
 export function formatWatchTimestamp(timestamp: unknown): string {

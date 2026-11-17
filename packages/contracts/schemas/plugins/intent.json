@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/plugins/intent.json",
+  "anyOf": [
+    {
+      "type": "object",
+      "required": [
+        "kind",
+        "name",
+        "content",
+        "media_type"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "output"
+        },
+        "name": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "media_type": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "kind",
+        "text"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "note"
+        },
+        "text": {
+          "type": "string"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "none"
+        }
+      }
+    }
+  ],
+  "title": "Plugin intent",
+  "description": "A closed union. The core decides and records every effect."
+}

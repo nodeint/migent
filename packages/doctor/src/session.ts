@@ -1,4 +1,4 @@
-import { type ClientInfo, type ClientRegistry, ConfigurationError, loadRoleResponsibilities, loadWorkspaceConfig, resolveEffectiveClient, resolveStageSpec, type StageTarget,whichSync } from '@nodeint/migent-kernel';
+import { type ClientInfo, type ClientRegistry, ConfigurationError, loadRoleResponsibilities, loadWorkspaceConfig, pluginEntryIssues, pluginTargetIssues, registryManifests, resolveEffectiveClient, resolveStageSpec, type StageTarget,whichSync } from '@nodeint/migent-kernel';
 import { collectFrozenDrift, type SessionSelection, type SessionSource, type WorkflowFreeze } from '@nodeint/migent-session';
 import { isRoleStage, type RoleStageSpec, type WorkflowDocument } from '@nodeint/migent-workflow';
 
@@ -50,7 +50,7 @@ export function diagnoseSession(
   if (document === null) return finish(source, [sessionCheck]); // Nothing further can be checked.
 
   const label = source === null ? document.id : source.path;
-  const workflowProblems: string[] = [];
+  const workflowProblems: string[] = [...pluginProblems(workspace, selection, options)];
   if (Object.keys(document.stages).length === 0) workflowProblems.push(`${document.id}: declares no stages.`);
   const workflowWarnings = authoringWarnings(document, label);
   const drift = frozenDrift(workspace, selection, options);
@@ -60,6 +60,37 @@ export function diagnoseSession(
   const { bindingsCheck, executables } = checkBindings(workspace, { selection, document, options });
   const clientsCheck = checkExecutables(executables, which);
   return finish(source, [sessionCheck, workflowCheck, bindingsCheck, clientsCheck]);
+}
+
+/**
+ * Plugin problems of the config the session reads, as the freeze would find them: every entry for a live session,
+ * only the live (advisory) entries for a frozen one, whose other entries were validated when they were frozen.
+ * A non-advisory agent-calling entry must also resolve its agent target; an advisory one is not frozen, so an
+ * unresolved agent only makes it unavailable at run time. Only an absent section skips validation.
+ */
+function pluginProblems(workspace: string, selection: SessionSelection, options: DiagnoseSessionOptions): string[] {
+  let config: Record<string, unknown>;
+  try {
+    config = loadWorkspaceConfig(workspace);
+  } catch {
+    return [];
+  }
+  if (!Object.hasOwn(config, 'plugins')) return [];
+  const registry = options.plugins ?? { ids: () => [], get: () => undefined };
+  const entries = applicableEntries(config.plugins, selection);
+  const manifests = registryManifests(registry);
+  const issues = pluginEntryIssues({ plugins: entries, manifests });
+  if (issues.length > 0) return issues.map((issue) => issue.message);
+  const targets = pluginTargetIssues(config, { plugins: entries, registry, clients: options.clients });
+  return targets.map((issue) => issue.message);
+}
+
+/** The `plugins` value to validate: all of it for a live session, the kept live entries for a frozen one. */
+function applicableEntries(plugins: unknown, selection: SessionSelection): unknown {
+  if (selection.freeze === null || !isRecord(plugins)) return plugins;
+  const section = selection.freeze.config.plugins;
+  const kept = new Set(section?.kind === 'per_entry' ? section.liveEntries : []);
+  return Object.fromEntries(Object.entries(plugins).filter(([id]) => kept.has(id)));
 }
 
 function buildSessionCheck(selection: SessionSelection): Check {

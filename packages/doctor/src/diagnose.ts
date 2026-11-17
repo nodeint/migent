@@ -27,7 +27,7 @@ export function diagnose(workspace: string, options: DiagnoseOptions): [Check, C
   const configResult = checkConfig(
     workspace,
     options.clients,
-    { effortChecks: efforts, nativeOptionFacts: options.nativeOptionFacts },
+    { effortChecks: efforts, nativeOptionFacts: options.nativeOptionFacts, plugins: options.plugins },
   );
   const workflowCheck = checkWorkflows(workspace, {
     clients: options.clients,

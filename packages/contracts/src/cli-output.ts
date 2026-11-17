@@ -1,6 +1,7 @@
 import Type, { type Static } from 'typebox';
 
 import { Diagnostic, id, listOf, NextSuggestion, nullable } from './common.js';
+import { PluginsSection } from './plugins-inspection.js';
 
 const strings = () => Type.Array(Type.String());
 const record = () => Type.Record(Type.String(), Type.Unknown());
@@ -364,6 +365,7 @@ const snapshotProperties = {
       { description: 'Resume decisions the session waits for. `session resume` decides them.' },
     ),
   ),
+  plugins: Type.Optional(PluginsSection),
   diagnostics: Type.Optional(Type.String()),
   exit_anomalies: Type.Optional(
     Type.Array(

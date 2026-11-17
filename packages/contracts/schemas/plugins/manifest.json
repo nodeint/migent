@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/plugins/manifest.json",
+  "type": "object",
+  "required": [
+    "id",
+    "version",
+    "advisory",
+    "hooks",
+    "capabilities",
+    "configSchema"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$",
+      "description": "Semver 2.0.0."
+    },
+    "advisory": {
+      "type": "boolean"
+    },
+    "hooks": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "session.started",
+          "execution.finished",
+          "session.stopped"
+        ]
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "invokeAgent"
+        ]
+      }
+    },
+    "configSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": true
+    },
+    "defaults": {
+      "type": "object",
+      "properties": {
+        "on_error": {
+          "$ref": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/plugins/on-error.json"
+        },
+        "timeout_sec": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    }
+  },
+  "title": "Plugin manifest",
+  "description": "Readable without activating the plugin. `configSchema` is a TypeBox schema."
+}

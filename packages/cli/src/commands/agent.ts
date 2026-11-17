@@ -7,7 +7,7 @@ import { CancellationRequested, ConfigurationError, legacyClientOf, log, resolve
 import { createAgentSession, type HumanInput, isSessionLockLost, repairSessionUnlocked, requireAgentSession, SessionLock, SessionStore, stringOptions } from '@nodeint/migent-session';
 import { type OptionValues } from 'commander';
 
-import { clientRegistry, parseOptions } from '../client.js';
+import { clientRegistry, parseOptions, withPlugins } from '../client.js';
 import { printAgent, printError, printNotice, printReplyCommand,printResumeCommand } from '../display.js';
 import { writeJson } from '../emit.js';
 import { EXIT_CANCELLED,EXIT_CONFIG, EXIT_QUESTION, EXIT_VERIFY } from '../exits.js';
@@ -39,7 +39,7 @@ type DispatchArgs = {
 
 export async function dispatchAgent(workspace: string, args: DispatchArgs): Promise<number> {
   requireCurrentSchema(workspace);
-  const runner = args.runner ?? cliHooks.runner ?? new AgentToolRunner(clientRegistry());
+  const runner = args.runner ?? cliHooks.runner ?? withPlugins(new AgentToolRunner(clientRegistry()));
   const parsed = parseOptions(args.options ?? []);
   const override = {
     client: args.client ?? null,
@@ -222,7 +222,7 @@ async function continueLocked(
   const { role } = state;
   printProfileNotice(role, profile);
   return guardRoleRun(lock, args.sessionId, async () => {
-    const runner = args.runner ?? cliHooks.runner ?? new AgentToolRunner(clientRegistry());
+    const runner = args.runner ?? cliHooks.runner ?? withPlugins(new AgentToolRunner(clientRegistry()));
     if (state.sessionStatus === 'cancelled') {
       return await runCancelledRole(workspace, args.sessionId, { role, profile, runner, asJson: false });
     }

@@ -85,6 +85,28 @@ The session-level files have distinct purposes:
   Agent sessions do not have this file. Its `config` key holds only registered
   config sections; frozen `roles`, `targets`, and `resume_policies` stay at the
   top level.
+- The `plugins` config section freezes per entry. Every entry except an
+  advisory plugin is frozen, but only an enabled entry must be registered and
+  at the frozen version when the session resumes. Each freeze (start, prepared
+  activation, `--refresh-workflow`) records a `plugins.frozen` event with the
+  freeze hash and the entry versions and pinned agent targets. A freeze file
+  that no longer matches the last event, or a missing or upgraded plugin, stops
+  the resume with exit code 2.
+- Plugin hooks run during a run and are recorded in `events.jsonl`. `session.started` fires when the run
+  creates or activates the session, `execution.finished` for each finished execution, and `session.stopped` once
+  scheduling ends, only when the run dispatched work. Each invocation records `plugin.hook_invoked`, then
+  `plugin.decision` (the applied intents) or `plugin.failed`. An `output` intent is written to
+  `plugins/<id>/<name>`, where `<name>` is one safe file name. `on_error` decides a failure: `ignore` records it,
+  `stop` and `fail` set a plugin hold. An advisory plugin always uses `ignore`. Hooks are not replayed on resume,
+  and every invocation settles before the session lock is released.
+- A plugin that declares `invokeAgent`, and whose config has an `agent`, can ask for one provider turn with no
+  conversation or resume. Each call runs as the `plugin.invoke_agent` operation on the operation runtime. The raw
+  response is stored in `plugins/<id>/calls/<invocation>-<n>.txt`, and the invocation's `plugin.decision` or
+  `plugin.failed` lists the call under `agent_calls`. The plugin receives only `{ text, error }`. A non-advisory
+  plugin uses the agent target pinned in `plugins.frozen`; an advisory plugin resolves the live agent at the call.
+  When the invocation deadline passes or the run is cancelled, the provider process is stopped before the failure
+  is recorded, and a later call starts no process.
+  `session show` reports the plugin facts from these events; see [CLI](cli.md#inspect-sessions).
 - `task.md` is the task body. A one-line `session run --workflow --task` writes
   that sentence here. A prepared session creates an empty file for you to write, along with any
   other files that belong next to it. Stage prompts name this path and the

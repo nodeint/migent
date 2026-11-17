@@ -72,6 +72,7 @@ Type: object
 | `agents` | map of ([Agent (effective)](#config-resolved-agent-json) \| [Unmapped agent](#config-agent-placeholder-json)) | no | | |
 | `roles` | map of [Role](#config-role-json) | yes | | |
 | `resume_policies` | map of [Resume policy](#config-resume-policy-json) | no | | |
+| `plugins` | map of (map of any) | no | | Plugin entries by plugin id. Every entry takes `enabled` (default `true`), `on_error` and `timeout_sec`; a plugin that calls an agent also takes `agent` (a named agent or an inline one) and `description`. Other fields belong to the plugin. Sessions freeze every entry except an advisory plugin; a local layer may set `enabled: false`. Example: `plugins: { my_plugin: { enabled: true } }`. |
 
 <a id="config-inline-agent-json"></a>
 
@@ -106,6 +107,7 @@ Type: object
 | `agents` | map of [Named agent (layer)](#config-named-agent-fragment-json) | no | | |
 | `roles` | map of [Role](#config-role-json) | no | | |
 | `resume_policies` | map of [Resume policy](#config-resume-policy-json) | no | | |
+| `plugins` | map of (map of any) | no | | Plugin entries by plugin id. Every entry takes `enabled` (default `true`), `on_error` and `timeout_sec`; a plugin that calls an agent also takes `agent` (a named agent or an inline one) and `description`. Other fields belong to the plugin. Sessions freeze every entry except an advisory plugin; a local layer may set `enabled: false`. Example: `plugins: { my_plugin: { enabled: true } }`. |
 
 <a id="config-named-agent-fragment-json"></a>
 

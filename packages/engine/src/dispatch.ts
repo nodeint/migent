@@ -26,6 +26,7 @@ import { isRoleStage, loadNamedWorkflow, type RoleStageSpec, type StageSpec, typ
 
 import { AgentToolRunner, type RunResult } from './agent-runner.js';
 import { PendingStageReply } from './execute-state.js';
+import { pluginFreezeInput } from './plugin-host/freeze.js';
 import { answersQuestion, freshStagePrompt, gateStageResume, resumeExpiredStage } from './resume-dispatch.js';
 import { ensureSessionBaseline } from './run-when.js';
 import { skipUnlessRunWhenMatches } from './run-when-skip.js';
@@ -183,7 +184,12 @@ function resolveDispatchSession(
   const sessionId = createWorkflowSession(
     workspace,
     loaded.workflow.id,
-    { task: request.task, priorSessionId: request.priorSessionId, resolveClient: registry },
+    {
+      task: request.task,
+      priorSessionId: request.priorSessionId,
+      resolveClient: registry,
+      plugins: pluginFreezeInput(run.runner.pluginRegistry, registry),
+    },
   );
   const reloaded = run.resolved ? loaded : loadDispatchTarget(workspace, { ...request, sessionId }, registry);
   return { sessionId, workflow: reloaded.workflow, target: reloaded.target };

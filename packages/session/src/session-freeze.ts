@@ -31,6 +31,7 @@ import { stringify } from 'yaml';
 
 import { type EntryClassifiers, freezeConfigSections, type FrozenSection, readFrozenConfigSections } from './freeze-config-sections.js';
 import { corrupt } from './freeze-corrupt.js';
+import type { PluginFreezeInput, PluginsFrozenEntries } from './freeze-plugins.js';
 import { freezeStagePolicy, frozenPolicyMap, readResumePolicyNames } from './freeze-resume-policy.js';
 import { sessionMapping } from './freeze-session-mapping.js';
 import { readTargets } from './freeze-targets.js';
@@ -60,6 +61,8 @@ export interface WorkflowFreeze {
 export interface WrittenFreeze {
   hash: string;
   sourceSha256: string | null;
+  /** The plugin snapshot of this freeze; absent when the merged config has no `plugins` key. */
+  plugins?: PluginsFrozenEntries;
 }
 
 export interface FreezeSource {
@@ -68,11 +71,36 @@ export interface FreezeSource {
   readonly resolveClient?: ClientRegistry;
   /** Per-entry classifier of each `per_entry` config section, by section key. Absent means none. */
   readonly classifiers?: EntryClassifiers;
+  /** Plugin support: the `plugins` classifier and the validated snapshot. Needed when the config has `plugins`. */
+  readonly plugins?: PluginFreezeInput;
+}
+
+/**
+ * The plugin snapshot and the classifiers of one freeze. Validates every entry before any file is written, so an
+ * invalid entry leaves no freeze behind.
+ */
+function pluginFreeze(
+  config: Record<string, unknown>,
+  source: FreezeSource,
+): { plugins: PluginsFrozenEntries | undefined; classifiers: EntryClassifiers } {
+  const hasPlugins = Object.hasOwn(config, 'plugins');
+  if (hasPlugins && source.plugins === undefined) {
+    throw new ConfigurationError('The config has a plugins section, but no plugin registry was supplied.', {
+      code: 'plugins-unsupported',
+      path: ['plugins'],
+    });
+  }
+  if (source.plugins === undefined) return { plugins: undefined, classifiers: source.classifiers ?? {} };
+  return {
+    plugins: hasPlugins ? source.plugins.snapshot(config) : undefined,
+    classifiers: { ...source.classifiers, plugins: source.plugins.classify },
+  };
 }
 
 export function writeWorkflowFreeze(sessionDirectory: string, source: FreezeSource): WrittenFreeze {
-  const { workspace, workflow, resolveClient, classifiers = {} } = source;
+  const { workspace, workflow, resolveClient } = source;
   const config = loadWorkspaceConfig(workspace);
+  const { plugins, classifiers } = pluginFreeze(config, source);
   const roles: Record<string, string[]> = {};
   for (const role of roleNames(workflow)) roles[role] = loadRoleResponsibilities(config, role);
   const targets: Record<string, Record<string, unknown>> = {};
@@ -101,7 +129,7 @@ export function writeWorkflowFreeze(sessionDirectory: string, source: FreezeSour
     { lineWidth: 0 },
   );
   writeFileAtomic(filePath, text);
-  return { hash: sha256(text), sourceSha256 };
+  return { hash: sha256(text), sourceSha256, ...(plugins === undefined ? {} : { plugins }) };
 }
 
 function errorText(error: unknown): string {

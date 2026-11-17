@@ -2,6 +2,8 @@ export type { SessionEventListener } from './event-log.js';
 export { SessionEventLog, sessionEventLog, subscribeSessionEvents } from './event-log.js';
 export type { EffectiveConfigSection, EntryClassifiers, FrozenSection, LiveEntry, SectionRequest } from './freeze-config-sections.js';
 export { effectiveConfigSection } from './freeze-config-sections.js';
+export type { PluginFreezeInput, PluginsFrozenEntries } from './freeze-plugins.js';
+export { recordPluginsFrozen } from './freeze-plugins.js';
 export type {
   LegacyExecutionClient,
   LegacyExecutionEvidence,
@@ -19,6 +21,8 @@ export {
 } from './metrics.js';
 export { formatNextCommand,publishNextSuggestions, resolveNextSuggestions } from './next-handoff.js';
 export { resolveHandoff } from './next-handoff.js';
+export type { InspectedHold, InspectedInvocation, InspectedPlugin, InspectedResult, PluginsInspection } from './plugin-inspection.js';
+export { readPluginsInspection } from './plugin-inspection.js';
 export type { StatusFileState } from './query.js';
 export {
   corruptStatusMessage,
@@ -50,6 +54,7 @@ export {
   readFoldedStatus,
   statusDriftMessage,
 } from './session-fold.js';
+export { PLUGIN_HOLD_RESOLUTION, type PluginHold, unresolvedPluginHolds } from './session-fold-holds.js';
 export { readExecutions, readSessionManifest, sessionSchemaVersion } from './session-fold-read.js';
 export type { FreezeSource, LiveWorkflowRef, WorkflowFreeze } from './session-freeze.js';
 export { collectFrozenDrift,WORKFLOW_FREEZE_FILE } from './session-freeze.js';

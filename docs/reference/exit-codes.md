@@ -11,7 +11,7 @@
 | 0 | `completed` | `doctor` | when every check passes. |
 | 0 | `completed` | `get` | on success, including an empty list. |
 | 0 | `completed` | `session complete` | on success and when already completed. |
-| 1 | `blocked` | Workflow run (`session run`, `session continue`) | when the session is blocked. session continue runs that stage again. |
+| 1 | `blocked` | Workflow run (`session run`, `session continue`) | when the session is blocked, or a plugin `fail` hold ends the run. session continue runs that stage again. |
 | 1 | `blocked` | Workflow run with `--once` or `--stage` | when the stage is not complete, or the session is blocked. |
 | 1 | `blocked` | Role run (`session run --role`) | when the outcome is not complete. |
 | 1 | `blocked` | Authoring (`config\|workflow validate\|render\|save`) | for an invalid draft. |

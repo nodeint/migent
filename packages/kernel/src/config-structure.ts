@@ -347,14 +347,14 @@ function expandRequired(issue: SchemaIssue): SchemaIssue[] {
  * Structural errors of one registered config section, in the code and path vocabulary of the core
  * sections. The section is validated as merged, so `ownerOf` attributes each path to its layer.
  */
-export function sectionIssues(key: string, schema: TSchema, value: unknown): ConfigurationError[] {
-  const root: Field = { label: key, path: [key] };
+export function sectionIssues(root: Field | string, schema: TSchema, value: unknown): ConfigurationError[] {
+  const field: Field = typeof root === 'string' ? { label: root, path: [root] } : root;
   return schemaIssues(schema, value)
     // `additionalProperties` repeats the per-key issue at the parent, as in `buildStructuralIndex`.
     .filter((issue) => !['anyOf', 'additionalProperties', 'propertyNames'].includes(issue.keyword))
     // A missing field is reported at its own path, one error per field.
     .flatMap(expandRequired)
-    .map((issue) => translate(issue, root));
+    .map((issue) => translate(issue, field));
 }
 
 /** Container problems (`agents`, `roles`), read from the index. */

@@ -23,7 +23,7 @@ const PROJECT = {
   roles: { dev: { agent: 'x' } },
 };
 const UNKNOWN = {
-  schema_version: 7, plugins: { example: { enabled: true } } };
+  schema_version: 7, future_section: { example: { enabled: true } } };
 
 test('an unknown top-level key in the project layer adds no diagnostic', () => {
   const clients = defaultClients();
@@ -42,7 +42,7 @@ test('an unknown top-level key in the local layer adds no diagnostic', () => {
 test('an unknown top-level key in both layers adds no diagnostic', () => {
   const clients = defaultClients();
   expect(
-    validateConfigLayers({ project: { ...PROJECT, ...UNKNOWN }, local: { plugins: { other: 1 } } }, clients),
+    validateConfigLayers({ project: { ...PROJECT, ...UNKNOWN }, local: { future_section: { other: 1 } } }, clients),
   ).toEqual(validateConfigLayers({ project: PROJECT }, clients));
 });
 
@@ -62,14 +62,14 @@ test('draft validation of the local scope ignores an unknown key', () => {
 
 test('mergeConfigLayers keeps an unknown top-level key in the merged config without error', () => {
   const merged = mergeConfigLayers({ ...PROJECT, ...UNKNOWN }, null);
-  expect(merged.config.plugins).toEqual(UNKNOWN.plugins);
+  expect(merged.config.future_section).toEqual(UNKNOWN.future_section);
 });
 
 function project(withUnknown: boolean, layer: 'project' | 'local'): string {
   const workspace = tempDir('migent-unknown-key-');
   roots.push(workspace);
   mkdirSync(path.join(workspace, '.migent', 'workflows'), { recursive: true });
-  const unknown = 'plugins:\n  example:\n    enabled: true\n';
+  const unknown = 'future_section:\n  example:\n    enabled: true\n';
   const config = path.join(workspace, '.migent', 'config.yaml');
   writeFileSync(config, STAGE_CONFIG + (withUnknown && layer === 'project' ? unknown : ''), 'utf8');
   if (withUnknown && layer === 'local') writeFileSync(path.join(workspace, '.migent', 'config.local.yaml'), unknown, 'utf8');

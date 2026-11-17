@@ -7,13 +7,15 @@ const schema = (value: object): TSchema => value as TSchema;
 
 /** A test-only registration: the production list stays empty and has no registration API. */
 const registered = CONFIG_SECTIONS as ConfigSection[];
+const production = [...CONFIG_SECTIONS];
+const restoreProduction = (): void => { registered.splice(0, registered.length, ...production); };
 beforeEach(() => {
   registered.push(
     { key: 'deepsec', merge: 'deep', freeze: 'frozen', schema: schema({ type: 'object', properties: { enabled: { type: 'boolean' }, name: { type: 'string' } }, required: ['enabled'], additionalProperties: false }) },
     { key: 'replacesec', merge: 'replace', freeze: 'frozen', schema: schema({ type: 'object', properties: { a: { type: 'number' }, b: { type: 'number' } } }) },
   );
 });
-afterEach(() => { registered.length = 0; });
+afterEach(() => { restoreProduction(); });
 
 test('a deep section merges like any mapping and is owned by both layers', () => {
   const merged = mergeConfigLayers({ deepsec: { enabled: true } }, { deepsec: { name: 'x' } });
@@ -65,7 +67,7 @@ test('an absent section and an unregistered key give no issue', () => {
 });
 
 test('the merge is unchanged when nothing is registered', () => {
-  registered.length = 0;
+  restoreProduction();
   const merged = mergeConfigLayers({ plugins: { a: { x: 1 } } }, { plugins: { a: { y: 2 } } });
   expect(merged.config.plugins).toEqual({ a: { x: 1, y: 2 } });
   expect(configSectionIssues(merged.config)).toEqual([]);

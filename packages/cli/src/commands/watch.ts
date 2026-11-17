@@ -2,9 +2,12 @@ import { closeSync, openSync, readFileSync, readSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { SessionFollowRecord, SessionSnapshot, SessionSnapshotLine, type Static } from '@nodeint/migent-contracts';
+import { withLivePlugins } from '@nodeint/migent-engine';
 import { BYTES_PER_KIB, CancellationRequested, ConfigurationError, exitFor, log, stageStopStatus } from '@nodeint/migent-kernel';
+import type { PluginsInspection } from '@nodeint/migent-session';
 import { corruptStatusMessage, readExecutionFile, readStatusFileState, SessionLock, SessionStore, statusDriftMessage, watchSnapshot } from '@nodeint/migent-session';
 
+import { pluginRegistry } from '../client.js';
 import { printNotice, printWatchEvent, printWatchSnapshot } from '../display.js';
 import { writeJson } from '../emit.js';
 import { EXIT_CANCELLED, EXIT_QUESTION } from '../exits.js';
@@ -16,6 +19,7 @@ import {
   streamFollowStart,
 } from '../follow-log.js';
 import { isFile } from '../fs-utils.js';
+import { cliHooks } from '../hooks.js';
 import { bindCancellationSignals, delay, throwIfCliCancelled } from '../signals.js';
 
 /** Pause between log polls, in milliseconds. */
@@ -192,11 +196,21 @@ function printSnapshot(
   eventsCursor?: number,
 ): Record<string, unknown> {
   const { executionId, jsonLines } = selection;
-  const snapshot = watchSnapshot(sessionDirectory, executionId);
+  const snapshot = withLiveFacts(watchSnapshot(sessionDirectory, executionId), sessionDirectory);
   if (eventsCursor !== undefined) snapshot.events_cursor = eventsCursor;
   if (jsonLines) writeJson(eventsCursor === undefined ? SessionSnapshot : SessionSnapshotLine, snapshotJson(snapshot));
   else printWatchSnapshot(snapshot);
   return snapshot;
+}
+
+/** Adds the live plugin facts, which need the live config and the registry, so the session package cannot. */
+function withLiveFacts(snapshot: Record<string, unknown>, sessionDirectory: string): Record<string, unknown> {
+  const { plugins } = snapshot;
+  if (!isRecord(plugins)) return snapshot;
+  const workspace = path.resolve(sessionDirectory, '..', '..', '..');
+  const registry = cliHooks.runner?.pluginRegistry ?? pluginRegistry();
+  const inspection = plugins as unknown as PluginsInspection;
+  return { ...snapshot, plugins: withLivePlugins(inspection, { workspace, sessionDirectory, registry }) };
 }
 
 function snapshotJson(snapshot: Record<string, unknown>): Static<typeof SessionSnapshot> {

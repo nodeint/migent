@@ -1,0 +1,128 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/plugins/hook-input.json",
+  "type": "object",
+  "required": [
+    "hook",
+    "plugin",
+    "session"
+  ],
+  "properties": {
+    "hook": {
+      "enum": [
+        "session.started",
+        "execution.finished",
+        "session.stopped"
+      ]
+    },
+    "plugin": {
+      "type": "object",
+      "required": [
+        "id",
+        "version",
+        "config"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "config": {}
+      }
+    },
+    "session": {
+      "type": "object",
+      "required": [
+        "id",
+        "workflow_id",
+        "task_summary",
+        "status",
+        "trigger"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "workflow_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "task_summary": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "status": {
+          "type": "object",
+          "patternProperties": {
+            "^.*$": {}
+          }
+        },
+        "trigger": {
+          "type": "object",
+          "patternProperties": {
+            "^.*$": {}
+          }
+        }
+      }
+    },
+    "execution": {
+      "type": "object",
+      "required": [
+        "id",
+        "stage_id",
+        "outcome",
+        "artifacts"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "stage_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "outcome": {
+          "anyOf": [
+            {
+              "type": "object",
+              "patternProperties": {
+                "^.*$": {}
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  },
+  "title": "Plugin hook input",
+  "description": "Detached, deeply frozen data: no handles and no writable paths."
+}

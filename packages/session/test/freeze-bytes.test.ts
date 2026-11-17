@@ -100,13 +100,13 @@ test('freeze bytes with resume_policies', () => {
 });
 
 test('an unknown top-level config key does not change the freeze bytes', () => {
-  const unknown = 'plugins:\n  example:\n    enabled: true\n';
+  const unknown = 'future_section:\n  example:\n    enabled: true\n';
   expect(frozenText(BASE + unknown)).toBe(frozenText(BASE));
   expect(frozenText(BASE + POLICIES + unknown)).toBe(frozenText(BASE + POLICIES));
 });
 
 test('an unknown top-level key in the local layer does not change the freeze bytes', () => {
-  const unknown = 'plugins:\n  example:\n    enabled: true\n';
+  const unknown = 'future_section:\n  example:\n    enabled: true\n';
   expect(frozenText(BASE, unknown)).toBe(frozenText(BASE));
   expect(frozenText(BASE + POLICIES, unknown)).toBe(frozenText(BASE + POLICIES));
 });

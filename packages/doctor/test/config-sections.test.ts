@@ -6,10 +6,12 @@ import { defaultClients } from './support.ts';
 
 const schema = (value: object): TSchema => value as TSchema;
 const registered = CONFIG_SECTIONS as ConfigSection[];
+const production = [...CONFIG_SECTIONS];
+const restoreProduction = (): void => { registered.splice(0, registered.length, ...production); };
 beforeEach(() => {
   registered.push({ key: 'deepsec', merge: 'deep', freeze: 'frozen', schema: schema({ type: 'object', properties: { enabled: { type: 'boolean' } }, required: ['enabled'], additionalProperties: false }) });
 });
-afterEach(() => { registered.length = 0; });
+afterEach(() => { restoreProduction(); });
 
 const PROJECT = {
   schema_version: 7,
@@ -30,7 +32,7 @@ test('a registered section is validated and attributed to the layer that owns th
 test('a valid section and an unregistered key add no diagnostic', () => {
   const clients = defaultClients();
   const plain = validateConfigLayers({ project: PROJECT }, clients);
-  const withKeys = { ...PROJECT, deepsec: { enabled: true }, plugins: { a: 1 } };
+  const withKeys = { ...PROJECT, deepsec: { enabled: true }, future_section: { a: 1 } };
   expect(validateConfigLayers({ project: withKeys }, clients)).toEqual(plain);
 });
 
@@ -38,4 +40,30 @@ test('a missing required field of a section is reported at its own path', () => 
   const diagnostics = validateConfigLayers({ project: { ...PROJECT, deepsec: {} } }, defaultClients());
   const found = diagnostics.filter((item) => item.path?.[0] === 'deepsec');
   expect(found.map((item) => item.path)).toEqual([['deepsec', 'enabled']]);
+});
+
+const agentPlugins = (advisory: boolean): NonNullable<Parameters<typeof validateConfigLayers>[2]> => ({
+  ids: () => ['demo'],
+  get: (id) => (id === 'demo'
+    ? {
+      manifest: {
+        id, version: '1.0.0', advisory, hooks: [], capabilities: ['invokeAgent'], configSchema: schema({ type: 'object' }),
+      },
+      handlers: {},
+    }
+    : undefined),
+});
+
+test.each([
+  ['a missing agent of a non-advisory plugin is reported', { agent: 'nope' }, false, 1],
+  ['a disabled entry with a missing agent is not', { agent: 'nope', enabled: false }, false, 0],
+  ['an advisory plugin with a missing agent is not', { agent: 'nope' }, true, 0],
+  ['a resolvable named agent is not', { agent: 'x' }, false, 0],
+  ['a resolvable inline agent is not', { agent: { client: { type: 'codex' }, model: 'm' } }, false, 0],
+])('workspace diagnosis: %s', (_name, entry, advisory, expected) => {
+  const clients = defaultClients();
+  const plugins = agentPlugins(advisory);
+  const baseline = validateConfigLayers({ project: PROJECT }, clients, plugins).length;
+  const config = { ...PROJECT, plugins: { demo: entry } };
+  expect(validateConfigLayers({ project: config }, clients, plugins)).toHaveLength(baseline + expected);
 });

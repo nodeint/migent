@@ -16,6 +16,10 @@ import {
   loadRoleResponsibilities,
   LOCAL_CONFIG_FILE,
   mergeConfigLayers,
+  pluginEntryIssues,
+  type PluginRegistry,
+  pluginTargetIssues,
+  registryManifests,
   rejectLegacyConfigKeys,
   resolveEffectiveClient,
   resolveRoleCascade,
@@ -56,6 +60,8 @@ export function analyzeConfig(
     readonly effortChecks: Readonly<Record<string, ModelEffortCheck>>;
     readonly nativeOptionFacts?: NativeOptionFacts;
     readonly ownerOf: (path: readonly (string | number)[]) => ConfigOwner;
+    /** The static plugin registry. Absent means no plugin is registered. */
+    readonly plugins?: PluginRegistry;
   },
 ): ConfigAnalysis {
   const { effortChecks, ownerOf, nativeOptionFacts } = source;
@@ -63,7 +69,7 @@ export function analyzeConfig(
   const { error, fromError } = errorReporters(diagnostics, ownerOf);
 
   try { rejectLegacyConfigKeys(config); } catch (caught) { fromError(caught, ['models']); }
-  for (const issue of [...containerIssues(config), ...configSectionIssues(config)]) fromError(issue);
+  for (const issue of structuralIssues(config, { plugins: source.plugins, clients })) fromError(issue);
   const agents: Record<string, unknown> = isRecord(config.agents) ? config.agents : {};
   const roles: Record<string, unknown> = isRecord(config.roles) ? config.roles : {};
   if (isRecord(config.roles) && Object.keys(roles).length === 0) error('roles-empty', 'roles is empty.', { path: ['roles'] });
@@ -84,6 +90,18 @@ export function analyzeConfig(
   checkResumePolicies(config, diagnostics, ownerOf);
   warnUnknownRoleKeys(config, diagnostics, ownerOf);
   return { diagnostics, executableByClient, roleNames, roleDescriptions, unmapped };
+}
+
+function structuralIssues(
+  config: Record<string, unknown>,
+  source: { plugins?: PluginRegistry; clients: ClientRegistry },
+): readonly Error[] {
+  const registry = source.plugins ?? { ids: () => [], get: () => undefined };
+  const entryIssues = pluginEntryIssues({ plugins: config.plugins, manifests: registryManifests(registry) });
+  const targetIssues = entryIssues.length > 0
+    ? []
+    : pluginTargetIssues(config, { plugins: config.plugins, registry, clients: source.clients });
+  return [...containerIssues(config), ...configSectionIssues(config), ...entryIssues, ...targetIssues];
 }
 
 type ReportCaught = (caught: unknown, fallbackPath?: readonly (string | number)[]) => void;
@@ -327,9 +345,10 @@ function unmappedMessage(aliases: readonly string[]): string {
 export function validateConfigLayers(
   layers: { project: Record<string, unknown>; local?: Record<string, unknown> | null },
   clients: ClientRegistry,
+  plugins?: PluginRegistry,
 ): Diagnostic[] {
   const merged = mergeConfigLayers(layers.project, layers.local);
-  const analysis = analyzeConfig(merged.config, clients, { effortChecks: {}, ownerOf: merged.ownerOf });
+  const analysis = analyzeConfig(merged.config, clients, { effortChecks: {}, ownerOf: merged.ownerOf, plugins });
   return analysis.diagnostics.items;
 }
 
@@ -345,9 +364,13 @@ export interface ConfigCheckResult {
 export function checkConfig(
   workspace: string,
   clients: ClientRegistry,
-  facts: { effortChecks: Readonly<Record<string, ModelEffortCheck>>; nativeOptionFacts?: NativeOptionFacts },
+  facts: {
+    effortChecks: Readonly<Record<string, ModelEffortCheck>>;
+    nativeOptionFacts?: NativeOptionFacts;
+    plugins?: PluginRegistry;
+  },
 ): ConfigCheckResult {
-  const { effortChecks, nativeOptionFacts } = facts;
+  const { effortChecks, nativeOptionFacts, plugins } = facts;
   let merged;
   try {
     merged = loadMergedConfig(workspace);
@@ -371,7 +394,7 @@ export function checkConfig(
     };
   }
   const { config, ownerOf } = merged;
-  const analysis = analyzeConfig(config, clients, { effortChecks, nativeOptionFacts, ownerOf });
+  const analysis = analyzeConfig(config, clients, { effortChecks, nativeOptionFacts, ownerOf, plugins });
   const warnings = [
     ...trackedLocalConfigWarnings(workspace),
     ...analysis.diagnostics.warnings.map((warning) => warning.message),

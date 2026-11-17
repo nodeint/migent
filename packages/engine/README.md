@@ -35,6 +35,7 @@ and session. Internal; no stable public API.
 | `OperationRuntime` | `src/runtime/operation-runtime.ts` | Generic operation cycle |
 | `runRoleExecution`, `roleDefinition`, `verifyOnlyDefinition`, `ExecutionApplier` | `src/execution/` | Role and verify-only executions on the runtime; the applier is the single writer |
 | `targetFromAgent`, `bindTarget`, `invokeOnce` | `src/agent-invocation.ts` | Resolve a live agent, bind a target to its client, run one provider turn with no stage (no production caller yet) |
+| `PluginHost` | `src/plugin-host/dispatch.ts` | Run plugin hooks for one run: triggers, deadline, intent application, failure policy |
 | `classifyProviderError`, `ProviderEventReporter` | `src/provider-events.ts` | Provider events |
 | `getWorkflowView`, `getConfigView` | `src/views.ts` | Read-only views |
 | `evaluateRunWhen`, `runVerifyOnlyStage` | `src/run-when.ts`, `src/verify-only.ts` | `run_when` conditions, verify-only stages |

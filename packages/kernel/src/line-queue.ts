@@ -1,3 +1,4 @@
+import type { ChildProcess } from 'node:child_process';
 import type { Readable } from 'node:stream';
 
 /** Newline-split stdout lines, consumed one at a time with a timeout. */
@@ -73,5 +74,27 @@ export function createLineQueue(stream: Readable | null, onCancel: (waiter: () =
         };
       });
     },
+  };
+}
+
+/** Writes the command's stdin, when it has any, and closes the pipe. */
+export function feedStdin(child: ChildProcess, stdin: string | null | undefined): void {
+  if (stdin === null || stdin === undefined || !child.stdin) return;
+  child.stdin.write(stdin);
+  child.stdin.end();
+}
+
+/** Registers a waiter for process-wide cancellation and, when given, for one run's abort signal. */
+export function stopWaiters(
+  onCancel: (waiter: () => void) => () => void,
+  signal: AbortSignal | null | undefined,
+): (waiter: () => void) => () => void {
+  return (waiter) => {
+    const offCancel = onCancel(waiter);
+    signal?.addEventListener('abort', waiter, { once: true });
+    return () => {
+      offCancel();
+      signal?.removeEventListener('abort', waiter);
+    };
   };
 }

@@ -150,12 +150,27 @@ export const RoleEntry = Type.Object(
 
 const SchemaVersion = Type.Number({ description: "Document version. The local file's value is ignored." });
 
+/**
+ * The `plugins` field: one entry per plugin id. Entry fields beyond the shared ones belong to the plugin, so each
+ * entry is an open mapping here. The registered section (`PLUGINS_SECTION`) accepts any value and the host
+ * validates entries against the plugin manifest.
+ */
+const PluginsField = Type.Record(Type.String(), ConfigMapping, {
+  description: [
+    'Plugin entries by plugin id. Every entry takes `enabled` (default `true`), `on_error` and `timeout_sec`; a',
+    'plugin that calls an agent also takes `agent` (a named agent or an inline one) and `description`. Other fields',
+    'belong to the plugin. Sessions freeze every entry except an advisory plugin; a local layer may set',
+    '`enabled: false`. Example: `plugins: { my_plugin: { enabled: true } }`.',
+  ].join(' '),
+});
+
 export const ConfigLayer = Type.Object(
   {
     schema_version: Type.Optional(SchemaVersion),
     agents: Type.Optional(Type.Record(Type.String(), NamedAgentFragment)),
     roles: Type.Optional(Type.Record(Type.String(), RoleEntry)),
     resume_policies: Type.Optional(Type.Record(Type.String(), ResumePolicy)),
+    plugins: Type.Optional(PluginsField),
   },
   { $id: id('config/layer'), title: 'Config file', description: '`config.yaml` or `config.local.yaml`.' },
 );
@@ -166,6 +181,7 @@ export const EffectiveConfig = Type.Object(
     agents: Type.Optional(Type.Record(Type.String(), Type.Union([ResolvedAgent, AgentPlaceholder]))),
     roles: Type.Record(Type.String(), RoleEntry),
     resume_policies: Type.Optional(Type.Record(Type.String(), ResumePolicy)),
+    plugins: Type.Optional(PluginsField),
   },
   { $id: id('config/effective'), title: 'Effective config', description: 'The config after layers merge.' },
 );

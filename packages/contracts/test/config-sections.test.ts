@@ -5,8 +5,8 @@ import { assertConfigSections, CONFIG_SECTIONS, type ConfigSection } from '../sr
 
 const section = (key: string): ConfigSection => ({ key, schema: Type.Object({}), merge: 'deep', freeze: 'frozen' });
 
-test('no section is registered in production', () => {
-  expect(CONFIG_SECTIONS).toEqual([]);
+test('only the plugins section is registered in production', () => {
+  expect(CONFIG_SECTIONS.map((entry) => entry.key)).toEqual(['plugins']);
 });
 
 test('a valid list passes', () => {

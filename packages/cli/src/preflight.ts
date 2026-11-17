@@ -5,7 +5,7 @@ import {
   diagnoseSelection as diagnose,
   type SessionDiagnosis,
 } from '@nodeint/migent-doctor';
-import { type ClientRegistry,whichSync } from '@nodeint/migent-kernel';
+import { type ClientRegistry, type PluginRegistry, whichSync } from '@nodeint/migent-kernel';
 import { readStatusFileState, selectRunWorkflow, selectSessionWorkflow, type SessionSelection } from '@nodeint/migent-session';
 
 import { runClientCommandAsync, type RunCommand, runOptionsCommand, type Which } from './client.js';
@@ -14,6 +14,7 @@ import { cliHooks } from './hooks.js';
 
 export interface DiagnoseHooks {
   clients: ClientRegistry;
+  plugins?: PluginRegistry;
   which?: Which | null;
   runCommand?: RunCommand | null;
   helpCommand?: RunCommand | null;
@@ -32,7 +33,7 @@ export async function diagnoseSelection(
   const runCommand = hooks.runCommand ?? cliHooks.runCommand ??
     ((argv, input) => runClientCommandAsync(argv, input, { cwd: workspace, timeoutMs: 10_000 }));
   const helpCommand = hooks.helpCommand ?? hooks.runCommand ?? cliHooks.runCommand ?? runOptionsCommand;
-  const resolved: DoctorHooks = { clients: hooks.clients, which, runCommand, helpCommand };
+  const resolved: DoctorHooks = { clients: hooks.clients, plugins: hooks.plugins, which, runCommand, helpCommand };
   return diagnose(workspace, selection, resolved);
 }
 

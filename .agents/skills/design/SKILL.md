@@ -7,32 +7,33 @@ description: Resolve behavior, contract, ownership, and architecture choices.
 
 ## Steps
 
-1. Read requirements and prior decisions. State goal, scope, constraints, and
-   acceptance criteria; ask about ambiguity affecting scope or behavior.
-   If no consequential choice remains, explain why no design is needed.
-2. Pick the primary work type per repository rules; apply its guide below.
-   Ask if unclear classification changes the approach; don't force other
-   work into these four types.
-3. Read affected package docs and code. Identify owners, contracts,
-   dependencies, actual consumers, and tests; cite paths and symbols.
-4. Trace the relevant behavior or data flow. Separate facts from hypotheses;
-   identify choices needed to meet the acceptance criteria.
-5. Choose a solution within existing ownership and patterns. Explain
-   consequential trade-offs; offer options and a recommendation when user
-   input is needed. Reuse settled decisions and authorization. Surface
-   independently shippable work separately instead of expanding scope.
-6. Describe inputs, state changes, outputs, failure paths, boundaries, and
-   contracts. Mark new paths; justify departures from existing patterns.
-   Include transition ordering and recovery when needed; omit file-by-file
-   edits and execution tasks. Fix implementation or test mechanics only when
-   needed for correctness or a material trade-off; otherwise leave them open
-   to the implementer.
-7. Map each acceptance criterion and preserved behavior to verification
-   evidence. Mitigate or explicitly accept each material risk.
-8. Resolve required decisions before completing. While answers are pending,
-   keep a draft and record the blocker; don't hide it as an assumption.
-9. Fill the applicable sections of the [design template](#design-template).
-   Distinguish facts, decisions, and assumptions.
+1. Read the request, requirements, and prior decisions. Establish the goal,
+   scope, constraints, and acceptance criteria. Ask about ambiguity affecting
+   scope or behavior before proceeding with dependent work.
+2. Pick the primary work type per repository rules and use its guide below.
+   Ask if unclear classification changes the approach; use the general steps
+   for work outside these four types.
+3. Read affected package docs and code. Trace the relevant behavior and
+   identify owners, contracts, dependencies, consumers, and tests. Ground
+   observations in paths and symbols; separate facts from hypotheses.
+4. Identify the choices needed to meet the acceptance criteria. Reuse settled
+   decisions and authorization. If no consequential choice remains, explain
+   why no design is needed. Surface independently shippable work separately.
+5. Discuss unresolved choices with the user when a decision or approval is
+   needed. Present evidence, material trade-offs, and a recommendation, with
+   alternatives when useful. Obtain required answers before choosing the
+   solution or working out details that depend on them.
+6. Work out the solution within existing ownership and patterns: inputs,
+   state changes, outputs, failure paths, boundaries, and contracts. Mark new
+   paths and justify departures. Include transition ordering and recovery
+   when needed. Resolve new consequential choices with the user as they arise.
+7. Map acceptance criteria and preserved behavior to verification evidence.
+   Resolve material risks through mitigation or explicit acceptance.
+8. Write the design using the applicable sections of the
+   [design template](#design-template), recording resolved decisions and
+   distinguishing facts from assumptions. Leave file-by-file edits and
+   execution tasks to implementation planning. Specify implementation or
+   test mechanics only when needed for correctness or a material trade-off.
 
 ## Type guides
 

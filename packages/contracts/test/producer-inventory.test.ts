@@ -12,7 +12,7 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const PACKAGES = ['session', 'engine', 'kernel', 'adapters', 'cli'];
 
 /** Heads that mark a string as event-shaped: `<family>.<name>`. */
-const FAMILIES = 'session|execution|stage|provider|verify|resume|workflow|task|response|question|handoff|correction|baseline|outputs|revisions';
+const FAMILIES = 'session|execution|stage|provider|verify|resume|workflow|task|response|question|handoff|correction|baseline|outputs|revisions|plugin|plugins';
 const EVENT_SHAPE = new RegExp(`^(${FAMILIES})\\.[a-z][a-z_]*$`);
 const FILE_EXTENSIONS = new Set(['json', 'jsonl', 'md', 'yaml', 'yml', 'lock', 'ts', 'js', 'txt', 'log', 'requested']);
 const TEMPLATE_HEAD = new RegExp(`^(${FAMILIES})\\.$`);
@@ -23,6 +23,7 @@ const EVENT_ALLOW_LIST: readonly { value: string; reason: string }[] = [
   { value: 'session.on_expired', reason: 'Config key of a stage, not an event.' },
   { value: 'session.resume_from', reason: 'Config key, not an event.' },
   { value: 'session.interrupt', reason: 'Argument string of the opencode CLI, not a Migent event.' },
+  { value: 'plugin.invoke_agent', reason: 'Operation id of a plugin agent call on the operation runtime, not an event.' },
   { value: 'provider.item_', reason: 'Prefix of the adapter item event names; each full name is registered.' },
 ];
 

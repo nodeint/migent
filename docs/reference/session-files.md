@@ -1078,6 +1078,142 @@ Type: object
 | `summary` | string | no | | |
 | `data` | [`resume.decided` event data](cli-output.md#known-resume-decided-data-json) | yes | | |
 
+<a id="session-event-plugin-hook-invoked-json"></a>
+
+### Event `plugin.hook_invoked`
+
+Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/session/event/plugin.hook_invoked.json`
+
+Event:
+`plugin.hook_invoked`; class: known
+
+Type: object
+
+| Field | Type | Required | Notes | Description |
+| --- | --- | --- | --- | --- |
+| `v` | `2` \| `1` | no | | |
+| `seq` | number | no | | |
+| `event` | `"plugin.hook_invoked"` | yes | | |
+| `timestamp` | string | yes | | |
+| `execution_id` | string | no | | |
+| `stage_id` | string | no | | |
+| `summary` | string | no | | |
+| `data` | object | yes | | |
+| `data.plugin` | string | yes | | |
+| `data.version` | string | yes | | |
+| `data.hook` | string | yes | | |
+| `data.trigger_seq` | number \| null | yes | | |
+| `data.invocation_id` | string | yes | | |
+| `data.advisory` | boolean | yes | | |
+
+<a id="session-event-plugin-decision-json"></a>
+
+### Event `plugin.decision`
+
+Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/session/event/plugin.decision.json`
+
+Event:
+`plugin.decision`; class: known
+
+Type: object
+
+| Field | Type | Required | Notes | Description |
+| --- | --- | --- | --- | --- |
+| `v` | `2` \| `1` | no | | |
+| `seq` | number | no | | |
+| `event` | `"plugin.decision"` | yes | | |
+| `timestamp` | string | yes | | |
+| `execution_id` | string | no | | |
+| `stage_id` | string | no | | |
+| `summary` | string | no | | |
+| `data` | object | yes | | |
+| `data.plugin` | string | yes | | |
+| `data.invocation_id` | string | yes | | |
+| `data.proposed` | (map of any)[] | yes | | |
+| `data.results` | object[] | yes | | |
+| `data.results[].kind` | string | yes | | |
+| `data.results[].status` | `"applied"` \| `"rejected"` | yes | | |
+| `data.results[].reason` | string | no | | |
+| `data.results[].path` | string | no | | |
+| `data.results[].sha256` | string | no | | |
+| `data.agent_calls` | object[] | no | | |
+| `data.agent_calls[].index` | number | yes | | |
+| `data.agent_calls[].client` | string \| null | yes | | |
+| `data.agent_calls[].model` | string \| null | yes | | |
+| `data.agent_calls[].duration_ms` | number | no | | |
+| `data.agent_calls[].usage` | any | no | | |
+| `data.agent_calls[].exit_code` | number \| null | no | | |
+| `data.agent_calls[].classification` | string \| null | no | | |
+| `data.agent_calls[].outcome` | `"succeeded"` \| `"failed"` \| `"denied"` | yes | | |
+| `data.agent_calls[].output_path` | string \| null | no | | |
+
+<a id="session-event-plugin-failed-json"></a>
+
+### Event `plugin.failed`
+
+Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/session/event/plugin.failed.json`
+
+Event:
+`plugin.failed`; class: known
+
+Type: object
+
+| Field | Type | Required | Notes | Description |
+| --- | --- | --- | --- | --- |
+| `v` | `2` \| `1` | no | | |
+| `seq` | number | no | | |
+| `event` | `"plugin.failed"` | yes | | |
+| `timestamp` | string | yes | | |
+| `execution_id` | string | no | | |
+| `stage_id` | string | no | | |
+| `summary` | string | no | | |
+| `data` | object | yes | | |
+| `data.plugin` | string | yes | | |
+| `data.invocation_id` | string \| null | yes | | |
+| `data.hook` | string | no | | |
+| `data.reason` | `"error"` \| `"timeout"` \| `"invalid_intent"` \| `"unavailable"` \| `"version_changed"` \| `"cancelled"` | yes | | |
+| `data.error` | string \| null | yes | | |
+| `data.on_error` | `"ignore"` \| `"stop"` \| `"fail"` | yes | | |
+| `data.agent_calls` | object[] | no | | |
+| `data.agent_calls[].index` | number | yes | | |
+| `data.agent_calls[].client` | string \| null | yes | | |
+| `data.agent_calls[].model` | string \| null | yes | | |
+| `data.agent_calls[].duration_ms` | number | no | | |
+| `data.agent_calls[].usage` | any | no | | |
+| `data.agent_calls[].exit_code` | number \| null | no | | |
+| `data.agent_calls[].classification` | string \| null | no | | |
+| `data.agent_calls[].outcome` | `"succeeded"` \| `"failed"` \| `"denied"` | yes | | |
+| `data.agent_calls[].output_path` | string \| null | no | | |
+
+<a id="session-event-plugins-frozen-json"></a>
+
+### Event `plugins.frozen`
+
+Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/session/event/plugins.frozen.json`
+
+Event:
+`plugins.frozen`; class: known
+
+Type: object
+
+| Field | Type | Required | Notes | Description |
+| --- | --- | --- | --- | --- |
+| `v` | `2` \| `1` | no | | |
+| `seq` | number | no | | |
+| `event` | `"plugins.frozen"` | yes | | |
+| `timestamp` | string | yes | | |
+| `execution_id` | string | no | | |
+| `stage_id` | string | no | | |
+| `summary` | string | no | | |
+| `data` | object | yes | | |
+| `data.freeze_hash` | string | yes | | |
+| `data.plugins` | object[] | yes | | |
+| `data.plugins[].id` | string | yes | | |
+| `data.plugins[].enabled` | boolean | yes | | |
+| `data.plugins[].advisory` | boolean | yes | | |
+| `data.plugins[].version` | string \| null | yes | | |
+| `data.plugins[].target` | map of any \| null | yes | | |
+
 <a id="session-event-provider-stage-started-json"></a>
 
 ### Event `provider.stage_started`

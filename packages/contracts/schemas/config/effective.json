@@ -40,6 +40,19 @@
           "$ref": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/resume-policy.json"
         }
       }
+    },
+    "plugins": {
+      "type": "object",
+      "patternProperties": {
+        "^.*$": {
+          "type": "object",
+          "patternProperties": {
+            "^.*$": {}
+          },
+          "description": "A mapping."
+        }
+      },
+      "description": "Plugin entries by plugin id. Every entry takes `enabled` (default `true`), `on_error` and `timeout_sec`; a plugin that calls an agent also takes `agent` (a named agent or an inline one) and `description`. Other fields belong to the plugin. Sessions freeze every entry except an advisory plugin; a local layer may set `enabled: false`. Example: `plugins: { my_plugin: { enabled: true } }`."
     }
   },
   "title": "Effective config",

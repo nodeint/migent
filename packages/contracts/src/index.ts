@@ -1,6 +1,7 @@
 export * from './cli-output.js';
 export * from './common.js';
 export * from './config.js';
+export * from './config-section-registry.js';
 export * from './config-sections.js';
 export { EXECUTION_STATUSES, type ExecutionStatus, STAGE_OUTCOME_STATUSES,type StageOutcomeStatus } from './data/statuses.js';
 export { DIAGNOSTICS_SCHEMA_VERSION, EXECUTION_INPUT_SCHEMA_VERSION, EXECUTION_SCHEMA_VERSION, MANIFEST_SCHEMA_VERSION, NEXT_SCHEMA_VERSION, QUESTIONS_SCHEMA_VERSION } from './data/versions.js';
@@ -10,6 +11,8 @@ export * from './exits.js';
 export * from './handoff.js';
 export * from './index-registry.js';
 export * from './known-shapes.js';
+export * from './plugins.js';
+export * from './schema-shape.js';
 export * from './session-events.js';
 export * from './session-files.js';
 export * from './session-status.js';
