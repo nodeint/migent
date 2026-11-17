@@ -6,7 +6,7 @@ import { describe, expect, test } from 'vitest';
 
 import type { ClientEventCurrent, ClientEventHistorical, SessionEventName, SessionEventRecord } from '../src/index.ts';
 import * as contracts from '../src/index.ts';
-import { EXECUTION_STATUSES, FIXED_LIFECYCLE_EVENTS, isValid, RESUME_EVENTS, SCHEMA_BASE, SESSION_CLIENT_EVENT_FORMS, SESSION_EVENTS, SESSION_FILES, SESSION_STATUS_CATALOG, SessionDiagnostics, SessionEvent, SessionExecution, SessionManifest, SessionStatusFile, STAGE_OUTCOME_STATUSES,STATUS_LIFECYCLE_EVENTS } from '../src/index.ts';
+import { EXECUTION_STATUSES, FIXED_LIFECYCLE_EVENTS, isValid, PLUGIN_EVENTS, RESUME_EVENTS, SCHEMA_BASE, SESSION_CLIENT_EVENT_FORMS, SESSION_EVENTS, SESSION_FILES, SESSION_STATUS_CATALOG, SessionDiagnostics, SessionEvent, SessionExecution, SessionManifest, SessionStatusFile, STAGE_OUTCOME_STATUSES,STATUS_LIFECYCLE_EVENTS } from '../src/index.ts';
 
 const fixtures = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'session');
 const json = (name: string): unknown => JSON.parse(readFileSync(path.join(fixtures, name), 'utf8'));
@@ -35,6 +35,7 @@ describe('session file registry (AC1, AC2)', () => {
       ...Object.values(FIXED_LIFECYCLE_EVENTS),
       ...Object.values(STATUS_LIFECYCLE_EVENTS),
       ...Object.values(RESUME_EVENTS),
+      ...Object.values(PLUGIN_EVENTS),
       ...Object.values(SESSION_CLIENT_EVENT_FORMS).map((forms) => forms.schema),
     ]);
     for (const entry of SESSION_EVENTS) expect(exported.has(entry.schema), `${entry.event} exported`).toBe(true);

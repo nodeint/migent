@@ -12,7 +12,7 @@ const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 const PACKAGES = ['session', 'engine', 'kernel', 'adapters', 'cli'];
 
 /** Heads that mark a string as event-shaped: `<family>.<name>`. */
-const FAMILIES = 'session|execution|stage|provider|verify|resume|workflow|task|response|question|handoff|correction|baseline|outputs|revisions';
+const FAMILIES = 'session|execution|stage|provider|verify|resume|workflow|task|response|question|handoff|correction|baseline|outputs|revisions|plugin|plugins';
 const EVENT_SHAPE = new RegExp(`^(${FAMILIES})\\.[a-z][a-z_]*$`);
 const FILE_EXTENSIONS = new Set(['json', 'jsonl', 'md', 'yaml', 'yml', 'lock', 'ts', 'js', 'txt', 'log', 'requested']);
 const TEMPLATE_HEAD = new RegExp(`^(${FAMILIES})\\.$`);

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Added
+
+- Plugin host contracts: the plugin manifest, shared LLM-plugin config, hook input, intents, the `plugins` config
+  section definition and the `plugin.*` and `plugins.frozen` events, with a pure entry-validation function in the
+  kernel and the new leaf package `@nodeint/migent-plugins` with an empty static registry. Nothing reads them yet, so
+  behavior without a `plugins` section is unchanged. ([#150](https://github.com/nodeint/migent/issues/150))
+
 ## 0.8.0
 
 ### Breaking

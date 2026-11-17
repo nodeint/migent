@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/plugins/shared-config.json",
+  "type": "object",
+  "properties": {
+    "enabled": {
+      "type": "boolean"
+    },
+    "on_error": {
+      "$ref": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/plugins/on-error.json"
+    },
+    "timeout_sec": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    }
+  },
+  "title": "Plugin entry shared fields"
+}

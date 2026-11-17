@@ -1,0 +1,48 @@
+{
+  "name": "@nodeint/migent-plugins",
+  "version": "0.8.0",
+  "description": "First-party plugins and their static registry for Migent.",
+  "keywords": [
+    "ai",
+    "agents",
+    "workflow",
+    "cli",
+    "plugins",
+    "migent"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/nodeint/migent/tree/main/packages/plugins#readme",
+  "bugs": {
+    "url": "https://github.com/nodeint/migent/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nodeint/migent.git",
+    "directory": "packages/plugins"
+  },
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "prepack": "pnpm -w run build && cp ../../LICENSE ."
+  },
+  "dependencies": {
+    "@nodeint/migent-contracts": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.3"
+  }
+}

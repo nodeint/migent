@@ -160,6 +160,7 @@ export {
   type SessionStatusInput,
   shouldPublishOutputs,
 } from './outputs.js';
+export { pluginEntryIssues, type PluginManifestData, type PluginValidationInput } from './plugin-validation.js';
 export type {
   EndpointState,
   ProcessInspector,

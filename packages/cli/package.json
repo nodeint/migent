@@ -52,6 +52,7 @@
     "@nodeint/migent-doctor": "workspace:*",
     "@nodeint/migent-engine": "workspace:*",
     "@nodeint/migent-kernel": "workspace:*",
+    "@nodeint/migent-plugins": "workspace:*",
     "@nodeint/migent-registry": "workspace:*",
     "@nodeint/migent-session": "workspace:*",
     "@nodeint/migent-workflow": "workspace:*",

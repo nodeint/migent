@@ -4,6 +4,7 @@ import { id, nullable } from './common.js';
 import { EXECUTION_STATUSES, type ExecutionStatus, STAGE_OUTCOME_STATUSES, type StageOutcomeStatus } from './data/statuses.js';
 import { LIFECYCLE_EVENT_VERSION } from './data/versions.js';
 import { LegacyLifecycleEvent, LifecycleEventV2, ResumeDecidedData, ResumeExpiredData } from './known-shapes.js';
+import { PLUGIN_FAILURE_REASONS, PLUGIN_ON_ERROR } from './plugins.js';
 import { SESSION_STATUS_CATALOG, type SessionStatusName } from './session-status.js';
 
 /**
@@ -137,6 +138,51 @@ export const RESUME_EVENTS = {
   'resume.decided': resumeEvent('resume.decided', ResumeDecidedData),
 };
 
+// ---- plugin events ----------------------------------------------------------------------------
+
+const agentCall = Type.Object({
+  index: Type.Number(),
+  client: nullableStr(),
+  model: nullableStr(),
+  duration_ms: opt(Type.Number()),
+  usage: opt(Type.Unknown()),
+  exit_code: opt(nullable(Type.Number())),
+  classification: opt(nullableStr()),
+  outcome: Type.Union([Type.Literal('succeeded'), Type.Literal('failed'), Type.Literal('denied')]),
+  output_path: opt(nullableStr()),
+});
+const agentCalls = { agent_calls: opt(Type.Array(agentCall)) };
+
+/** `plugin.*` and `plugins.frozen`. Only `plugin.failed` will fold, and the fold lands with the hold work. */
+export const PLUGIN_EVENTS = {
+  'plugin.hook_invoked': lifecycle('plugin.hook_invoked', {
+    plugin: str(), version: str(), hook: str(), trigger_seq: nullable(Type.Number()),
+    invocation_id: str(), advisory: Type.Boolean(),
+  }),
+  'plugin.decision': lifecycle('plugin.decision', {
+    plugin: str(), invocation_id: str(),
+    proposed: Type.Array(obj()),
+    results: Type.Array(Type.Object({
+      kind: str(), status: Type.Union([Type.Literal('applied'), Type.Literal('rejected')]),
+      reason: opt(str()), path: opt(str()), sha256: opt(str()),
+    })),
+    ...agentCalls,
+  }),
+  'plugin.failed': lifecycle('plugin.failed', {
+    plugin: str(), invocation_id: nullableStr(), hook: opt(str()),
+    reason: Type.Enum(PLUGIN_FAILURE_REASONS),
+    error: nullableStr(),
+    on_error: Type.Enum(PLUGIN_ON_ERROR),
+    ...agentCalls,
+  }),
+  'plugins.frozen': lifecycle('plugins.frozen', {
+    freeze_hash: str(),
+    plugins: Type.Array(Type.Object({
+      id: str(), enabled: Type.Boolean(), advisory: Type.Boolean(), version: nullableStr(), target: nullable(obj()),
+    })),
+  }),
+};
+
 // ---- client events ----------------------------------------------------------------------------
 
 const optionalProperties = <D extends TProperties>(details: D) =>
@@ -237,11 +283,13 @@ export const SESSION_EVENT_SCHEMAS: readonly { readonly event: string; readonly 
   ...statusEntries.stage,
   ...fixedEntries.slice(BEFORE_EXECUTION_STATUS),
   ...Object.entries(RESUME_EVENTS),
+  ...Object.entries(PLUGIN_EVENTS),
   ...CLIENT_EVENT_LIST.map((entry): [string, TSchema] => [entry.name, entry.schema]),
 ].map(([event, schema]) => ({ event: event as string, schema: schema as TSchema }));
 
 /** Every event name, with its record schema. */
-export type SessionEventSchemas = typeof FIXED_LIFECYCLE_EVENTS & StatusLifecycleEvents & typeof RESUME_EVENTS & {
+export type SessionEventSchemas = typeof FIXED_LIFECYCLE_EVENTS & StatusLifecycleEvents & typeof RESUME_EVENTS &
+  typeof PLUGIN_EVENTS & {
   [N in keyof ClientEvents]: ClientEvents[N]['schema'];
 };
 export type SessionEventName = keyof SessionEventSchemas;

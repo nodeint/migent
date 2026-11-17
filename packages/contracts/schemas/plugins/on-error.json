@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/plugins/on-error.json",
+  "enum": [
+    "ignore",
+    "stop",
+    "fail"
+  ],
+  "title": "Plugin failure policy",
+  "description": "`ignore` records the failure and continues; `stop` blocks the session; `fail` ends the run with exit 1."
+}

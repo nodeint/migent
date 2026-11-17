@@ -1497,3 +1497,144 @@ Type: object
 | `origin` | `"human"` \| `"stage"` \| `"policy"` \| `"default"` | yes | | |
 | `policy` | string \| null | yes | | |
 | `estimate` | map of any | yes | | |
+
+<a id="plugins-agent-result-json"></a>
+
+## Plugin agent call result
+
+Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/plugins/agent-result.json`
+
+All a plugin sees of an `invokeAgent` call.
+
+Type: object
+
+| Field | Type | Required | Notes | Description |
+| --- | --- | --- | --- | --- |
+| `text` | string \| null | yes | | |
+| `error` | string \| null | yes | | |
+
+<a id="plugins-failure-reason-json"></a>
+
+## Plugin failure reason
+
+Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/plugins/failure-reason.json`
+
+Type: `"error"` \| `"timeout"` \| `"invalid_intent"` \| `"unavailable"` \| `"version_changed"` \| `"cancelled"`
+
+<a id="plugins-hook-input-json"></a>
+
+## Plugin hook input
+
+Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/plugins/hook-input.json`
+
+Detached, deeply frozen data: no handles and no writable paths.
+
+Type: object
+
+| Field | Type | Required | Notes | Description |
+| --- | --- | --- | --- | --- |
+| `hook` | `"session.started"` \| `"execution.finished"` \| `"session.stopped"` | yes | | |
+| `plugin` | object | yes | | |
+| `plugin.id` | string | yes | | |
+| `plugin.version` | string | yes | | |
+| `plugin.config` | any | yes | | |
+| `session` | object | yes | | |
+| `session.id` | string | yes | | |
+| `session.workflow_id` | string \| null | yes | | |
+| `session.task_summary` | string \| null | yes | | |
+| `session.status` | map of any | yes | | |
+| `session.trigger` | map of any | yes | | |
+| `execution` | object | no | | |
+| `execution.id` | string | yes | | |
+| `execution.stage_id` | string \| null | yes | | |
+| `execution.outcome` | map of any \| null | yes | | |
+| `execution.artifacts` | string[] | yes | | |
+
+<a id="plugins-intent-json"></a>
+
+## Plugin intent
+
+Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/plugins/intent.json`
+
+A closed union.
+The core decides and records every effect.
+
+Type: object \| object \| object
+
+| Field | Type | Required | Notes | Description |
+| --- | --- | --- | --- | --- |
+| `kind` | `"output"` | yes | | |
+| `name` | string | yes | | |
+| `content` | string | yes | | |
+| `media_type` | string | yes | | |
+| `kind` | `"note"` | yes | | |
+| `text` | string | yes | | |
+| `kind` | `"none"` | yes | | |
+
+<a id="plugins-llm-config-json"></a>
+
+## LLM plugin config
+
+Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/plugins/llm-config.json`
+
+Shared fields of a plugin that declares `invokeAgent`.
+
+Type: object
+
+| Field | Type | Required | Notes | Description |
+| --- | --- | --- | --- | --- |
+| `enabled` | boolean | no | | Default `true`. |
+| `agent` | [Role agent](config.md#config-role-agent-json) | yes | | The name of an `agents` entry, or a complete inline agent. |
+| `responsibilities` | string[] | no | | |
+| `description` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
+| `on_error` | [Plugin failure policy](#plugins-on-error-json) | no | | `ignore` records the failure and continues; `stop` blocks the session; `fail` ends the run with exit 1. |
+| `timeout_sec` | number | no | | |
+
+<a id="plugins-manifest-json"></a>
+
+## Plugin manifest
+
+Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/plugins/manifest.json`
+
+Readable without activating the plugin.
+`configSchema` is a TypeBox schema.
+
+Type: object
+
+| Field | Type | Required | Notes | Description |
+| --- | --- | --- | --- | --- |
+| `id` | string | yes | pattern: `"^[a-z][a-z0-9_]*$"` | |
+| `version` | string | yes | pattern: `"^(0\|[1-9]\\d*)\\.(0\|[1-9]\\d*)\\.(0\|[1-9]\\d*)(?:-((?:0\|[1-9]\\d*\|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0\|[1-9]\\d*\|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"` | Semver 2.0.0. |
+| `advisory` | boolean | yes | | |
+| `hooks` | (`"session.started"` \| `"execution.finished"` \| `"session.stopped"`)[] | yes | | |
+| `capabilities` | `"invokeAgent"`[] | yes | | |
+| `configSchema` | object | yes | | |
+| `defaults` | object | no | | |
+| `defaults.on_error` | [Plugin failure policy](#plugins-on-error-json) | no | | `ignore` records the failure and continues; `stop` blocks the session; `fail` ends the run with exit 1. |
+| `defaults.timeout_sec` | number | no | | |
+
+<a id="plugins-on-error-json"></a>
+
+## Plugin failure policy
+
+Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/plugins/on-error.json`
+
+`ignore` records the failure and continues;
+`stop` blocks the session;
+`fail` ends the run with exit 1.
+
+Type: `"ignore"` \| `"stop"` \| `"fail"`
+
+<a id="plugins-shared-config-json"></a>
+
+## Plugin entry shared fields
+
+Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/plugins/shared-config.json`
+
+Type: object
+
+| Field | Type | Required | Notes | Description |
+| --- | --- | --- | --- | --- |
+| `enabled` | boolean | no | | |
+| `on_error` | [Plugin failure policy](#plugins-on-error-json) | no | | `ignore` records the failure and continues; `stop` blocks the session; `fail` ends the run with exit 1. |
+| `timeout_sec` | number | no | | |
