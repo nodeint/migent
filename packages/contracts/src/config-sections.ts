@@ -4,7 +4,7 @@ import type { TSchema } from 'typebox';
  * Config sections: namespaced top-level config keys that a feature registers, next to the core
  * keys (`schema_version`, `agents`, `roles`, `resume_policies`). Pure data. The kernel merges and
  * validates sections, the session package freezes and resolves them, and neither imports the
- * feature that owns one. The list is empty today; an unregistered top-level key stays ignored.
+ * feature that owns one. The list lives in `config-section-registry.ts`; an unregistered top-level key stays ignored.
  */
 
 /** How a section is merged when `config.local.yaml` overrides `config.yaml`. */
@@ -52,8 +52,3 @@ export function assertConfigSections(sections: readonly ConfigSection[]): void {
     seen.add(key);
   }
 }
-
-/** Static and core-owned. Empty until a feature adds its section here. */
-export const CONFIG_SECTIONS: readonly ConfigSection[] = [];
-
-assertConfigSections(CONFIG_SECTIONS);

@@ -2,10 +2,10 @@ import { expect, test } from 'vitest';
 
 import { CONFIG_SECTIONS, isValid, PLUGIN_EVENTS, PluginIntent, PLUGINS_SECTION, SESSION_EVENTS } from '../src/index.ts';
 
-test('plugin events are registered, and the section is defined but not registered yet', () => {
+test('plugin events are registered, and the section is registered', () => {
   const names = SESSION_EVENTS.map((entry) => entry.event);
   for (const name of Object.keys(PLUGIN_EVENTS)) expect(names).toContain(name);
-  expect(CONFIG_SECTIONS).not.toContain(PLUGINS_SECTION);
+  expect(CONFIG_SECTIONS).toContain(PLUGINS_SECTION);
 });
 
 test('the intent union is closed', () => {

@@ -85,6 +85,13 @@ The session-level files have distinct purposes:
   Agent sessions do not have this file. Its `config` key holds only registered
   config sections; frozen `roles`, `targets`, and `resume_policies` stay at the
   top level.
+- The `plugins` config section freezes per entry. Every entry except an
+  advisory plugin is frozen, but only an enabled entry must be registered and
+  at the frozen version when the session resumes. Each freeze (start, prepared
+  activation, `--refresh-workflow`) records a `plugins.frozen` event with the
+  freeze hash and the entry versions and pinned agent targets. A freeze file
+  that no longer matches the last event, or a missing or upgraded plugin, stops
+  the resume with exit code 2.
 - `task.md` is the task body. A one-line `session run --workflow --task` writes
   that sentence here. A prepared session creates an empty file for you to write, along with any
   other files that belong next to it. Stage prompts name this path and the

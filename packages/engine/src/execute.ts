@@ -72,7 +72,8 @@ async function executeLocked(
   const {registry} = activeRunner;
   const limits = dispatchLimits(request);
   const store = new SessionStore(workspace);
-  const opened = await openExecuteSession(workspace, request, { held, registry, store });
+  const { pluginRegistry } = activeRunner;
+  const opened = await openExecuteSession(workspace, request, { held, registry, store, pluginRegistry });
   if (opened.kind === 'final') return opened.result;
   const { sessionId, workflow, workflowId, stageReply, resumeCancelled, reopenLatestCancelled } = opened;
   const removeSignalHandlers = installSignalHandlers(held);

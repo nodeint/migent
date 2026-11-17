@@ -5,7 +5,7 @@ import { type Check,diagnoseWorkspace, sessionDiagnosticsCheck } from '@nodeint/
 import { whichSync } from '@nodeint/migent-kernel';
 import { selectSessionWorkflow, type SessionSource } from '@nodeint/migent-session';
 
-import { clientRegistry, runClientCommand, type RunCommand, runOptionsCommand, type Which } from '../client.js';
+import { clientRegistry, pluginRegistry, runClientCommand, type RunCommand, runOptionsCommand, type Which } from '../client.js';
 import { printDoctor } from '../display.js';
 import { writeJson } from '../emit.js';
 import { cliHooks } from '../hooks.js';
@@ -25,7 +25,7 @@ export async function runDoctor(
     ((argv, input) => runClientCommand(argv, input, { cwd: workspace, timeoutMs: 10_000 }));
   const helpCommand = options.runCommand ?? cliHooks.runCommand ?? runOptionsCommand;
   const checks = [
-    ...(await diagnoseWorkspace(workspace, { clients, which, runCommand, helpCommand })),
+    ...(await diagnoseWorkspace(workspace, { clients, plugins: pluginRegistry(), which, runCommand, helpCommand })),
     skillCheck(workspace, options.home ?? homedir()),
   ];
   if (options.asJson) writeJson(DoctorReport, payload(checks));
@@ -65,6 +65,7 @@ async function runSessionDoctor(
   if (selection.document !== null && selection.freeze === null) requireCurrentSchema(workspace, { configOnly: true });
   const diagnosis = await diagnoseSelection(workspace, selection, {
     clients: clientRegistry(),
+    plugins: pluginRegistry(),
     which: options.which,
     runCommand: options.runCommand,
     helpCommand: options.runCommand ?? cliHooks.runCommand ?? runOptionsCommand,

@@ -1,10 +1,6 @@
-import type { Plugin } from '@nodeint/migent-contracts';
+import type { Plugin, PluginRegistry } from '@nodeint/migent-contracts';
 
-/** Static registry of first-party plugins, keyed by manifest id. */
-export interface PluginRegistry {
-  readonly ids: () => readonly string[];
-  readonly get: (id: string) => Plugin | undefined;
-}
+export type { PluginRegistry };
 
 /** First-party plugins. Empty in this step: features add themselves here (#131, #141, #142). */
 const FIRST_PARTY: readonly Plugin[] = [];

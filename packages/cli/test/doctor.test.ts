@@ -244,7 +244,7 @@ test('doctor and session prepare resolve model effort through adapter clients', 
     expect(prepared.value).toBe(0);
     const { session_id: sessionId } = JSON.parse(prepared.stdout) as { session_id: string };
     writeFileSync(path.join(workspace, '.migent', 'sessions', sessionId, 'task.md'), 'Check effort at start\n');
-    activatePreparedSession(workspace, sessionId, clientRegistry());
+    activatePreparedSession(workspace, sessionId, { resolveClient: clientRegistry() });
     const frozen = loadYamlMapping(path.join(workspace, '.migent', 'sessions', sessionId, 'workflow.frozen.yaml'));
     type FrozenTarget = { client: string; options: Record<string, string> };
     const targets = Object.values(frozen.targets as Record<string, FrozenTarget>);
@@ -340,7 +340,7 @@ test('doctor --session validates a frozen session without live workflows or an u
     writeProject(workspace);
     const sessionId = await prepareSession(workspace);
     writeFileSync(path.join(workspace, '.migent', 'sessions', sessionId, 'task.md'), 'Task\n');
-    activatePreparedSession(workspace, sessionId, clientRegistry());
+    activatePreparedSession(workspace, sessionId, { resolveClient: clientRegistry() });
     rmSync(path.join(workspace, '.migent', 'workflows'), { recursive: true });
     mkdirSync(path.join(workspace, '.migent', 'workflows'));
     writeFileSync(path.join(workspace, '.migent', 'workflows', 'bad.yaml'), 'id: bad\nstages: nope\n');

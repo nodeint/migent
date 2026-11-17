@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
+import type { PluginRegistry } from '@nodeint/migent-contracts';
 import type { CliClient, ClientRegistry, ExecutionSnapshot } from '@nodeint/migent-kernel';
 import { createNewSession } from '@nodeint/migent-kernel';
 import { CommandExecutor, DEFAULT_TIMEOUT_SEC } from '@nodeint/migent-kernel';
@@ -16,6 +17,7 @@ import { type ExecutionContext, SessionStore, stringOptions } from '@nodeint/mig
 
 import { bindTarget } from './agent-invocation.js';
 import { runRoleExecution } from './execution/run-role.js';
+import { EMPTY_PLUGIN_REGISTRY } from './plugin-host/freeze.js';
 import { ProviderEventReporter } from './provider-events.js';
 import {
   type ContinuedDrive,
@@ -65,6 +67,8 @@ const RESPONSE_PROTOCOL = CURRENT_RESPONSE_PROTOCOL;
 
 export class AgentToolRunner {
   public readonly registry: ClientRegistry;
+  /** Static plugin registry, injected by cli as the client registry is. Empty by default. */
+  public pluginRegistry: PluginRegistry = EMPTY_PLUGIN_REGISTRY;
   public readonly executor: CommandExecutor;
   public readonly verifyRunner: VerifyRunner;
   public itemProgress = false;

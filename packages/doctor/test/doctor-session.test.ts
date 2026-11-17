@@ -1,6 +1,7 @@
 import { mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
+import type { TSchema } from '@nodeint/migent-contracts';
 import { type ClientRegistry,ConfigurationError } from '@nodeint/migent-kernel';
 import { createAgentSession, createPreparedSession, createWorkflowSession, selectSessionWorkflow,WORKFLOW_FREEZE_FILE } from '@nodeint/migent-session';
 import { expect, test } from 'vitest';
@@ -9,6 +10,7 @@ import { parse, stringify } from 'yaml';
 import {
   type Check,
   type DiagnoseOptions,
+  diagnoseSelection,
   diagnoseSession,
   type SessionDiagnosis,
   sessionEffortKeys,
@@ -455,4 +457,104 @@ test('malformed pinned clients are diagnosed', () => {
     expect(diagnosis.ok).toBe(false);
     expect(allProblems(diagnosis)).toContain('targets.implement.client is required');
   }
+});
+
+const EMPTY_SCHEMA: TSchema = { type: 'object' } as unknown as TSchema;
+
+const pluginRegistryOf = (...ids: string[]): NonNullable<DiagnoseOptions['plugins']> => ({
+  ids: () => ids,
+  get: (id) => (ids.includes(id)
+    ? { manifest: { id, version: '1.0.0', advisory: false, hooks: [], capabilities: [], configSchema: EMPTY_SCHEMA }, handlers: {} }
+    : undefined),
+});
+
+function appendConfig(workspace: string, text: string): void {
+  const file = path.join(workspace, '.migent', 'config.yaml');
+  writeFileSync(file, readFileSync(file, 'utf8') + text, 'utf8');
+}
+
+test('a prepared session reports an enabled plugin that is not registered, as the shared validator does', () => {
+  const workspace = writeStageWorkspace();
+  appendConfig(workspace, 'plugins:\n  ghost:\n    enabled: true\n');
+  const sessionId = createPreparedSession(workspace, { title: 'wave', workflowId: 'plan-implement' });
+  const diagnosis = run(workspace, sessionId, { plugins: pluginRegistryOf() });
+  expect(diagnosis.ok).toBe(false);
+  expect(allProblems(diagnosis)).toContain('no plugin "ghost" is registered');
+});
+
+test('a prepared session accepts a plugin entry the injected registry knows', () => {
+  const workspace = writeStageWorkspace();
+  appendConfig(workspace, 'plugins:\n  demo:\n    enabled: true\n');
+  const sessionId = createPreparedSession(workspace, { title: 'wave', workflowId: 'plan-implement' });
+  expect(run(workspace, sessionId, { plugins: pluginRegistryOf('demo') }).ok).toBe(true);
+});
+
+test('a frozen session does not re-validate its frozen plugin entries against the live config', () => {
+  const workspace = writeStageWorkspace();
+  appendConfig(workspace, 'plugins:\n  demo:\n    enabled: true\n');
+  const sessionId = createWorkflowSession(workspace, 'plan-implement', {
+    task: 'task',
+    resolveClient: defaultClients(),
+    plugins: { classify: () => 'frozen', snapshot: () => [] },
+  });
+  expect(run(workspace, sessionId, { plugins: pluginRegistryOf() }).ok).toBe(true);
+});
+
+const agentRegistry = (id: string, advisory = false): NonNullable<DiagnoseOptions['plugins']> => ({
+  ids: () => [id],
+  get: (name) => (name === id
+    ? {
+      manifest: { id, version: '1.0.0', advisory, hooks: [], capabilities: ['invokeAgent'], configSchema: EMPTY_SCHEMA },
+      handlers: {},
+    }
+    : undefined),
+});
+
+async function selectionProblems(workspace: string, sessionId: string, plugins: DiagnoseOptions['plugins']): Promise<string> {
+  const diagnosis = await diagnoseSelection(workspace, selectSessionWorkflow(workspace, sessionId), {
+    clients: defaultClients(),
+    plugins,
+    which: whichFound(ALL),
+  });
+  return `${diagnosis.ok}|${allProblems(diagnosis)}`;
+}
+
+test.each([
+  ['null', 'plugins:\n'],
+  ['a scalar', 'plugins: 5\n'],
+])('diagnoseSelection rejects %s as the plugins section, as the freeze does', async (_name, text) => {
+  const workspace = writeStageWorkspace();
+  appendConfig(workspace, text);
+  const sessionId = createPreparedSession(workspace, { title: 'wave', workflowId: 'plan-implement' });
+  const result = await selectionProblems(workspace, sessionId, pluginRegistryOf());
+  expect(result).toMatch(/^false\|.*plugins must be a mapping/s);
+});
+
+test('diagnoseSelection rejects an agent-calling plugin whose agent does not resolve', async () => {
+  const workspace = writeStageWorkspace();
+  appendConfig(workspace, 'plugins:\n  demo:\n    agent: nonexistent\n');
+  const sessionId = createPreparedSession(workspace, { title: 'wave', workflowId: 'plan-implement' });
+  expect(await selectionProblems(workspace, sessionId, agentRegistry('demo'))).toMatch(/^false\|.*nonexistent/s);
+});
+
+test('diagnoseSelection accepts an inline agent, a disabled entry with a bad agent, and no section', async () => {
+  const workspace = writeStageWorkspace();
+  appendConfig(workspace, 'plugins:\n  demo:\n    agent: nonexistent\n    enabled: false\n');
+  const disabled = createPreparedSession(workspace, { title: 'wave', workflowId: 'plan-implement' });
+  expect(await selectionProblems(workspace, disabled, agentRegistry('demo'))).toBe('true|');
+  const inline = writeStageWorkspace();
+  appendConfig(inline, 'plugins:\n  demo:\n    agent: { client: { type: codex }, model: m1 }\n');
+  const inlineId = createPreparedSession(inline, { title: 'wave', workflowId: 'plan-implement' });
+  expect(await selectionProblems(inline, inlineId, agentRegistry('demo'))).toBe('true|');
+  const none = writeStageWorkspace();
+  const bare = createPreparedSession(none, { title: 'wave', workflowId: 'plan-implement' });
+  expect(await selectionProblems(none, bare, pluginRegistryOf())).toBe('true|');
+});
+
+test('diagnoseSelection does not block a start on an advisory plugin whose agent does not resolve', async () => {
+  const workspace = writeStageWorkspace();
+  appendConfig(workspace, 'plugins:\n  demo:\n    agent: nonexistent\n');
+  const sessionId = createPreparedSession(workspace, { title: 'wave', workflowId: 'plan-implement' });
+  expect(await selectionProblems(workspace, sessionId, agentRegistry('demo', true))).toBe('true|');
+  expect(await selectionProblems(workspace, sessionId, agentRegistry('demo', false))).toMatch(/^false\|.*nonexistent/s);
 });

@@ -1,4 +1,4 @@
-import { isValid, isWellFormedSchema, LlmPluginConfig, PluginManifest, PluginSharedConfig, type TSchema } from '@nodeint/migent-contracts';
+import { isValid, isWellFormedSchema, LlmPluginConfig, PluginManifest, type PluginRegistry, PluginSharedConfig, type TSchema } from '@nodeint/migent-contracts';
 
 import { sectionIssues } from './config-structure.js';
 import { ConfigurationError } from './errors.js';
@@ -55,3 +55,13 @@ export function pluginEntryIssues({ plugins, manifests }: PluginValidationInput)
     return entryIssues(id, entry, manifests.get(id));
   });
 }
+
+/** The manifest data of every plugin in a registry, keyed by id: the `manifests` input of `pluginEntryIssues`. */
+export function registryManifests(registry: PluginRegistry): ReadonlyMap<string, unknown> {
+  return new Map(registry.ids().flatMap((id) => {
+    const plugin = registry.get(id);
+    return plugin === undefined ? [] : [[id, plugin.manifest] as const];
+  }));
+}
+
+export type { PluginRegistry };

@@ -139,6 +139,12 @@ export interface Plugin {
   readonly handlers: Partial<Record<PluginHook, PluginHandler>>;
 }
 
+/** Static registry of plugins, keyed by manifest id. Built by the package that owns the plugins and injected. */
+export interface PluginRegistry {
+  readonly ids: () => readonly string[];
+  readonly get: (id: string) => Plugin | undefined;
+}
+
 // ---- config section ---------------------------------------------------------------------------
 
 /**
