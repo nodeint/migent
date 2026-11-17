@@ -37,7 +37,8 @@ state directly.
 ## Seams
 
 Internal seams attach to the core mechanisms. They have no production consumer that extends
-Migent: `invokeOnce` has no caller. The plugin host in `engine` `src/plugin-host/` is the one subscriber, and
+Migent: `invokeOnce` has one caller, the plugin host's `invokeAgent` capability
+(`src/plugin-host/agent-call.ts`). The plugin host in `engine` `src/plugin-host/` is the one subscriber, and
 the `plugins` section is the one registered config section. Both act only when a plugin is registered.
 
 | Seam | Location | Rule |

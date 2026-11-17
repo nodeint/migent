@@ -337,3 +337,34 @@ test('a client that ignores the interrupt is terminated once the grace period en
   expect(Date.now() - startedAt).toBeLessThan(20_000);
   rmSync(dir, { recursive: true, force: true });
 }, 30_000);
+
+test('an aborted run stops the process group and reports an error, without a process-wide cancellation', async () => {
+  const controller = new AbortController();
+  const pidFile = path.join(mkdtempSync(path.join(tmpdir(), 'migent-abort-')), 'pid');
+  const code = `require('fs').writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1000);`;
+  const timer = setInterval(() => {
+    try {
+      if (readFileSync(pidFile, 'utf8').trim() === '') return;
+    } catch {
+      return;
+    }
+    clearInterval(timer);
+    controller.abort();
+  }, 20);
+  const result = await new CommandExecutor(30).run({ argv: [process.execPath, '-e', code] }, process.cwd(), { signal: controller.signal });
+  clearInterval(timer);
+  expect(result.error).toContain('aborted');
+  expect(result.exitCode).toBeNull();
+  const pid = Number(readFileSync(pidFile, 'utf8'));
+  expect(() => process.kill(pid, 0)).toThrow();
+  // The abort was per run: a later run is unaffected.
+  const next = await new CommandExecutor(10).run({ argv: [process.execPath, '-e', "process.stdout.write('ok')"] }, process.cwd());
+  expect(next).toMatchObject({ stdout: 'ok', error: null });
+}, 30_000);
+
+test('an already aborted signal starts no process', async () => {
+  const controller = new AbortController();
+  controller.abort();
+  const result = await new CommandExecutor(10).run({ argv: ['/nonexistent-migent-binary'] }, process.cwd(), { signal: controller.signal });
+  expect(result.error).toContain('aborted');
+});

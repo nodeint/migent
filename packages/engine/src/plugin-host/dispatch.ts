@@ -7,16 +7,21 @@ import {
   PLUGIN_DEFAULT_ON_ERROR,
   PLUGIN_DEFAULT_TIMEOUT_SEC,
   PLUGIN_HOOKS,
+  type PluginCapabilities,
   type PluginHook,
   type PluginHookInput,
   PluginIntent,
   type PluginOnError,
   type PluginRegistry,
 } from '@nodeint/migent-contracts';
-import { cancellationSignal, logProgress, utcNow, writeFileAtomic } from '@nodeint/migent-kernel';
+import type { ClientRegistry, StageTarget } from '@nodeint/migent-kernel';
+import { CancellationRequested, cancellationSignal, loadWorkspaceConfig, logProgress, resolvePluginTarget, utcNow, writeFileAtomic } from '@nodeint/migent-kernel';
 import { readParsedEvents, sessionEventLog, SessionStore, subscribeSessionEvents } from '@nodeint/migent-session';
 import { isRecord } from '@nodeint/migent-workflow';
 
+import { bindTarget } from '../agent-invocation.js';
+import { AgentCaller } from './agent-call.js';
+import { declaresAgent } from './freeze.js';
 import { type PluginFailure, recordPluginFailure } from './holds.js';
 import type { PluginSelection, SelectedPlugin } from './selection.js';
 
@@ -78,6 +83,16 @@ function frozenCopy<T>(value: T): T {
 
 const MS_PER_SECOND = 1000;
 
+/** The provider prompt: the plugin's text, then its configured `responsibilities` and `description`. */
+function promptFor(config: Record<string, unknown>, text: string): string {
+  const parts = [text];
+  if (typeof config.description === 'string') parts.push(`Description: ${config.description}`);
+  if (Array.isArray(config.responsibilities) && config.responsibilities.length > 0) {
+    parts.push(['Responsibilities:', ...config.responsibilities.map((item) => `- ${String(item)}`)].join('\n'));
+  }
+  return parts.join('\n\n');
+}
+
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
 
 /**
@@ -90,6 +105,8 @@ const messageOf = (error: unknown): string => (error instanceof Error ? error.me
 export class PluginHost {
   private readonly directory: string;
   private readonly store: SessionStore;
+  private readonly registry: PluginRegistry;
+  private readonly clients: ClientRegistry | null;
   private readonly plugins: readonly SelectedPlugin[];
   private unavailable: PluginSelection['unavailable'][number][];
   private chain: Promise<void> = Promise.resolve();
@@ -107,8 +124,10 @@ export class PluginHost {
   constructor(
     session: { readonly workspace: string; readonly sessionId: string },
     selection: PluginSelection,
-    private readonly registry: PluginRegistry,
+    services: { readonly plugins: PluginRegistry; readonly clients: ClientRegistry | null },
   ) {
+    this.registry = services.plugins;
+    this.clients = services.clients;
     const { workspace, sessionId } = session;
     this.workspace = workspace;
     this.sessionId = sessionId;
@@ -235,28 +254,100 @@ export class PluginHost {
       },
     });
     sessionEventLog.commit(this.workspace, this.directory);
-    const outcome = await this.call(handler, this.inputFor(plugin, trigger), resolveTimeoutSec(plugin));
-    const failure = outcome.kind === 'ok'
-      ? this.apply(plugin, invocationId, outcome.intents)
-      : outcome;
+    const timeoutSec = resolveTimeoutSec(plugin);
+    const controller = new AbortController();
+    const caller = this.callerFor(plugin, { invocationId, trigger, timeoutSec, signal: controller.signal });
+    const outcome = await this.call(handler, this.inputFor(plugin, trigger), {
+      timeoutSec, controller, caller,
+    });
+    const calls = caller?.calls ?? [];
+    let failure: Extract<Outcome, { kind: 'fail' }> | null;
+    if (outcome.kind === 'ok') failure = this.apply(plugin, invocationId, { raw: outcome.intents, calls });
+    else if (caller?.unavailable !== null && caller?.unavailable !== undefined && outcome.reason === 'error') {
+      failure = { kind: 'fail', reason: 'unavailable', error: caller.unavailable };
+    } else failure = outcome;
     if (failure === null) return;
     recordPluginFailure(this.workspace, this.sessionId, {
-      plugin: plugin.id, hook, invocationId, reason: failure.reason, error: failure.error, onError,
+      plugin: plugin.id, hook, invocationId, reason: failure.reason, error: failure.error, onError, agentCalls: calls,
     });
+  }
+
+  /** The `invokeAgent` capability: offered only when the manifest declares it and the config has an `agent`. */
+  private callerFor(
+    plugin: SelectedPlugin,
+    context: { invocationId: string; trigger: Trigger; timeoutSec: number; signal: AbortSignal },
+  ): AgentCaller | null {
+    const { clients } = this;
+    if (clients === null || !declaresAgent(plugin.manifest) || plugin.config.agent === undefined) return null;
+    const target = this.targetOf(plugin, clients);
+    const stageId = typeof context.trigger.record?.stage_id === 'string' ? context.trigger.record.stage_id : '';
+    return new AgentCaller({
+      workspace: this.workspace,
+      sessionId: this.sessionId,
+      sessionDirectory: this.directory,
+      pluginId: plugin.id,
+      invocationId: context.invocationId,
+      stageId,
+      bind: () => bindTarget(target(), clients),
+      deadlineAt: Date.now() + context.timeoutSec * MS_PER_SECOND,
+      signal: context.signal,
+      frame: (text) => promptFor(plugin.config, text),
+    });
+  }
+
+  /** A non-advisory plugin binds its frozen target; an advisory one resolves the live target at the call. */
+  private targetOf(plugin: SelectedPlugin, clients: ClientRegistry): () => StageTarget {
+    if (plugin.source === 'frozen') {
+      return () => {
+        if (plugin.target === null) throw new Error(`Plugin "${plugin.id}" has no frozen agent target.`);
+        return plugin.target as unknown as StageTarget;
+      };
+    }
+    const entry = { id: plugin.id, entry: plugin.config };
+    return () => resolvePluginTarget(loadWorkspaceConfig(this.workspace), entry, clients);
   }
 
   /** Runs the handler under its deadline. A timeout or cancellation wins the race; later intents are discarded. */
   private call(
-    handler: (input: PluginHookInput, capabilities: Record<string, never>) => Promise<readonly unknown[]>,
+    handler: (input: PluginHookInput, capabilities: PluginCapabilities) => Promise<readonly unknown[]>,
     input: PluginHookInput,
-    timeoutSec: number,
+    context: { timeoutSec: number; controller: AbortController; caller: AgentCaller | null },
   ): Promise<Outcome> {
+    const { timeoutSec, controller, caller } = context;
     return new Promise<Outcome>((resolve) => {
       let timer: NodeJS.Timeout | null = null;
+      let settled = false;
+      // First settle wins. A timeout or cancellation aborts the provider; the host waits for every started call to
+      // stop and closes the capability before it reports. Later intents are discarded.
+      const drain = async (outcome: Outcome): Promise<Outcome> => {
+        if (caller === null) return outcome;
+        await Promise.allSettled(caller.close());
+        const { failure } = caller;
+        if (outcome.kind === 'ok' && failure !== null) {
+          return failure.error instanceof CancellationRequested
+            ? { kind: 'fail', reason: 'cancelled', error: 'The run was cancelled.' }
+            : { kind: 'fail', reason: 'error', error: messageOf(failure.error) };
+        }
+        return outcome;
+      };
       const settle = (outcome: Outcome): void => {
+        if (settled) return;
+        settled = true;
         if (timer !== null) clearTimeout(timer);
         this.aborters.delete(cancel);
-        resolve(outcome);
+        if (outcome.kind === 'fail') controller.abort();
+        void drain(outcome).then(resolve);
+      };
+      // The handler returning is not the end: calls it started stay under the deadline and cancellation until they
+      // have stopped, then the intents are accepted.
+      const handlerDone = (outcome: Outcome): void => {
+        if (settled) return;
+        // A failure aborts the running calls at once; only a success waits for them.
+        if (caller === null || outcome.kind === 'fail') {
+          settle(outcome);
+          return;
+        }
+        void drain(outcome).then((final) => settle(final));
       };
       const cancel = (): void => settle({ kind: 'fail', reason: 'cancelled', error: 'The run was cancelled.' });
       if (this.cancelled) {
@@ -270,10 +361,12 @@ export class PluginHost {
       // After a timeout or cancellation the handler promise is orphaned: settle() is a no-op for the promise, so
       // its late intents are discarded and its rejection is swallowed here.
       Promise.resolve()
-        .then(() => handler(input, Object.freeze({})))
+        .then(() => handler(input, Object.freeze(caller === null ? {} : { invokeAgent: caller.invokeAgent })))
         .then(
-          (intents) => settle({ kind: 'ok', intents }),
-          (error: unknown) => settle({ kind: 'fail', reason: 'error', error: messageOf(error) }),
+          (intents) => handlerDone({ kind: 'ok', intents }),
+          (error: unknown) => handlerDone(error instanceof CancellationRequested
+            ? { kind: 'fail', reason: 'cancelled', error: 'The run was cancelled.' }
+            : { kind: 'fail', reason: 'error', error: messageOf(error) }),
         );
     });
   }
@@ -341,10 +434,11 @@ export class PluginHost {
   private apply(
     plugin: SelectedPlugin,
     invocationId: string,
-    raw: unknown,
+    proposal: { raw: unknown; calls: readonly unknown[] },
   ): Extract<Outcome, { kind: 'fail' }> | null {
     const invalid = (error: string): Extract<Outcome, { kind: 'fail' }> =>
       ({ kind: 'fail', reason: 'invalid_intent', error });
+    const { raw, calls } = proposal;
     if (!Array.isArray(raw)) return invalid('The hook must return an array of intents.');
     const intents: PluginIntent[] = [];
     for (const [index, item] of raw.entries()) {
@@ -367,6 +461,7 @@ export class PluginHost {
           ? { kind: intent.kind, name: intent.name, media_type: intent.media_type }
           : { ...intent })),
         results,
+        ...(calls.length === 0 ? {} : { agent_calls: calls }),
       },
     });
     sessionEventLog.commit(this.workspace, this.directory);

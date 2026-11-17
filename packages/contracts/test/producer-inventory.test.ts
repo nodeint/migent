@@ -23,6 +23,7 @@ const EVENT_ALLOW_LIST: readonly { value: string; reason: string }[] = [
   { value: 'session.on_expired', reason: 'Config key of a stage, not an event.' },
   { value: 'session.resume_from', reason: 'Config key, not an event.' },
   { value: 'session.interrupt', reason: 'Argument string of the opencode CLI, not a Migent event.' },
+  { value: 'plugin.invoke_agent', reason: 'Operation id of a plugin agent call on the operation runtime, not an event.' },
   { value: 'provider.item_', reason: 'Prefix of the adapter item event names; each full name is registered.' },
 ];
 

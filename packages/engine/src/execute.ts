@@ -80,7 +80,11 @@ async function executeLocked(
   );
   if (opened.kind === 'final') return opened.result;
   const { sessionId, workflow, workflowId, stageReply, resumeCancelled, reopenLatestCancelled } = opened;
-  const host = new PluginHost({ workspace, sessionId }, opened.plugins, activeRunner.pluginRegistry);
+  const host = new PluginHost(
+    { workspace, sessionId },
+    opened.plugins,
+    { plugins: activeRunner.pluginRegistry, clients: activeRunner.registry },
+  );
   const removeSignalHandlers = installSignalHandlers(held);
   const tasks = new Map<string, Promise<unknown>>();
   const run: ExecuteRun = {

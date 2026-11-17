@@ -99,6 +99,13 @@ The session-level files have distinct purposes:
   `plugins/<id>/<name>`, where `<name>` is one safe file name. `on_error` decides a failure: `ignore` records it,
   `stop` and `fail` set a plugin hold. An advisory plugin always uses `ignore`. Hooks are not replayed on resume,
   and every invocation settles before the session lock is released.
+- A plugin that declares `invokeAgent`, and whose config has an `agent`, can ask for one provider turn with no
+  conversation or resume. Each call runs as the `plugin.invoke_agent` operation on the operation runtime. The raw
+  response is stored in `plugins/<id>/calls/<invocation>-<n>.txt`, and the invocation's `plugin.decision` or
+  `plugin.failed` lists the call under `agent_calls`. The plugin receives only `{ text, error }`. A non-advisory
+  plugin uses the agent target pinned in `plugins.frozen`; an advisory plugin resolves the live agent at the call.
+  When the invocation deadline passes or the run is cancelled, the provider process is stopped before the failure
+  is recorded, and a later call starts no process.
 - `task.md` is the task body. A one-line `session run --workflow --task` writes
   that sentence here. A prepared session creates an empty file for you to write, along with any
   other files that belong next to it. Stage prompts name this path and the

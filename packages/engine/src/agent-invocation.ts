@@ -53,6 +53,8 @@ export interface InvokeOnceOptions {
   readonly workspace: string;
   readonly cwd?: string;
   readonly timeoutSec?: number | null;
+  /** Aborting stops the provider process; the turn then reports an error. */
+  readonly signal?: AbortSignal;
   /** When given, provider events are recorded in this execution through the session event log. */
   readonly recordTo?: { readonly store: SessionStore; readonly context: ExecutionContext };
 }
@@ -93,6 +95,7 @@ export async function invokeOnce(
       events,
       onDebug: null,
       onStart: (info) => recordTo?.store.saveProcessMetadata(recordTo.context, info),
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
     },
   );
   return {

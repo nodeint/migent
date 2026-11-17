@@ -13,6 +13,8 @@ export interface PluginFailure {
   readonly reason: (typeof PLUGIN_FAILURE_REASONS)[number];
   readonly error: string | null;
   readonly onError: (typeof PLUGIN_ON_ERROR)[number];
+  /** Agent calls the invocation made, listed under `agent_calls`. */
+  readonly agentCalls?: readonly unknown[];
 }
 
 const sessionDirectoryOf = (workspace: string, sessionId: string): string =>
@@ -35,6 +37,7 @@ export function recordPluginFailure(workspace: string, sessionId: string, failur
       reason: failure.reason,
       error: failure.error,
       on_error: failure.onError,
+      ...((failure.agentCalls?.length ?? 0) === 0 ? {} : { agent_calls: failure.agentCalls }),
     },
   });
   sessionEventLog.commit(workspace, directory);

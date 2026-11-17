@@ -160,6 +160,8 @@ export interface ProviderTurnCall {
   readonly events: TurnEvents;
   readonly onDebug: ((step: string, fromWrapper?: boolean) => void) | null;
   readonly onStart: (info: ProcessStartInfo) => void;
+  /** Aborting stops this turn's process group. */
+  readonly signal?: AbortSignal;
 }
 
 /** Runs one provider process and parses its result. The single turn-execution path. */
@@ -167,7 +169,7 @@ export async function runProviderTurn(
   runner: { executor: CommandExecutor; interruptPolicy: InterruptPolicy },
   call: ProviderTurnCall,
 ): Promise<TurnResult> {
-  const { client, model, workspace, prompt, agentId, newSession, options, events, onDebug, onStart } = call;
+  const { client, model, workspace, prompt, agentId, newSession, options, events, onDebug, onStart, signal } = call;
   const tmp = mkdtempSync(path.join(tmpdir(), 'migent_'));
   try {
     const promptFile = path.join(tmp, 'prompt.txt');
@@ -192,6 +194,7 @@ export async function runProviderTurn(
     const summarizer = new StreamSummarizer(client.eventLabel !== undefined);
     const result = await runner.executor.run(spec, workspace, {
       onDebug,
+      ...(signal === undefined ? {} : { signal }),
       // Only a client with a server-side interrupt gets hooks, and so the exit grace period.
       ...(client.interruptCommand === undefined
         ? {}

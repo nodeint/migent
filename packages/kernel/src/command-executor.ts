@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { constants as osConstants } from 'node:os';
 
 import { ENDPOINT_TOKEN_BYTES, MS_PER_SECOND, TERMINATION_POLL_MS } from './constants.js';
-import { createLineQueue, type LineQueue } from './line-queue.js';
+import { createLineQueue, feedStdin, type LineQueue, stopWaiters } from './line-queue.js';
 import { collectProcessStartInfo, type ProcessStartInfo } from './process-ownership.js';
 import { killProcessTree, wrapperEndpoint } from './process-wrapper.js';
 import { assertArgumentsPassable,UnpassableArgument } from './provider-spawn.js';
@@ -109,6 +109,8 @@ export interface RunOptions {
   onInterrupt?: ((reason: StopReason) => Promise<void | boolean>) | null;
   /** Awaited after the process group is stopped, for a last check of what the interrupt could not settle. */
   onStopped?: ((reason: StopReason) => Promise<void | boolean>) | null;
+  /** Per-run abort: stops the process group like a timeout and resolves with an error, never a cancellation. */
+  signal?: AbortSignal | null;
 }
 
 export type StopReason = 'cancel' | 'timeout';
@@ -127,6 +129,7 @@ async function notify(
   }
 }
 
+const ABORT_MESSAGE = 'Sub-agent aborted.';
 export class CancellationRequested extends Error {
   public readonly signalNumber: number;
 
@@ -294,7 +297,8 @@ export class CommandExecutor {
   public async run(spec: CommandSpec, cwd: string, options: RunOptions = {}): Promise<CommandResult> {
     const unpassable = unpassableArguments(spec);
     if (unpassable !== null) return unpassable;
-    // `launched` turns true once the provider was told to start; before that no server-side turn can exist.
+    if (options.signal?.aborted) return { stdout: '', error: ABORT_MESSAGE, exitCode: null };
+    // `launched` turns true once the provider started; before that no server-side turn exists.
     const state: RunState = { child: null, launched: false };
     try {
       const { child, launch, started } = await spawnAndAwaitReady(spec, { cwd, onDebug: options.onDebug }, state);
@@ -340,18 +344,16 @@ export class CommandExecutor {
     hooks: RunOptions = {},
   ): Promise<WaitResult> {
     const startedAt = Date.now();
-    const queue = createLineQueue(child.stdout ?? null, cancellationSignal().onCancel);
-    if ((spec.stdin !== null && spec.stdin !== undefined) && child.stdin) {
-      child.stdin.write(spec.stdin);
-      child.stdin.end();
-    }
+    const { signal } = hooks;
+    const queue = createLineQueue(child.stdout ?? null, stopWaiters(cancellationSignal().onCancel, signal));
+    feedStdin(child, spec.stdin);
     const stdoutChunks: string[] = [];
     let outputClosed = false;
     while (true) {
       throwIfCancelled();
-      const waitMs = this.nextWaitMs(startedAt);
-      if (waitMs === null) return this.timeout(child, hooks);
-      const line = await nextLine(child, queue, { outputClosed, waitMs });
+      const waitMs = signal?.aborted === true ? null : this.nextWaitMs(startedAt);
+      if (waitMs === null) return this.stopRun(child, hooks, signal?.aborted === true);
+      const line = await nextLine(child, queue, { outputClosed, waitMs, signal });
       if (line === EXITED) break;
       if (line === 'timeout') {
         hooks.onHeartbeat?.(Math.floor((Date.now() - startedAt) / MS_PER_SECOND));
@@ -374,15 +376,17 @@ export class CommandExecutor {
     return remainingMs <= 0 ? null : Math.min(intervalMs, remainingMs);
   }
 
-  private async timeout(child: ChildProcess, hooks: RunOptions): Promise<[string, string, null, null]> {
+  /** Stops the group. An abort is the caller's request, so it is an error result, never a cancellation. */
+  private async stopRun(child: ChildProcess, hooks: RunOptions, aborted: boolean): Promise<StoppedRun> {
     await this.interrupt(child, hooks, 'timeout');
     await stopProcessGroup(child);
     await notify(hooks.onStopped, 'timeout');
-    return ['', `Sub-agent timed out after ${this.timeoutSec}s.`, null, null];
+    return ['', aborted ? ABORT_MESSAGE : `Sub-agent timed out after ${this.timeoutSec}s.`, null, null];
   }
 }
 
 type StreamStats = { bytes: number; lines: number };
+type StoppedRun = [string, string, null, null];
 type WaitResult = [string, string | null, number | null, StreamStats | null];
 
 /** What `run` must know to clean up after a cancel. */
@@ -488,15 +492,21 @@ const EXITED: unique symbol = Symbol('exited');
 async function nextLine(
   child: ChildProcess,
   queue: LineQueue,
-  step: { outputClosed: boolean; waitMs: number },
+  step: { outputClosed: boolean; waitMs: number; signal?: AbortSignal | null },
 ): Promise<string | null | 'timeout' | typeof EXITED> {
   if (step.outputClosed) {
-    const finished = await waitForExit(child, step.waitMs);
-    if (finished === 'cancel') throwIfCancelled();
+    const finished = await waitForExit(child, step.waitMs, step.signal);
+    if (finished === 'cancel') {
+      throwIfCancelled();
+      return null;
+    }
     return finished === true ? EXITED : null;
   }
   const line = await queue.get(step.waitMs);
-  if (line === 'cancel') throwIfCancelled();
+  if (line === 'cancel') {
+    throwIfCancelled();
+    return 'timeout';
+  }
   return line;
 }
 
@@ -512,26 +522,32 @@ function exitedResult(child: ChildProcess, stdoutChunks: string[], bytes: number
 export function waitForExit(
   child: ChildProcess,
   timeoutMs: number,
+  signal?: AbortSignal | null,
 ): Promise<boolean | 'cancel'> {
   if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(true);
   return new Promise((resolve) => {
+    const release = (): void => {
+      cancelWaiters.delete(wake);
+      signal?.removeEventListener('abort', wake);
+    };
     const timer = setTimeout(() => {
       child.off('exit', onExit);
-      cancelWaiters.delete(wake);
+      release();
       resolve(false);
     }, timeoutMs);
     const onExit = () => {
       clearTimeout(timer);
-      cancelWaiters.delete(wake);
+      release();
       resolve(true);
     };
     const wake = () => {
       clearTimeout(timer);
       child.off('exit', onExit);
-      cancelWaiters.delete(wake);
+      release();
       resolve('cancel');
     };
     cancelWaiters.add(wake);
+    signal?.addEventListener('abort', wake, { once: true });
     child.once('exit', onExit);
   });
 }
