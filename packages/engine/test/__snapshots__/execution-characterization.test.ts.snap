@@ -1,0 +1,1953 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`baseline: abnormal turns with diagnostics, red verify and repair 1`] = `
+{
+  "events": [
+    {
+      "data": {
+        "task": "Finish the notes",
+        "title": "Finish the notes",
+        "workflow_id": "wf",
+        "workflow_path": ".migent/workflows/wf.yaml",
+      },
+      "event": "session.created",
+      "seq": 1,
+      "v": 2,
+    },
+    {
+      "data": {
+        "commit": null,
+        "error": "not a Git work tree: fatal: not a git repository (or any of the parent directories): .git",
+      },
+      "event": "baseline.captured",
+      "seq": 2,
+      "v": 2,
+    },
+    {
+      "data": {
+        "sha256": "91b0732dcb3373f93b989318c035676b814d4c35a06ee8958fbfd69201361313",
+      },
+      "event": "task.frozen",
+      "seq": 3,
+      "v": 2,
+    },
+    {
+      "data": {
+        "client": "fake",
+        "execution_order": 1,
+        "model": "m1",
+        "resumes_execution_id": null,
+        "stage_attempt": 1,
+      },
+      "event": "execution.started",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 4,
+      "stage_id": "implement",
+      "v": 2,
+    },
+    {
+      "data": {
+        "error": null,
+        "failure_reason": null,
+        "outcome": null,
+        "session_status": "active",
+      },
+      "event": "execution.running",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 5,
+      "stage_id": "implement",
+      "v": 2,
+    },
+    {
+      "client": "fake",
+      "data": {},
+      "details": {
+        "cli_version": null,
+        "git_dirty": null,
+        "git_head": null,
+      },
+      "event": "provider.stage_started",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 6,
+      "session_id": "1",
+      "stage_id": "implement",
+      "summary": "fake/m1",
+      "v": 2,
+    },
+    {
+      "client": "fake",
+      "data": {},
+      "details": {
+        "agent_id": "native-session-1",
+        "argv": [
+          "<node>",
+          "-e",
+          "process.exit(3)",
+        ],
+        "turn": 1,
+      },
+      "event": "provider.turn_completed",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 7,
+      "session_id": "1",
+      "stage_id": "implement",
+      "summary": "completed",
+      "v": 2,
+    },
+    {
+      "client": "fake",
+      "data": {},
+      "details": {
+        "accepted": true,
+        "client": "fake",
+        "exit_code": 3,
+        "origin": "exit-only",
+        "reason": null,
+        "signal": null,
+        "turn": 1,
+      },
+      "event": "provider.exit_anomaly",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 8,
+      "session_id": "1",
+      "stage_id": "implement",
+      "summary": "exit 3 with a usable reply; accepted",
+      "v": 2,
+    },
+    {
+      "client": "fake",
+      "data": {},
+      "details": {
+        "commands": [
+          ""<node>" "<tmp>/verify.cjs"",
+        ],
+        "turn": 1,
+      },
+      "event": "verify.started",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 9,
+      "session_id": "1",
+      "stage_id": "implement",
+      "summary": "1 command(s)",
+      "v": 2,
+    },
+    {
+      "client": "fake",
+      "data": {},
+      "details": {
+        "command": ""<node>" "<tmp>/verify.cjs"",
+        "exit_code": 1,
+        "max_verify": 3,
+        "red": 1,
+        "report": "turns/01/verify.md",
+        "status": "fail",
+        "turn": 1,
+      },
+      "event": "verify.failed",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 10,
+      "session_id": "1",
+      "stage_id": "implement",
+      "summary": ""<node>" "<tmp>/verify.cjs" failed",
+      "v": 2,
+    },
+    {
+      "client": "fake",
+      "data": {},
+      "details": {
+        "agent_id": "native-session-1",
+        "argv": [
+          "<node>",
+          "-e",
+          "process.exit(3)",
+        ],
+        "turn": 2,
+      },
+      "event": "provider.turn_completed",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 11,
+      "session_id": "1",
+      "stage_id": "implement",
+      "summary": "completed",
+      "v": 2,
+    },
+    {
+      "client": "fake",
+      "data": {},
+      "details": {
+        "accepted": true,
+        "client": "fake",
+        "exit_code": 3,
+        "origin": "exit-only",
+        "reason": null,
+        "signal": null,
+        "turn": 2,
+      },
+      "event": "provider.exit_anomaly",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 12,
+      "session_id": "1",
+      "stage_id": "implement",
+      "summary": "exit 3 with a usable reply; accepted",
+      "v": 2,
+    },
+    {
+      "client": "fake",
+      "data": {},
+      "details": {
+        "commands": [
+          ""<node>" "<tmp>/verify.cjs"",
+        ],
+        "turn": 2,
+      },
+      "event": "verify.started",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 13,
+      "session_id": "1",
+      "stage_id": "implement",
+      "summary": "1 command(s)",
+      "v": 2,
+    },
+    {
+      "client": "fake",
+      "data": {},
+      "details": {
+        "report": "turns/02/verify.md",
+        "turn": 2,
+      },
+      "event": "verify.passed",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 14,
+      "session_id": "1",
+      "stage_id": "implement",
+      "summary": "all commands passed",
+      "v": 2,
+    },
+    {
+      "data": {
+        "error": null,
+        "failure_reason": null,
+        "outcome": {
+          "status": "complete",
+        },
+        "session_status": "completed",
+      },
+      "event": "execution.completed",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 15,
+      "stage_id": "implement",
+      "v": 2,
+    },
+    {
+      "data": {
+        "outcome": {
+          "status": "complete",
+        },
+      },
+      "event": "stage.complete",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 16,
+      "stage_id": "implement",
+      "status": "complete",
+      "v": 2,
+    },
+    {
+      "data": {
+        "from": "active",
+        "outcome": {
+          "status": "complete",
+        },
+        "reason": "completed",
+      },
+      "event": "session.completed",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 17,
+      "stage_id": "implement",
+      "status": "complete",
+      "v": 2,
+    },
+  ],
+  "executions": {
+    "0001-implement--attempt-01": {
+      "artifacts/notes.md": "# n
+",
+      "artifacts/verify.md": "verify: pass
+run: 2
+red: 1 of 3
+
+commands:
+- [pass] "<node>" "<tmp>/verify.cjs"
+  exit_code: 0
+  log: turns/02/commands/01.log
+",
+      "conversation.json": {
+        "agent_id": "native-session-1",
+        "client": "fake",
+        "history": [
+          {
+            "content": "## Stage: implement (role: developer)
+
+### Verify
+
+After \`status: complete\`, Migent runs these commands in order. Completion counts only if all exit 0; otherwise you get the report and fix it here.
+
+- \`"<node>" "<tmp>/verify.cjs"\`",
+            "role": "user",
+          },
+          {
+            "content": "status: complete
+
+done",
+            "role": "assistant",
+          },
+          {
+            "content": "## Verify failed
+
+1 of 3 red runs.
+
+- Stage artifact: \`<ws>/.migent/sessions/1/executions/0001-implement--attempt-01/artifacts/notes.md\` (update it if your fix changes it)
+
+### Report
+
+verify: fail
+run: 1
+red: 1 of 3
+
+commands:
+- [fail] "<node>" "<tmp>/verify.cjs"
+  exit_code: 1
+  log: turns/01/commands/01.log
+
+tail of "<node>" "<tmp>/verify.cjs" (last 200 lines):
+\`\`\`
+\`\`\`
+",
+            "role": "user",
+          },
+          {
+            "content": "status: complete
+
+done",
+            "role": "assistant",
+          },
+        ],
+        "model": "m1",
+        "options": {},
+        "status": "completed",
+        "workspace": "<ws>",
+      },
+      "diagnostics.json": {
+        "agent_id": "native-session-1",
+        "arch": "<arch>",
+        "command": {
+          "argument_count": 2,
+          "executable": "<node>",
+        },
+        "cwd": "<ws>",
+        "endpoint_length": "<endpoint-length>",
+        "failure": {
+          "code": null,
+          "errno": null,
+          "exit_code": 3,
+          "kind": "provider-exit",
+          "message": "CLI exited with code 3.",
+          "origin": "exit-only",
+          "path": null,
+          "phase": null,
+          "signal": null,
+          "syscall": null,
+        },
+        "migent_version": "<migent-version>",
+        "node_version": "<node-version>",
+        "platform": "<platform>",
+        "recorded_at": "<time>",
+        "result_state": {
+          "gates": {
+            "artifact": {
+              "state": "passed",
+            },
+            "completion_outputs": {
+              "state": "passed",
+            },
+            "outcome": {
+              "state": "passed",
+              "status": "complete",
+            },
+          },
+          "observed": {
+            "artifact": {
+              "bytes": 4,
+              "state": "present",
+            },
+            "conversation_turns": 2,
+            "reply": {
+              "bytes": 22,
+              "source": "model",
+              "status_header": {
+                "state": "present",
+                "status": "complete",
+              },
+            },
+            "response_written": true,
+          },
+          "reason": null,
+          "turn_verdict": "accepted",
+        },
+        "schema_version": 2,
+        "stderr": {
+          "drain": "closed",
+          "tail_bytes": 0,
+          "total_bytes": 0,
+        },
+        "stderr_tail": "",
+        "stream_summary": {
+          "error_messages": [],
+          "events": {},
+          "labelled": true,
+          "last_events": [],
+          "lines": 0,
+          "non_json_lines": 0,
+          "stdout_bytes": 0,
+        },
+        "timings": {
+          "failed_at": "<time>",
+          "spawned_at": "<time>",
+        },
+        "turn": 2,
+      },
+      "execution.json": {
+        "agent_id": "native-session-1",
+        "artifact_directory": "artifacts",
+        "client": "fake",
+        "execution_id": "0001-implement--attempt-01",
+        "execution_order": 1,
+        "final_turn": 2,
+        "model": "m1",
+        "options": {},
+        "outcome": {
+          "status": "complete",
+        },
+        "pending_turn": 2,
+        "response_protocol": 3,
+        "resumes_execution_id": null,
+        "schema_version": 2,
+        "session_id": "1",
+        "stage_attempt": 1,
+        "stage_id": "implement",
+        "status": "completed",
+        "turn_kind": "repair",
+        "turns": 2,
+        "verify": {
+          "last_report": "turns/02/verify.md",
+          "last_result": "pass",
+          "max_verify": 3,
+          "red": 1,
+          "runs": 2,
+        },
+      },
+      "handoff.json": {
+        "schema_version": 1,
+        "status": "complete",
+      },
+      "prompt.md": "# Migent workflow stage
+
+## Response contract
+
+Write one JSON document to the handoff file (see Execution) before you finish. Migent reads only that file for the stage result. The response body is a free-form report for humans.
+
+\`\`\`json
+{"schema_version":1,"status":"complete","summary":"One-line report."}
+{"schema_version":1,"status":"blocked","blocker":"What stops you."}
+\`\`\`
+
+Each line above is a separate example; write exactly one document. \`status\` is complete | blocked.
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. \`summary\` is optional. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. \`blocker\` is required. |
+
+## Stage: implement (role: developer)
+
+### Verify
+
+After \`status: complete\`, Migent runs these commands in order. Completion counts only if all exit 0; otherwise you get the report and fix it here.
+
+- \`"<node>" "<tmp>/verify.cjs"\`
+
+## Execution
+
+- Task: \`<ws>/.migent/sessions/1/task.md\`
+- Session dir: \`<ws>/.migent/sessions/1\` (shared session files)
+- Handoff file: \`<ws>/.migent/sessions/1/executions/0001-implement--attempt-01/handoff.json\`
+- Artifacts: \`<ws>/.migent/sessions/1/executions/0001-implement--attempt-01/artifacts\`
+
+## Do
+
+Read the task, then carry out the stage.
+Write the artifact as \`notes.md\` in the artifacts directory.",
+      "response.md": "status: complete
+
+done",
+      "task.md": "Finish the notes
+",
+      "turns/01/commands/01.log": "",
+      "turns/01/outcome.json": {
+        "status": "complete",
+      },
+      "turns/01/response.md": "status: complete
+
+done",
+      "turns/01/verify.md": "verify: fail
+run: 1
+red: 1 of 3
+
+commands:
+- [fail] "<node>" "<tmp>/verify.cjs"
+  exit_code: 1
+  log: turns/01/commands/01.log
+
+tail of "<node>" "<tmp>/verify.cjs" (last 200 lines):
+\`\`\`
+\`\`\`
+",
+      "turns/02/commands/01.log": "",
+      "turns/02/outcome.json": {
+        "status": "complete",
+      },
+      "turns/02/response.md": "status: complete
+
+done",
+      "turns/02/verify.md": "verify: pass
+run: 2
+red: 1 of 3
+
+commands:
+- [pass] "<node>" "<tmp>/verify.cjs"
+  exit_code: 0
+  log: turns/02/commands/01.log
+",
+    },
+  },
+  "result": {
+    "code": 0,
+    "latestExecutionId": "0001-implement--attempt-01",
+    "status": "completed",
+    "stopReason": "completed",
+  },
+}
+`;
+
+exports[`baseline: role execution that exhausts its verify budget 1`] = `
+{
+  "events": [
+    {
+      "data": {
+        "task": "Finish the notes",
+        "title": "Finish the notes",
+        "workflow_id": "wf",
+        "workflow_path": ".migent/workflows/wf.yaml",
+      },
+      "event": "session.created",
+      "seq": 1,
+      "v": 2,
+    },
+    {
+      "data": {
+        "commit": null,
+        "error": "not a Git work tree: fatal: not a git repository (or any of the parent directories): .git",
+      },
+      "event": "baseline.captured",
+      "seq": 2,
+      "v": 2,
+    },
+    {
+      "data": {
+        "sha256": "91b0732dcb3373f93b989318c035676b814d4c35a06ee8958fbfd69201361313",
+      },
+      "event": "task.frozen",
+      "seq": 3,
+      "v": 2,
+    },
+    {
+      "data": {
+        "client": "fake",
+        "execution_order": 1,
+        "model": "m1",
+        "resumes_execution_id": null,
+        "stage_attempt": 1,
+      },
+      "event": "execution.started",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 4,
+      "stage_id": "implement",
+      "v": 2,
+    },
+    {
+      "data": {
+        "error": null,
+        "failure_reason": null,
+        "outcome": null,
+        "session_status": "active",
+      },
+      "event": "execution.running",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 5,
+      "stage_id": "implement",
+      "v": 2,
+    },
+    {
+      "client": "fake",
+      "data": {},
+      "details": {
+        "cli_version": null,
+        "git_dirty": null,
+        "git_head": null,
+      },
+      "event": "provider.stage_started",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 6,
+      "session_id": "1",
+      "stage_id": "implement",
+      "summary": "fake/m1",
+      "v": 2,
+    },
+    {
+      "client": "fake",
+      "data": {},
+      "details": {
+        "agent_id": "native-session-1",
+        "argv": [
+          "<node>",
+          "-e",
+          "process.stdout.write(process.argv[1])",
+          "{"text":"status: complete\\necho:# Migent workflow stage","sessionId":"native-session-1","call":0}",
+        ],
+        "turn": 1,
+      },
+      "event": "provider.turn_completed",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 7,
+      "session_id": "1",
+      "stage_id": "implement",
+      "summary": "completed",
+      "v": 2,
+    },
+    {
+      "client": "fake",
+      "data": {},
+      "details": {
+        "commands": [
+          ""<node>" "<tmp>/verify.cjs"",
+        ],
+        "turn": 1,
+      },
+      "event": "verify.started",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 8,
+      "session_id": "1",
+      "stage_id": "implement",
+      "summary": "1 command(s)",
+      "v": 2,
+    },
+    {
+      "client": "fake",
+      "data": {},
+      "details": {
+        "command": ""<node>" "<tmp>/verify.cjs"",
+        "exit_code": 1,
+        "max_verify": 2,
+        "red": 1,
+        "report": "turns/01/verify.md",
+        "status": "fail",
+        "turn": 1,
+      },
+      "event": "verify.failed",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 9,
+      "session_id": "1",
+      "stage_id": "implement",
+      "summary": ""<node>" "<tmp>/verify.cjs" failed",
+      "v": 2,
+    },
+    {
+      "client": "fake",
+      "data": {},
+      "details": {
+        "agent_id": "native-session-1",
+        "argv": [
+          "<node>",
+          "-e",
+          "process.stdout.write(process.argv[1])",
+          "{"text":"status: complete\\necho:## Verify failed","sessionId":"native-session-1","call":1}",
+        ],
+        "turn": 2,
+      },
+      "event": "provider.turn_completed",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 10,
+      "session_id": "1",
+      "stage_id": "implement",
+      "summary": "completed",
+      "v": 2,
+    },
+    {
+      "client": "fake",
+      "data": {},
+      "details": {
+        "commands": [
+          ""<node>" "<tmp>/verify.cjs"",
+        ],
+        "turn": 2,
+      },
+      "event": "verify.started",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 11,
+      "session_id": "1",
+      "stage_id": "implement",
+      "summary": "1 command(s)",
+      "v": 2,
+    },
+    {
+      "client": "fake",
+      "data": {},
+      "details": {
+        "command": ""<node>" "<tmp>/verify.cjs"",
+        "exit_code": 1,
+        "max_verify": 2,
+        "red": 2,
+        "report": "turns/02/verify.md",
+        "status": "fail",
+        "turn": 2,
+      },
+      "event": "verify.failed",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 12,
+      "session_id": "1",
+      "stage_id": "implement",
+      "summary": ""<node>" "<tmp>/verify.cjs" failed",
+      "v": 2,
+    },
+    {
+      "data": {
+        "error": "Verify failed 2 times.",
+        "failure_reason": "verify_exhausted",
+        "outcome": null,
+        "session_status": "active",
+      },
+      "event": "execution.failed",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 13,
+      "stage_id": "implement",
+      "v": 2,
+    },
+  ],
+  "executions": {
+    "0001-implement--attempt-01": {
+      "artifacts/notes.md": "# n
+",
+      "conversation.json": {
+        "agent_id": "native-session-1",
+        "client": "fake",
+        "history": [
+          {
+            "content": "## Stage: implement (role: developer)
+
+### Verify
+
+After \`status: complete\`, Migent runs these commands in order. Completion counts only if all exit 0; otherwise you get the report and fix it here.
+
+- \`"<node>" "<tmp>/verify.cjs"\`",
+            "role": "user",
+          },
+          {
+            "content": "status: complete
+
+done",
+            "role": "assistant",
+          },
+          {
+            "content": "## Verify failed
+
+1 of 2 red runs.
+
+- Stage artifact: \`<ws>/.migent/sessions/1/executions/0001-implement--attempt-01/artifacts/notes.md\` (update it if your fix changes it)
+
+### Report
+
+verify: fail
+run: 1
+red: 1 of 2
+
+commands:
+- [fail] "<node>" "<tmp>/verify.cjs"
+  exit_code: 1
+  log: turns/01/commands/01.log
+
+tail of "<node>" "<tmp>/verify.cjs" (last 200 lines):
+\`\`\`
+\`\`\`
+",
+            "role": "user",
+          },
+          {
+            "content": "status: complete
+
+done",
+            "role": "assistant",
+          },
+        ],
+        "model": "m1",
+        "options": {},
+        "status": "failed",
+        "workspace": "<ws>",
+      },
+      "execution.json": {
+        "agent_id": "native-session-1",
+        "artifact_directory": "artifacts",
+        "client": "fake",
+        "error": "Verify failed 2 times.",
+        "execution_id": "0001-implement--attempt-01",
+        "execution_order": 1,
+        "failure_reason": "verify_exhausted",
+        "final_turn": 2,
+        "model": "m1",
+        "options": {},
+        "pending_turn": 2,
+        "response_protocol": 3,
+        "resumes_execution_id": null,
+        "schema_version": 2,
+        "session_id": "1",
+        "stage_attempt": 1,
+        "stage_id": "implement",
+        "status": "failed",
+        "turn_kind": "repair",
+        "turns": 2,
+        "verify": {
+          "last_report": "turns/02/verify.md",
+          "last_result": "fail",
+          "max_verify": 2,
+          "red": 2,
+          "runs": 2,
+        },
+      },
+      "failure.md": "# Execution failed
+
+- Session: \`1\`
+- Execution: \`0001-implement--attempt-01\`
+- Stage: \`implement\` (attempt 1)
+- Client: \`fake/m1\`
+- Failure reason: \`verify_exhausted\`
+- Completed at: <time>
+
+## Error
+
+\`\`\`text
+Verify failed 2 times.
+\`\`\`
+
+## Verify
+
+See [\`turns/02/verify.md\`](turns/02/verify.md).
+",
+      "handoff.json": {
+        "schema_version": 1,
+        "status": "complete",
+      },
+      "prompt.md": "# Migent workflow stage
+
+## Response contract
+
+Write one JSON document to the handoff file (see Execution) before you finish. Migent reads only that file for the stage result. The response body is a free-form report for humans.
+
+\`\`\`json
+{"schema_version":1,"status":"complete","summary":"One-line report."}
+{"schema_version":1,"status":"blocked","blocker":"What stops you."}
+\`\`\`
+
+Each line above is a separate example; write exactly one document. \`status\` is complete | blocked.
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. \`summary\` is optional. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. \`blocker\` is required. |
+
+## Stage: implement (role: developer)
+
+### Verify
+
+After \`status: complete\`, Migent runs these commands in order. Completion counts only if all exit 0; otherwise you get the report and fix it here.
+
+- \`"<node>" "<tmp>/verify.cjs"\`
+
+## Execution
+
+- Task: \`<ws>/.migent/sessions/1/task.md\`
+- Session dir: \`<ws>/.migent/sessions/1\` (shared session files)
+- Handoff file: \`<ws>/.migent/sessions/1/executions/0001-implement--attempt-01/handoff.json\`
+- Artifacts: \`<ws>/.migent/sessions/1/executions/0001-implement--attempt-01/artifacts\`
+
+## Do
+
+Read the task, then carry out the stage.
+Write the artifact as \`notes.md\` in the artifacts directory.",
+      "response.md": "status: complete
+
+done",
+      "task.md": "Finish the notes
+",
+      "turns/01/commands/01.log": "",
+      "turns/01/outcome.json": {
+        "status": "complete",
+      },
+      "turns/01/response.md": "status: complete
+
+done",
+      "turns/01/verify.md": "verify: fail
+run: 1
+red: 1 of 2
+
+commands:
+- [fail] "<node>" "<tmp>/verify.cjs"
+  exit_code: 1
+  log: turns/01/commands/01.log
+
+tail of "<node>" "<tmp>/verify.cjs" (last 200 lines):
+\`\`\`
+\`\`\`
+",
+      "turns/02/commands/01.log": "",
+      "turns/02/outcome.json": {
+        "status": "complete",
+      },
+      "turns/02/response.md": "status: complete
+
+done",
+      "turns/02/verify.md": "verify: fail
+run: 2
+red: 2 of 2
+
+commands:
+- [fail] "<node>" "<tmp>/verify.cjs"
+  exit_code: 1
+  log: turns/02/commands/01.log
+
+tail of "<node>" "<tmp>/verify.cjs" (last 200 lines):
+\`\`\`
+\`\`\`
+",
+    },
+  },
+  "result": {
+    "code": 6,
+    "latestExecutionId": "0001-implement--attempt-01",
+    "status": "active",
+    "stopReason": "verify_exhausted",
+  },
+}
+`;
+
+exports[`baseline: role execution with correction, red verify, repair and pass 1`] = `
+{
+  "events": [
+    {
+      "data": {
+        "task": "Finish the notes",
+        "title": "Finish the notes",
+        "workflow_id": "wf",
+        "workflow_path": ".migent/workflows/wf.yaml",
+      },
+      "event": "session.created",
+      "seq": 1,
+      "v": 2,
+    },
+    {
+      "data": {
+        "commit": null,
+        "error": "not a Git work tree: fatal: not a git repository (or any of the parent directories): .git",
+      },
+      "event": "baseline.captured",
+      "seq": 2,
+      "v": 2,
+    },
+    {
+      "data": {
+        "sha256": "91b0732dcb3373f93b989318c035676b814d4c35a06ee8958fbfd69201361313",
+      },
+      "event": "task.frozen",
+      "seq": 3,
+      "v": 2,
+    },
+    {
+      "data": {
+        "client": "fake",
+        "execution_order": 1,
+        "model": "m1",
+        "resumes_execution_id": null,
+        "stage_attempt": 1,
+      },
+      "event": "execution.started",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 4,
+      "stage_id": "implement",
+      "v": 2,
+    },
+    {
+      "data": {
+        "error": null,
+        "failure_reason": null,
+        "outcome": null,
+        "session_status": "active",
+      },
+      "event": "execution.running",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 5,
+      "stage_id": "implement",
+      "v": 2,
+    },
+    {
+      "client": "fake",
+      "data": {},
+      "details": {
+        "cli_version": null,
+        "git_dirty": null,
+        "git_head": null,
+      },
+      "event": "provider.stage_started",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 6,
+      "session_id": "1",
+      "stage_id": "implement",
+      "summary": "fake/m1",
+      "v": 2,
+    },
+    {
+      "client": "fake",
+      "data": {},
+      "details": {
+        "agent_id": "native-session-1",
+        "argv": [
+          "<node>",
+          "-e",
+          "process.stdout.write(process.argv[1])",
+          "{"text":"status: complete\\necho:# Migent workflow stage","sessionId":"native-session-1","call":0}",
+        ],
+        "turn": 1,
+      },
+      "event": "provider.turn_completed",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 7,
+      "session_id": "1",
+      "stage_id": "implement",
+      "summary": "completed",
+      "v": 2,
+    },
+    {
+      "client": "fake",
+      "data": {},
+      "details": {
+        "error_kind": "missing",
+        "file": "<ws>/.migent/sessions/1/executions/0001-implement--attempt-01/handoff.json",
+        "turn": 1,
+      },
+      "event": "handoff.file_invalid",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 8,
+      "session_id": "1",
+      "stage_id": "implement",
+      "summary": "missing: the file was not written",
+      "v": 2,
+    },
+    {
+      "client": "fake",
+      "data": {},
+      "details": {
+        "agent_id": "native-session-1",
+        "argv": [
+          "<node>",
+          "-e",
+          "process.stdout.write(process.argv[1])",
+          "{"text":"status: complete\\necho:# Migent workflow stage","sessionId":"native-session-1","call":1}",
+        ],
+        "turn": 2,
+      },
+      "event": "provider.turn_completed",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 9,
+      "session_id": "1",
+      "stage_id": "implement",
+      "summary": "completed",
+      "v": 2,
+    },
+    {
+      "client": "fake",
+      "data": {},
+      "details": {
+        "commands": [
+          ""<node>" "<tmp>/verify.cjs"",
+        ],
+        "turn": 2,
+      },
+      "event": "verify.started",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 10,
+      "session_id": "1",
+      "stage_id": "implement",
+      "summary": "1 command(s)",
+      "v": 2,
+    },
+    {
+      "client": "fake",
+      "data": {},
+      "details": {
+        "command": ""<node>" "<tmp>/verify.cjs"",
+        "exit_code": 1,
+        "max_verify": 3,
+        "red": 1,
+        "report": "turns/02/verify.md",
+        "status": "fail",
+        "turn": 2,
+      },
+      "event": "verify.failed",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 11,
+      "session_id": "1",
+      "stage_id": "implement",
+      "summary": ""<node>" "<tmp>/verify.cjs" failed",
+      "v": 2,
+    },
+    {
+      "client": "fake",
+      "data": {},
+      "details": {
+        "agent_id": "native-session-1",
+        "argv": [
+          "<node>",
+          "-e",
+          "process.stdout.write(process.argv[1])",
+          "{"text":"status: complete\\necho:## Verify failed","sessionId":"native-session-1","call":2}",
+        ],
+        "turn": 3,
+      },
+      "event": "provider.turn_completed",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 12,
+      "session_id": "1",
+      "stage_id": "implement",
+      "summary": "completed",
+      "v": 2,
+    },
+    {
+      "client": "fake",
+      "data": {},
+      "details": {
+        "commands": [
+          ""<node>" "<tmp>/verify.cjs"",
+        ],
+        "turn": 3,
+      },
+      "event": "verify.started",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 13,
+      "session_id": "1",
+      "stage_id": "implement",
+      "summary": "1 command(s)",
+      "v": 2,
+    },
+    {
+      "client": "fake",
+      "data": {},
+      "details": {
+        "report": "turns/03/verify.md",
+        "turn": 3,
+      },
+      "event": "verify.passed",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 14,
+      "session_id": "1",
+      "stage_id": "implement",
+      "summary": "all commands passed",
+      "v": 2,
+    },
+    {
+      "data": {
+        "error": null,
+        "failure_reason": null,
+        "outcome": {
+          "status": "complete",
+        },
+        "session_status": "completed",
+      },
+      "event": "execution.completed",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 15,
+      "stage_id": "implement",
+      "v": 2,
+    },
+    {
+      "data": {
+        "outcome": {
+          "status": "complete",
+        },
+      },
+      "event": "stage.complete",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 16,
+      "stage_id": "implement",
+      "status": "complete",
+      "v": 2,
+    },
+    {
+      "data": {
+        "from": "active",
+        "outcome": {
+          "status": "complete",
+        },
+        "reason": "completed",
+      },
+      "event": "session.completed",
+      "execution_id": "0001-implement--attempt-01",
+      "seq": 17,
+      "stage_id": "implement",
+      "status": "complete",
+      "v": 2,
+    },
+  ],
+  "executions": {
+    "0001-implement--attempt-01": {
+      "artifacts/notes.md": "# n
+",
+      "artifacts/verify.md": "verify: pass
+run: 2
+red: 1 of 3
+
+commands:
+- [pass] "<node>" "<tmp>/verify.cjs"
+  exit_code: 0
+  log: turns/03/commands/01.log
+",
+      "conversation.json": {
+        "agent_id": "native-session-1",
+        "client": "fake",
+        "history": [
+          {
+            "content": "## Stage: implement (role: developer)
+
+### Verify
+
+After \`status: complete\`, Migent runs these commands in order. Completion counts only if all exit 0; otherwise you get the report and fix it here.
+
+- \`"<node>" "<tmp>/verify.cjs"\`",
+            "role": "user",
+          },
+          {
+            "content": "## Invalid handoff file
+
+Your last response did not leave a usable handoff file.
+
+- File: \`<ws>/.migent/sessions/1/executions/0001-implement--attempt-01/handoff.json\`
+- Problem (missing): the file was not written
+
+Do not redo the work. Rewrite only the handoff file as one valid JSON document, then respond again.
+",
+            "role": "user",
+          },
+          {
+            "content": "status: complete
+
+done",
+            "role": "assistant",
+          },
+          {
+            "content": "## Verify failed
+
+1 of 3 red runs.
+
+- Stage artifact: \`<ws>/.migent/sessions/1/executions/0001-implement--attempt-01/artifacts/notes.md\` (update it if your fix changes it)
+
+### Report
+
+verify: fail
+run: 1
+red: 1 of 3
+
+commands:
+- [fail] "<node>" "<tmp>/verify.cjs"
+  exit_code: 1
+  log: turns/02/commands/01.log
+
+tail of "<node>" "<tmp>/verify.cjs" (last 200 lines):
+\`\`\`
+\`\`\`
+",
+            "role": "user",
+          },
+          {
+            "content": "status: complete
+
+done",
+            "role": "assistant",
+          },
+        ],
+        "model": "m1",
+        "options": {},
+        "status": "completed",
+        "workspace": "<ws>",
+      },
+      "execution.json": {
+        "agent_id": "native-session-1",
+        "artifact_directory": "artifacts",
+        "client": "fake",
+        "corrections": {
+          "handoff": {
+            "error_detail": "the file was not written",
+            "error_kind": "missing",
+            "turn": 1,
+          },
+        },
+        "execution_id": "0001-implement--attempt-01",
+        "execution_order": 1,
+        "final_turn": 3,
+        "model": "m1",
+        "options": {},
+        "outcome": {
+          "status": "complete",
+        },
+        "pending_turn": 3,
+        "response_protocol": 3,
+        "resumes_execution_id": null,
+        "schema_version": 2,
+        "session_id": "1",
+        "stage_attempt": 1,
+        "stage_id": "implement",
+        "status": "completed",
+        "turn_kind": "repair",
+        "turns": 3,
+        "verify": {
+          "last_report": "turns/03/verify.md",
+          "last_result": "pass",
+          "max_verify": 3,
+          "red": 1,
+          "runs": 2,
+        },
+      },
+      "handoff.json": {
+        "schema_version": 1,
+        "status": "complete",
+      },
+      "prompt.md": "# Migent workflow stage
+
+## Response contract
+
+Write one JSON document to the handoff file (see Execution) before you finish. Migent reads only that file for the stage result. The response body is a free-form report for humans.
+
+\`\`\`json
+{"schema_version":1,"status":"complete","summary":"One-line report."}
+{"schema_version":1,"status":"blocked","blocker":"What stops you."}
+\`\`\`
+
+Each line above is a separate example; write exactly one document. \`status\` is complete | blocked.
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. \`summary\` is optional. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. \`blocker\` is required. |
+
+## Stage: implement (role: developer)
+
+### Verify
+
+After \`status: complete\`, Migent runs these commands in order. Completion counts only if all exit 0; otherwise you get the report and fix it here.
+
+- \`"<node>" "<tmp>/verify.cjs"\`
+
+## Execution
+
+- Task: \`<ws>/.migent/sessions/1/task.md\`
+- Session dir: \`<ws>/.migent/sessions/1\` (shared session files)
+- Handoff file: \`<ws>/.migent/sessions/1/executions/0001-implement--attempt-01/handoff.json\`
+- Artifacts: \`<ws>/.migent/sessions/1/executions/0001-implement--attempt-01/artifacts\`
+
+## Do
+
+Read the task, then carry out the stage.
+Write the artifact as \`notes.md\` in the artifacts directory.",
+      "response.md": "status: complete
+
+done",
+      "task.md": "Finish the notes
+",
+      "turns/02/commands/01.log": "",
+      "turns/02/outcome.json": {
+        "status": "complete",
+      },
+      "turns/02/response.md": "status: complete
+
+done",
+      "turns/02/verify.md": "verify: fail
+run: 1
+red: 1 of 3
+
+commands:
+- [fail] "<node>" "<tmp>/verify.cjs"
+  exit_code: 1
+  log: turns/02/commands/01.log
+
+tail of "<node>" "<tmp>/verify.cjs" (last 200 lines):
+\`\`\`
+\`\`\`
+",
+      "turns/03/commands/01.log": "",
+      "turns/03/outcome.json": {
+        "status": "complete",
+      },
+      "turns/03/response.md": "status: complete
+
+done",
+      "turns/03/verify.md": "verify: pass
+run: 2
+red: 1 of 3
+
+commands:
+- [pass] "<node>" "<tmp>/verify.cjs"
+  exit_code: 0
+  log: turns/03/commands/01.log
+",
+    },
+  },
+  "result": {
+    "code": 0,
+    "latestExecutionId": "0001-implement--attempt-01",
+    "status": "completed",
+    "stopReason": "completed",
+  },
+}
+`;
+
+exports[`baseline: verify-only pass and red executions > pass 1`] = `
+{
+  "events": [
+    {
+      "data": {
+        "task": "Finish the notes",
+        "title": "Finish the notes",
+        "workflow_id": "wf",
+        "workflow_path": ".migent/workflows/wf.yaml",
+      },
+      "event": "session.created",
+      "seq": 1,
+      "v": 2,
+    },
+    {
+      "data": {
+        "commit": null,
+        "error": "not a Git work tree: fatal: not a git repository (or any of the parent directories): .git",
+      },
+      "event": "baseline.captured",
+      "seq": 2,
+      "v": 2,
+    },
+    {
+      "data": {
+        "client": "",
+        "execution_order": 1,
+        "model": "",
+        "resumes_execution_id": null,
+        "stage_attempt": 1,
+      },
+      "event": "execution.started",
+      "execution_id": "0001-prepare--attempt-01",
+      "seq": 3,
+      "stage_id": "prepare",
+      "v": 2,
+    },
+    {
+      "client": "",
+      "data": {},
+      "details": {
+        "commands": [
+          ""<node>" "<tmp>/verify.cjs"",
+        ],
+        "turn": 1,
+      },
+      "event": "verify.started",
+      "execution_id": "0001-prepare--attempt-01",
+      "seq": 4,
+      "session_id": "1",
+      "stage_id": "prepare",
+      "summary": "1 command(s)",
+      "v": 2,
+    },
+    {
+      "client": "",
+      "data": {},
+      "details": {
+        "report": "turns/01/verify.md",
+        "turn": 1,
+      },
+      "event": "verify.passed",
+      "execution_id": "0001-prepare--attempt-01",
+      "seq": 5,
+      "session_id": "1",
+      "stage_id": "prepare",
+      "summary": "all commands passed",
+      "v": 2,
+    },
+    {
+      "data": {
+        "error": null,
+        "failure_reason": null,
+        "outcome": {
+          "status": "complete",
+        },
+        "session_status": "active",
+      },
+      "event": "execution.completed",
+      "execution_id": "0001-prepare--attempt-01",
+      "seq": 6,
+      "stage_id": "prepare",
+      "v": 2,
+    },
+    {
+      "data": {
+        "outcome": {
+          "status": "complete",
+        },
+      },
+      "event": "stage.complete",
+      "execution_id": "0001-prepare--attempt-01",
+      "seq": 7,
+      "stage_id": "prepare",
+      "status": "complete",
+      "v": 2,
+    },
+    {
+      "data": {
+        "sha256": "91b0732dcb3373f93b989318c035676b814d4c35a06ee8958fbfd69201361313",
+      },
+      "event": "task.frozen",
+      "seq": 8,
+      "v": 2,
+    },
+    {
+      "data": {
+        "client": "fake",
+        "execution_order": 2,
+        "model": "m1",
+        "resumes_execution_id": null,
+        "stage_attempt": 1,
+      },
+      "event": "execution.started",
+      "execution_id": "0002-implement--attempt-01",
+      "seq": 9,
+      "stage_id": "implement",
+      "v": 2,
+    },
+    {
+      "data": {
+        "error": null,
+        "failure_reason": null,
+        "outcome": null,
+        "session_status": "active",
+      },
+      "event": "execution.running",
+      "execution_id": "0002-implement--attempt-01",
+      "seq": 10,
+      "stage_id": "implement",
+      "v": 2,
+    },
+    {
+      "client": "fake",
+      "data": {},
+      "details": {
+        "cli_version": null,
+        "git_dirty": null,
+        "git_head": null,
+      },
+      "event": "provider.stage_started",
+      "execution_id": "0002-implement--attempt-01",
+      "seq": 11,
+      "session_id": "1",
+      "stage_id": "implement",
+      "summary": "fake/m1",
+      "v": 2,
+    },
+    {
+      "client": "fake",
+      "data": {},
+      "details": {
+        "agent_id": "native-session-1",
+        "argv": [
+          "<node>",
+          "-e",
+          "process.stdout.write(process.argv[1])",
+          "{"text":"status: complete\\necho:# Migent workflow stage","sessionId":"native-session-1","call":0}",
+        ],
+        "turn": 1,
+      },
+      "event": "provider.turn_completed",
+      "execution_id": "0002-implement--attempt-01",
+      "seq": 12,
+      "session_id": "1",
+      "stage_id": "implement",
+      "summary": "completed",
+      "v": 2,
+    },
+    {
+      "data": {
+        "error": null,
+        "failure_reason": null,
+        "outcome": {
+          "status": "complete",
+        },
+        "session_status": "completed",
+      },
+      "event": "execution.completed",
+      "execution_id": "0002-implement--attempt-01",
+      "seq": 13,
+      "stage_id": "implement",
+      "v": 2,
+    },
+    {
+      "data": {
+        "outcome": {
+          "status": "complete",
+        },
+      },
+      "event": "stage.complete",
+      "execution_id": "0002-implement--attempt-01",
+      "seq": 14,
+      "stage_id": "implement",
+      "status": "complete",
+      "v": 2,
+    },
+    {
+      "data": {
+        "outputs": [
+          {
+            "name": "notes",
+            "path": "outputs/notes.md",
+            "published_by_execution_id": "0002-implement--attempt-01",
+            "source_execution_id": "0002-implement--attempt-01",
+          },
+        ],
+      },
+      "event": "outputs.published",
+      "execution_id": "0002-implement--attempt-01",
+      "seq": 15,
+      "stage_id": "implement",
+      "v": 2,
+    },
+    {
+      "data": {
+        "from": "active",
+        "outcome": {
+          "status": "complete",
+        },
+        "reason": "completed",
+      },
+      "event": "session.completed",
+      "execution_id": "0002-implement--attempt-01",
+      "seq": 16,
+      "stage_id": "implement",
+      "status": "complete",
+      "v": 2,
+    },
+  ],
+  "executions": {
+    "0001-prepare--attempt-01": {
+      "artifacts/verify.md": "verify: pass
+run: 1
+red: 0 of 1
+
+commands:
+- [pass] "<node>" "<tmp>/verify.cjs"
+  exit_code: 0
+  log: turns/01/commands/01.log
+",
+      "execution.json": {
+        "agent_id": null,
+        "artifact_directory": "artifacts",
+        "client": null,
+        "execution_id": "0001-prepare--attempt-01",
+        "execution_order": 1,
+        "kind": "verify",
+        "model": null,
+        "options": {},
+        "outcome": {
+          "status": "complete",
+        },
+        "resumes_execution_id": null,
+        "schema_version": 2,
+        "session_id": "1",
+        "stage_attempt": 1,
+        "stage_id": "prepare",
+        "status": "completed",
+      },
+      "task.md": "Finish the notes
+",
+      "turns/01/commands/01.log": "",
+      "turns/01/verify.md": "verify: pass
+run: 1
+red: 0 of 1
+
+commands:
+- [pass] "<node>" "<tmp>/verify.cjs"
+  exit_code: 0
+  log: turns/01/commands/01.log
+",
+    },
+    "0002-implement--attempt-01": {
+      "artifacts/notes.md": "# n
+",
+      "conversation.json": {
+        "agent_id": "native-session-1",
+        "client": "fake",
+        "history": [
+          {
+            "content": "## Stage: implement (role: developer)
+
+## Upstream artifacts
+
+- prepare verify report: \`<ws>/.migent/sessions/1/executions/0001-prepare--attempt-01/artifacts/verify.md\`",
+            "role": "user",
+          },
+          {
+            "content": "status: complete
+
+done",
+            "role": "assistant",
+          },
+        ],
+        "model": "m1",
+        "options": {},
+        "status": "completed",
+        "workspace": "<ws>",
+      },
+      "execution.json": {
+        "agent_id": "native-session-1",
+        "artifact_directory": "artifacts",
+        "client": "fake",
+        "execution_id": "0002-implement--attempt-01",
+        "execution_order": 2,
+        "final_turn": 1,
+        "model": "m1",
+        "options": {},
+        "outcome": {
+          "status": "complete",
+        },
+        "response_protocol": 3,
+        "resumes_execution_id": null,
+        "schema_version": 2,
+        "session_id": "1",
+        "stage_attempt": 1,
+        "stage_id": "implement",
+        "status": "completed",
+        "turn_kind": "start",
+      },
+      "handoff.json": {
+        "schema_version": 1,
+        "status": "complete",
+      },
+      "prompt.md": "# Migent workflow stage
+
+## Response contract
+
+Write one JSON document to the handoff file (see Execution) before you finish. Migent reads only that file for the stage result. The response body is a free-form report for humans.
+
+\`\`\`json
+{"schema_version":1,"status":"complete","summary":"One-line report."}
+{"schema_version":1,"status":"blocked","blocker":"What stops you."}
+\`\`\`
+
+Each line above is a separate example; write exactly one document. \`status\` is complete | blocked.
+
+| Status | Meaning |
+| :--- | :--- |
+| \`complete\` | The stage's work is finished, artifact written. \`summary\` is optional. |
+| \`blocked\` | An obstacle you cannot resolve in this turn. \`blocker\` is required. |
+
+## Stage: implement (role: developer)
+
+## Upstream artifacts
+
+- prepare verify report: \`<ws>/.migent/sessions/1/executions/0001-prepare--attempt-01/artifacts/verify.md\`
+
+## Execution
+
+- Task: \`<ws>/.migent/sessions/1/task.md\`
+- Session dir: \`<ws>/.migent/sessions/1\` (shared session files)
+- Handoff file: \`<ws>/.migent/sessions/1/executions/0002-implement--attempt-01/handoff.json\`
+- Artifacts: \`<ws>/.migent/sessions/1/executions/0002-implement--attempt-01/artifacts\`
+
+## Do
+
+Read the task, then carry out the stage.
+Write the artifact as \`notes.md\` in the artifacts directory.",
+      "response.md": "status: complete
+
+done",
+      "task.md": "Finish the notes
+",
+    },
+  },
+  "result": {
+    "code": 0,
+    "latestExecutionId": "0002-implement--attempt-01",
+    "status": "completed",
+    "stopReason": "completed",
+  },
+}
+`;
+
+exports[`baseline: verify-only pass and red executions > red 1`] = `
+{
+  "events": [
+    {
+      "data": {
+        "task": "Finish the notes",
+        "title": "Finish the notes",
+        "workflow_id": "wf",
+        "workflow_path": ".migent/workflows/wf.yaml",
+      },
+      "event": "session.created",
+      "seq": 1,
+      "v": 2,
+    },
+    {
+      "data": {
+        "commit": null,
+        "error": "not a Git work tree: fatal: not a git repository (or any of the parent directories): .git",
+      },
+      "event": "baseline.captured",
+      "seq": 2,
+      "v": 2,
+    },
+    {
+      "data": {
+        "client": "",
+        "execution_order": 1,
+        "model": "",
+        "resumes_execution_id": null,
+        "stage_attempt": 1,
+      },
+      "event": "execution.started",
+      "execution_id": "0001-prepare--attempt-01",
+      "seq": 3,
+      "stage_id": "prepare",
+      "v": 2,
+    },
+    {
+      "client": "",
+      "data": {},
+      "details": {
+        "commands": [
+          ""<node>" "<tmp>/verify.cjs"",
+        ],
+        "turn": 1,
+      },
+      "event": "verify.started",
+      "execution_id": "0001-prepare--attempt-01",
+      "seq": 4,
+      "session_id": "1",
+      "stage_id": "prepare",
+      "summary": "1 command(s)",
+      "v": 2,
+    },
+    {
+      "client": "",
+      "data": {},
+      "details": {
+        "command": ""<node>" "<tmp>/verify.cjs"",
+        "exit_code": 1,
+        "report": "turns/01/verify.md",
+        "status": "fail",
+        "turn": 1,
+      },
+      "event": "verify.failed",
+      "execution_id": "0001-prepare--attempt-01",
+      "seq": 5,
+      "session_id": "1",
+      "stage_id": "prepare",
+      "summary": ""<node>" "<tmp>/verify.cjs" failed",
+      "v": 2,
+    },
+    {
+      "data": {
+        "error": "Verify failed: "<node>" "<tmp>/verify.cjs"",
+        "failure_reason": "verify_failed",
+        "outcome": null,
+        "session_status": "active",
+      },
+      "event": "execution.failed",
+      "execution_id": "0001-prepare--attempt-01",
+      "seq": 6,
+      "stage_id": "prepare",
+      "v": 2,
+    },
+  ],
+  "executions": {
+    "0001-prepare--attempt-01": {
+      "execution.json": {
+        "agent_id": null,
+        "artifact_directory": "artifacts",
+        "client": null,
+        "error": "Verify failed: "<node>" "<tmp>/verify.cjs"",
+        "execution_id": "0001-prepare--attempt-01",
+        "execution_order": 1,
+        "failure_reason": "verify_failed",
+        "kind": "verify",
+        "model": null,
+        "options": {},
+        "resumes_execution_id": null,
+        "schema_version": 2,
+        "session_id": "1",
+        "stage_attempt": 1,
+        "stage_id": "prepare",
+        "status": "failed",
+      },
+      "failure.md": "# Execution failed
+
+- Session: \`1\`
+- Execution: \`0001-prepare--attempt-01\`
+- Stage: \`prepare\` (attempt 1)
+- Kind: verify-only
+- Failure reason: \`verify_failed\`
+- Completed at: <time>
+
+## Error
+
+\`\`\`text
+Verify failed: "<node>" "<tmp>/verify.cjs"
+\`\`\`
+
+## Verify
+
+See [\`turns/01/verify.md\`](turns/01/verify.md).
+",
+      "task.md": "Finish the notes
+",
+      "turns/01/commands/01.log": "",
+      "turns/01/verify.md": "verify: fail
+run: 1
+red: 1 of 1
+
+commands:
+- [fail] "<node>" "<tmp>/verify.cjs"
+  exit_code: 1
+  log: turns/01/commands/01.log
+
+tail of "<node>" "<tmp>/verify.cjs" (last 200 lines):
+\`\`\`
+\`\`\`
+",
+    },
+  },
+  "result": {
+    "code": 7,
+    "latestExecutionId": "0001-prepare--attempt-01",
+    "status": "active",
+    "stopReason": "verify_failed",
+  },
+}
+`;

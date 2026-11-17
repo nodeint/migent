@@ -15,6 +15,7 @@ import {
 import { type ExecutionContext, SessionStore, stringOptions } from '@nodeint/migent-session';
 
 import { bindTarget } from './agent-invocation.js';
+import { runRoleExecution } from './execution/run-role.js';
 import { ProviderEventReporter } from './provider-events.js';
 import {
   type ContinuedDrive,
@@ -42,7 +43,6 @@ import {
   stageFacts,
   validateSessionProfile,
 } from './run-setup.js';
-import { TurnLoop } from './turn-loop.js';
 import { runProviderTurn, turnDebugStep } from './turn-process.js';
 import {
   handoffPath,
@@ -266,12 +266,7 @@ export class AgentToolRunner {
   }
 
   private driveTurns(state: TurnDrive): Promise<RunResult> {
-    const loop = new TurnLoop(
-      state,
-      (args) => this.runTurn(args),
-      this.verifyRunner,
-    );
-    return loop.drive();
+    return runRoleExecution(state, { runTurn: (args) => this.runTurn(args), verifyRunner: this.verifyRunner });
   }
 
   private eventReporterFor(

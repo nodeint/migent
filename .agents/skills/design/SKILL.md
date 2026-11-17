@@ -24,7 +24,9 @@ description: Resolve behavior, contract, ownership, and architecture choices.
 6. Describe inputs, state changes, outputs, failure paths, boundaries, and
    contracts. Mark new paths; justify departures from existing patterns.
    Include transition ordering and recovery when needed; omit file-by-file
-   edits and execution tasks.
+   edits and execution tasks. Fix implementation or test mechanics only when
+   needed for correctness or a material trade-off; otherwise leave them open
+   to the implementer.
 7. Map each acceptance criterion and preserved behavior to verification
    evidence. Mitigate or explicitly accept each material risk.
 8. Resolve required decisions before completing. While answers are pending,
@@ -155,7 +157,8 @@ invent no alternatives.>
 
 - AC1: <Evidence, verification layer, and whether it exists or is still needed.>
 
-<Cover relevant preserved behavior and structural constraints.>
+<Cover preserved behavior and structural constraints. Specify required evidence,
+not fixtures, spies, or assertions unless their mechanism is essential.>
 
 ## Risks and mitigations
 

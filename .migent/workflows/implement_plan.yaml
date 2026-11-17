@@ -51,7 +51,7 @@ stages:
   - id: commit_phase
     role: operator
     ask: human
-    depends_on: [implement_phase, review_phase]
+    depends_on: [review_phase]
     instructions:
       - Read phase_report.md and review_phase's approval. Before a new commit, require HEAD to equal the recorded base, on the same branch with exactly the reviewed changes and no unrelated staged, unstaged, or untracked files. Stop on differences; changed code requires another review. Use only the recovery rule below when HEAD has already advanced.
       - Follow CONTRIBUTING.md and only the Check and Commit rules in .agents/skills/create-pr/SKILL.md; do not run its Push or PR steps. Install safeguards with pnpm setup:git once per checkout. Stage reviewed files by name and inspect the staged diff before committing.
@@ -64,9 +64,5 @@ stages:
 downstream:
   - workflow: implement_plan
     task: Implement the next pending phase of the plan.
-    artifacts:
-      phase_commit: phase_commit
   - workflow: pr
     task: Open a pull request for the completed plan.
-    artifacts:
-      phase_commit: phase_commit
