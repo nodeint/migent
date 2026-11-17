@@ -504,6 +504,268 @@
       },
       "description": "Resume decisions the session waits for. `session resume` decides them."
     },
+    "plugins": {
+      "type": "object",
+      "required": [
+        "active",
+        "invocations",
+        "added_after_freeze",
+        "live_unavailable",
+        "holds",
+        "freeze_mismatch"
+      ],
+      "properties": {
+        "active": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "version",
+              "enabled",
+              "advisory"
+            ],
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "version": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "advisory": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "invocations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "invocation_id",
+              "plugin",
+              "hook",
+              "status",
+              "results",
+              "failure",
+              "agent_calls"
+            ],
+            "properties": {
+              "invocation_id": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "plugin": {
+                "type": "string"
+              },
+              "hook": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "succeeded"
+                  },
+                  {
+                    "type": "string",
+                    "const": "failed"
+                  },
+                  {
+                    "type": "string",
+                    "const": "interrupted"
+                  }
+                ],
+                "description": "`interrupted`: the invocation started and recorded no result. An external effect of the plugin is in an unknown state."
+              },
+              "results": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "kind",
+                    "status",
+                    "reason",
+                    "path"
+                  ],
+                  "properties": {
+                    "kind": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "reason": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "path": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                }
+              },
+              "failure": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "required": [
+                      "reason",
+                      "error",
+                      "on_error"
+                    ],
+                    "properties": {
+                      "reason": {
+                        "type": "string"
+                      },
+                      "error": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "on_error": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "agent_calls": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        "added_after_freeze": {
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "live_unavailable": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "holds": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "plugin",
+              "hook",
+              "on_error",
+              "error"
+            ],
+            "properties": {
+              "plugin": {
+                "type": "string"
+              },
+              "hook": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "on_error": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "stop"
+                  },
+                  {
+                    "type": "string",
+                    "const": "fail"
+                  }
+                ]
+              },
+              "error": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "freeze_mismatch": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "Derived on read from `plugins.frozen` and `plugin.*`. Absent when the session recorded no plugin data."
+    },
     "diagnostics": {
       "type": "string"
     },

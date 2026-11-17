@@ -758,6 +758,18 @@ of the stage's executions. The JSON snapshot has the same data as an
 `accepted`, `count`, `diagnostics`), omitted when empty. `diagnostics` is the
 session-relative `diagnostics.json` of that execution, or `null` when absent. See
 [Session metrics](session-metrics.md#client-exit-anomalies) for the counters.
+When the session recorded plugin events, the snapshot adds a plugins section, derived on read from
+`plugins.frozen` and `plugin.*`: a `plugins  <id>@<version>, …` line for the active set, one
+`plugin  <id> <hook> · succeeded|failed|interrupted · …` line per invocation, and
+`plugin_added_after_freeze`, `plugin_hold` and `plugin_freeze_mismatch` lines when they apply. An invocation that
+recorded `plugin.hook_invoked` and no result shows `interrupted`: the process stopped in between, so an external
+effect of the plugin is unknown. Advisory entries are shown as the live config and registry resolve them, because
+they run live; every other entry is shown as frozen. `plugin_freeze_mismatch` also reports a freeze that has a
+`plugins` section but no `plugins.frozen` event. When the live config cannot be read, `plugin_live_unavailable`
+gives the cause and the advisory rows stay as frozen. The JSON snapshot has the same data as a `plugins` object
+(`active`, `invocations`, `added_after_freeze`, `live_unavailable`, `holds`, `freeze_mismatch`), omitted without
+plugin data. `added_after_freeze` is `null` when `live_unavailable` is set. `session follow`
+streams `plugin.*` records like any other event.
 For a schema 2 session it also prints, on stderr, any drift
 between `status.json` and the fold of the session files. `session follow` prints
 that snapshot and then follows events until a signal. It merges `events.jsonl`

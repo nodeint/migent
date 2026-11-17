@@ -5,6 +5,7 @@ import path from 'node:path';
 import type { PluginManifest, PluginRegistry } from '@nodeint/migent-contracts';
 import type { ClientRegistry } from '@nodeint/migent-kernel';
 import { ConfigurationError, loadWorkspaceConfig, pluginEntryIssues, registryManifests, resolvePluginTarget } from '@nodeint/migent-kernel';
+import type { InspectedPlugin, PluginsInspection } from '@nodeint/migent-session';
 import { effectiveConfigSection, readParsedEvents, readWorkflowFreeze, WORKFLOW_FREEZE_FILE } from '@nodeint/migent-session';
 import { isRecord } from '@nodeint/migent-workflow';
 
@@ -174,4 +175,47 @@ export function selectPlugins(
     unavailable: live.unavailable,
     addedAfterFreeze: effective.addedAfterFreeze,
   };
+}
+
+/** The live facts of `session show`: the live advisory entries, and the unpinned ids. Never validates dispatch. */
+function resolveLive(
+  workspace: string,
+  sessionDirectory: string,
+  registry: PluginRegistry,
+): { keep: ReadonlySet<string>; live: InspectedPlugin[]; added: string[] } | null {
+  const freeze = readWorkflowFreeze(sessionDirectory);
+  if (freeze === null) return null;
+  const section = freeze.config.plugins?.kind === 'per_entry' ? freeze.config.plugins : null;
+  const config = readLiveConfig(workspace, true);
+  if (section === null && !Object.hasOwn(config, 'plugins')) return null;
+  const classify = pluginClassifier(registry, section?.liveEntries ?? []);
+  const effective = effectiveConfigSection(freeze, config, { key: 'plugins', classifiers: { plugins: classify } });
+  if (effective?.kind !== 'per_entry') return null;
+  const live = effective.live.map(({ id, value }): InspectedPlugin => ({
+    id, version: registry.get(id)?.manifest.version ?? null, enabled: isEnabledEntry(value), advisory: true,
+  }));
+  return { keep: new Set(Object.keys(effective.entries)), live, added: [...effective.addedAfterFreeze] };
+}
+
+/**
+ * Adds the facts that need the live config and the registry to an inspection: the live advisory entries replace
+ * the frozen advisory rows, and `added_after_freeze` lists the ids the freeze never pinned. These checks do not
+ * depend on the freeze hash, the frozen versions or the registered plugins, so a mismatch or a missing plugin
+ * never hides them. When the live config cannot be read or is invalid, the cause is recorded in
+ * `live_unavailable` and the frozen rows stay.
+ */
+export function withLivePlugins(
+  inspection: PluginsInspection,
+  context: { workspace: string; sessionDirectory: string; registry: PluginRegistry },
+): PluginsInspection {
+  try {
+    const resolved = resolveLive(context.workspace, context.sessionDirectory, context.registry);
+    if (resolved === null) return { ...inspection, added_after_freeze: [] };
+    const frozen = inspection.active.filter((row) => resolved.keep.has(row.id));
+    const active = [...frozen, ...resolved.live].sort((a, b) => a.id.localeCompare(b.id));
+    return { ...inspection, active, added_after_freeze: resolved.added };
+  } catch (caught) {
+    if (!(caught instanceof ConfigurationError)) throw caught;
+    return { ...inspection, live_unavailable: caught.message };
+  }
 }

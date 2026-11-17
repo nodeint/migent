@@ -796,6 +796,35 @@ Type: object
 | `resume_decisions[].estimate.cache_ttl_seconds` | number \| null | yes | | |
 | `resume_decisions[].estimate.margin_seconds` | number \| null | yes | | |
 | `resume_decisions[].estimate.context_tokens` | number \| null | yes | | Null: the client reported no usage, so the context size is unknown. |
+| `plugins` | object | no | | Derived on read from `plugins.frozen` and `plugin.*`. Absent when the session recorded no plugin data. |
+| `plugins.active` | object[] | yes | | |
+| `plugins.active[].id` | string | yes | | |
+| `plugins.active[].version` | string \| null | yes | | |
+| `plugins.active[].enabled` | boolean | yes | | |
+| `plugins.active[].advisory` | boolean | yes | | |
+| `plugins.invocations` | object[] | yes | | |
+| `plugins.invocations[].invocation_id` | string \| null | yes | | |
+| `plugins.invocations[].plugin` | string | yes | | |
+| `plugins.invocations[].hook` | string \| null | yes | | |
+| `plugins.invocations[].status` | `"succeeded"` \| `"failed"` \| `"interrupted"` | yes | | `interrupted`: the invocation started and recorded no result. An external effect of the plugin is in an unknown state. |
+| `plugins.invocations[].results` | object[] | yes | | |
+| `plugins.invocations[].results[].kind` | string | yes | | |
+| `plugins.invocations[].results[].status` | string | yes | | |
+| `plugins.invocations[].results[].reason` | string \| null | yes | | |
+| `plugins.invocations[].results[].path` | string \| null | yes | | |
+| `plugins.invocations[].failure` | object \| null | yes | | |
+| `plugins.invocations[].failure.reason` | string | yes | | |
+| `plugins.invocations[].failure.error` | string \| null | yes | | |
+| `plugins.invocations[].failure.on_error` | string | yes | | |
+| `plugins.invocations[].agent_calls` | number | yes | | |
+| `plugins.added_after_freeze` | string[] \| null | yes | | |
+| `plugins.live_unavailable` | string \| null | yes | | |
+| `plugins.holds` | object[] | yes | | |
+| `plugins.holds[].plugin` | string | yes | | |
+| `plugins.holds[].hook` | string \| null | yes | | |
+| `plugins.holds[].on_error` | `"stop"` \| `"fail"` | yes | | |
+| `plugins.holds[].error` | string \| null | yes | | |
+| `plugins.freeze_mismatch` | string \| null | yes | | |
 | `diagnostics` | string | no | | |
 | `exit_anomalies` | object[] | no | | |
 | `exit_anomalies[].stage_id` | string | yes | | |
@@ -880,6 +909,35 @@ Type: object
 | `resume_decisions[].estimate.cache_ttl_seconds` | number \| null | yes | | |
 | `resume_decisions[].estimate.margin_seconds` | number \| null | yes | | |
 | `resume_decisions[].estimate.context_tokens` | number \| null | yes | | Null: the client reported no usage, so the context size is unknown. |
+| `plugins` | object | no | | Derived on read from `plugins.frozen` and `plugin.*`. Absent when the session recorded no plugin data. |
+| `plugins.active` | object[] | yes | | |
+| `plugins.active[].id` | string | yes | | |
+| `plugins.active[].version` | string \| null | yes | | |
+| `plugins.active[].enabled` | boolean | yes | | |
+| `plugins.active[].advisory` | boolean | yes | | |
+| `plugins.invocations` | object[] | yes | | |
+| `plugins.invocations[].invocation_id` | string \| null | yes | | |
+| `plugins.invocations[].plugin` | string | yes | | |
+| `plugins.invocations[].hook` | string \| null | yes | | |
+| `plugins.invocations[].status` | `"succeeded"` \| `"failed"` \| `"interrupted"` | yes | | `interrupted`: the invocation started and recorded no result. An external effect of the plugin is in an unknown state. |
+| `plugins.invocations[].results` | object[] | yes | | |
+| `plugins.invocations[].results[].kind` | string | yes | | |
+| `plugins.invocations[].results[].status` | string | yes | | |
+| `plugins.invocations[].results[].reason` | string \| null | yes | | |
+| `plugins.invocations[].results[].path` | string \| null | yes | | |
+| `plugins.invocations[].failure` | object \| null | yes | | |
+| `plugins.invocations[].failure.reason` | string | yes | | |
+| `plugins.invocations[].failure.error` | string \| null | yes | | |
+| `plugins.invocations[].failure.on_error` | string | yes | | |
+| `plugins.invocations[].agent_calls` | number | yes | | |
+| `plugins.added_after_freeze` | string[] \| null | yes | | |
+| `plugins.live_unavailable` | string \| null | yes | | |
+| `plugins.holds` | object[] | yes | | |
+| `plugins.holds[].plugin` | string | yes | | |
+| `plugins.holds[].hook` | string \| null | yes | | |
+| `plugins.holds[].on_error` | `"stop"` \| `"fail"` | yes | | |
+| `plugins.holds[].error` | string \| null | yes | | |
+| `plugins.freeze_mismatch` | string \| null | yes | | |
 | `diagnostics` | string | no | | |
 | `exit_anomalies` | object[] | no | | |
 | `exit_anomalies[].stage_id` | string | yes | | |

@@ -106,6 +106,7 @@ The session-level files have distinct purposes:
   plugin uses the agent target pinned in `plugins.frozen`; an advisory plugin resolves the live agent at the call.
   When the invocation deadline passes or the run is cancelled, the provider process is stopped before the failure
   is recorded, and a later call starts no process.
+  `session show` reports the plugin facts from these events; see [CLI](cli.md#inspect-sessions).
 - `task.md` is the task body. A one-line `session run --workflow --task` writes
   that sentence here. A prepared session creates an empty file for you to write, along with any
   other files that belong next to it. Stage prompts name this path and the

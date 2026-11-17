@@ -10,7 +10,9 @@
   `session.stopped`; the core validates and applies their intents, and every failure follows the `ignore`, `stop` or
   `fail` policy. The plugin manifest, hook, intent and event contracts and the leaf package
   `@nodeint/migent-plugins` with an empty registry are new. A plugin that declares `invokeAgent` can run one
-  provider turn, stopped on timeout or cancellation. Without a `plugins` section, behavior is unchanged.
+  provider turn, stopped on timeout or cancellation. `session show` gains a `plugins` section (active set,
+  invocations, failures, holds, interrupted invocations) and `session follow` streams `plugin.*` records.
+  Without a `plugins` section, behavior is unchanged.
   ([#150](https://github.com/nodeint/migent/issues/150))
 
 ## 0.8.0

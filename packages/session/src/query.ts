@@ -5,6 +5,7 @@ import { MIGENT_DIRNAME, SESSIONS_DIRNAME } from '@nodeint/migent-kernel';
 import { isRecord } from '@nodeint/migent-workflow';
 
 import { readExitAnomalies } from './exit-anomaly.js';
+import { readPluginsInspection } from './plugin-inspection.js';
 import { readPendingResumes } from './resume-pending.js';
 import { latestDiagnosticsPathIn } from './session-diagnostics.js';
 import { parseExecutionId } from './session-events.js';
@@ -142,6 +143,7 @@ function optionalWatchFields(source: WatchSource): Record<string, unknown> {
   const title = effectiveTitle(sessionDirectory);
   const diagnostics = latestDiagnosticsPathIn(sessionDirectory);
   const exitAnomalies = exitAnomalySummaries(sessionDirectory);
+  const plugins = readPluginsInspection(sessionDirectory);
   const resumeDecisions = readPendingResumes(sessionDirectory).map((stop) => ({
     stage_id: stop.stageId,
     source_execution_id: stop.sourceExecutionId,
@@ -164,6 +166,7 @@ function optionalWatchFields(source: WatchSource): Record<string, unknown> {
     ...whenPresent('diagnostics', diagnostics, diagnostics !== null),
     ...whenPresent('exit_anomalies', exitAnomalies, exitAnomalies.length > 0),
     ...whenPresent('resume_decisions', resumeDecisions, resumeDecisions.length > 0),
+    ...whenPresent('plugins', plugins, plugins !== null),
   };
 }
 

@@ -21,6 +21,8 @@ export {
 } from './metrics.js';
 export { formatNextCommand,publishNextSuggestions, resolveNextSuggestions } from './next-handoff.js';
 export { resolveHandoff } from './next-handoff.js';
+export type { InspectedHold, InspectedInvocation, InspectedPlugin, InspectedResult, PluginsInspection } from './plugin-inspection.js';
+export { readPluginsInspection } from './plugin-inspection.js';
 export type { StatusFileState } from './query.js';
 export {
   corruptStatusMessage,
