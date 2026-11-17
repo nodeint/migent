@@ -51,7 +51,7 @@ Explicit user instructions take precedence over skill guidance.
 | [`design`](.agents/skills/design/SKILL.md) | Deciding the solution and its structure for a triaged task before planning or implementing |
 | [`planning`](.agents/skills/planning/SKILL.md) | Splitting requirements and design decisions into independently verifiable phases |
 | [`implement`](.agents/skills/implement/SKILL.md) | Implementing a task or selected plan phase |
-| [`review-implementation`](.agents/skills/review-implementation/SKILL.md) | Reviewing implemented changes for a task or selected plan phase |
+| [`review`](.agents/skills/review/SKILL.md) | Reviewing work against task requirements, workflow rules, and applicable skills |
 | [`create-pr`](.agents/skills/create-pr/SKILL.md) | Committing, pushing, and opening a pull request into `next` |
 | [`release`](.agents/skills/release/SKILL.md) | Preparing or publishing a package release and synchronizing `main` |
 

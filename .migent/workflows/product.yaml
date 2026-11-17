@@ -23,11 +23,7 @@ stages:
       - Before starting, check that the workspace is on a working branch created from origin/next (the branch in the prior issue artifact when provided), not on main or next; otherwise ask the human how to proceed.
       - Read prior issue artifacts and their required References; stop and report missing or inconsistent required inputs.
       - Follow the product skill in .agents/skills/product/SKILL.md and write prd.md using its template.
-      - Define primary use cases and workflows covering both interactive developer CLI UX and non-interactive agent/automation ergonomics.
-      - Detail functional requirements, business rules, validations, and edge cases from the user's perspective.
-      - "Explicitly define scope boundaries: in-scope vs non-goals (out-of-scope)."
-      - Formulate observable acceptance criteria focused on user experience and product behavior.
-      - Do not make internal architecture or code choices (modules, classes, database schemas); focus on what and why, not how.
+      - Cover both interactive developer CLI use and non-interactive agent/automation use in prd.md.
       - Resolve substantive review findings when revising.
     artifacts: [prd]
 
@@ -36,14 +32,7 @@ stages:
     depends_on:
       - product
     instructions:
-      - Review against the issue, task, user requirements, and shared constraints.
-      - Check that user problems are clearly articulated and the proposed behavior directly addresses them.
-      - Verify that CLI UX and user interactions are intuitive, consistent with existing tool patterns, and well-specified.
-      - Check that acceptance criteria are observable, unambiguous, and testable from a product perspective.
-      - Ensure non-goals and scope boundaries are explicitly stated to prevent scope creep.
-      - Check that no premature internal implementation details or architectural restrictions are imposed unnecessarily.
-      - Report substantive gaps together with their impact and required corrections.
-      - Keep comments observational; do not defer required product decisions.
+      - Follow .agents/skills/review/SKILL.md and the product skill and template to review prd.md against the task and prior issue artifacts.
     decision:
       - approved:
           when: The product specification meets review criteria, requirements are clear, and no comments remain.

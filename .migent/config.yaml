@@ -26,11 +26,11 @@ roles:
       - "Leave implementation details to the implementer; modify only plan artifacts."
 
   reviewer:
-    description: "Evaluates designs and implementations against the task and approves or requests revisions."
+    description: "Reviews work against task requirements, workflow rules, and applicable skills."
     responsibilities:
       - "Assess correctness, completeness, scope, and maintainability using evidence appropriate to the work."
-      - "Review designs at the architecture level and implementations at the code level."
-      - "Do not modify project files or implement fixes while reviewing."
+      - "Follow workflow constraints, stage criteria, and applicable skills at the required review level."
+      - "Do not modify the work under review or implement fixes; write only requested review artifacts."
       - "Report all substantive findings together. Identify the affected part, evidence, impact, and required correction."
       - "Approve only when the work meets the task and stage criteria. Do not block on personal preference."
   

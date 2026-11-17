@@ -13,8 +13,6 @@ stages:
     instructions:
       - With phase_commit, require a clean tree and all phases committed in current history; otherwise stop.
       - Follow the create-pr skill in .agents/skills/create-pr/SKILL.md for committing, pushing, and opening the pull request against next.
-      - Fill every section of .github/pull_request_template.md. Use the prior implement-summary when provided for the summary, changes, and verification; otherwise derive them from the diff.
-      - Write Fixes #<n> under Related issue when a prior issue artifact names an issue; otherwise write None.
-      - Stage files by name. Add a CHANGELOG line under Unreleased for a user-visible change.
-      - Do not merge. Report the branch, commit, pull request URL, and CI result.
+      - Use prior implementation reports for the PR summary and verification, and the prior issue artifact for the closing reference when provided; otherwise use the diff and task.
+      - Stop before merging; write pr.md.
     artifacts: [pr]

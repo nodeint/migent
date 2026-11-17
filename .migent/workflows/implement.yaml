@@ -27,7 +27,7 @@ stages:
     depends_on:
       - implement
     instructions:
-      - Follow .agents/skills/review-implementation/SKILL.md against the task and implement_summary.md.
+      - Follow .agents/skills/review/SKILL.md and the implement skill against the task and implement_summary.md.
     decision:
       - approved:
           when: The change meets the task, and the design and plan when provided, has no required fixes, and verification evidence passes.
