@@ -2,6 +2,7 @@ import { log, type VerifyRunner } from '@nodeint/migent-kernel';
 import { HANDOFF_FILE_PROTOCOL } from '@nodeint/migent-prompts';
 import type { ExecutionContext, SessionStore } from '@nodeint/migent-session';
 
+import type { InterceptorChain } from '../runtime/interception.js';
 import { OperationRuntime } from '../runtime/operation-runtime.js';
 import type { TraceSink } from '../runtime/trace.js';
 import type { RunResult, RunTurnArgs, TurnDrive, TurnResult } from '../turn-types.js';
@@ -58,7 +59,11 @@ export function debugTrace(store: SessionStore, context: ExecutionContext): Trac
 /** Runs one role execution through the operation runtime and returns its result. */
 export async function runRoleExecution(
   drive: Drive,
-  services: { runTurn: (args: RunTurnArgs) => Promise<TurnResult>; verifyRunner: VerifyRunner },
+  services: {
+    runTurn: (args: RunTurnArgs) => Promise<TurnResult>;
+    verifyRunner: VerifyRunner;
+    interceptors?: InterceptorChain;
+  },
 ): Promise<RunResult> {
   const { client, model, workspacePath, resolvedOptions, store, context, record, eventReporter } = drive;
   const facts = factsOf(drive);
@@ -70,6 +75,7 @@ export async function runRoleExecution(
   };
   const runtime = new OperationRuntime({
     applier,
+    ...(services.interceptors === undefined ? {} : { interceptors: services.interceptors }),
     trace: debugTrace(store, context),
     operations: [
       createAgentTurnOperation({

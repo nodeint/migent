@@ -45,6 +45,7 @@ import {
   stageFacts,
   validateSessionProfile,
 } from './run-setup.js';
+import type { InterceptorChain } from './runtime/interception.js';
 import { runProviderTurn, turnDebugStep } from './turn-process.js';
 import {
   handoffPath,
@@ -69,6 +70,8 @@ export class AgentToolRunner {
   public readonly registry: ClientRegistry;
   /** Static plugin registry, injected by cli as the client registry is. Empty by default. */
   public pluginRegistry: PluginRegistry = EMPTY_PLUGIN_REGISTRY;
+  /** Interceptors of the plugins active in the current run. Set by the run that owns the session lock. */
+  public interceptors: InterceptorChain | undefined;
   public readonly executor: CommandExecutor;
   public readonly verifyRunner: VerifyRunner;
   public itemProgress = false;
@@ -270,7 +273,9 @@ export class AgentToolRunner {
   }
 
   private driveTurns(state: TurnDrive): Promise<RunResult> {
-    return runRoleExecution(state, { runTurn: (args) => this.runTurn(args), verifyRunner: this.verifyRunner });
+    return runRoleExecution(state, { runTurn: (args) => this.runTurn(args), verifyRunner: this.verifyRunner,
+      ...(this.interceptors === undefined ? {} : { interceptors: this.interceptors }),
+    });
   }
 
   private eventReporterFor(

@@ -20,10 +20,12 @@ import { CancellationRequested, cancellationSignal, loadWorkspaceConfig, logProg
 import { readParsedEvents, sessionEventLog, SessionStore, subscribeSessionEvents } from '@nodeint/migent-session';
 
 import { bindTarget } from '../agent-invocation.js';
+import type { InterceptorChain } from '../runtime/interception.js';
 import { AgentCaller } from './agent-call.js';
 import { buildActivationContext, buildCallContext, emptyRegistrations, type PluginRegistrations } from './context.js';
 import { declaresAgent } from './freeze.js';
 import { type PluginFailure, recordPluginFailure } from './holds.js';
+import { HostInterceptorChain, type InterceptorInvocation, recordHookInvoked, settleInterceptor } from './interception.js';
 import { InvocationState } from './invocation.js';
 import type { PluginSelection, SelectedPlugin } from './selection.js';
 
@@ -123,6 +125,7 @@ export class PluginHost {
   private readonly activations = new Map<string, PluginRegistrations | null>();
 
   private readonly workspace: string;
+  private readonly log: { workspace: string; sessionId: string; directory: string };
   private readonly sessionId: string;
 
   constructor(
@@ -136,6 +139,7 @@ export class PluginHost {
     this.workspace = workspace;
     this.sessionId = sessionId;
     this.directory = path.join(workspace, '.migent', 'sessions', sessionId);
+    this.log = { workspace, sessionId, directory: this.directory };
     this.store = new SessionStore(workspace);
     this.plugins = selection.selected;
     this.unavailable = [...selection.unavailable];
@@ -229,6 +233,42 @@ export class PluginHost {
     }
   }
 
+  /** Settles once every selected plugin has been activated. Interceptors exist only after this. */
+  public async ready(): Promise<void> {
+    if (this.unsubscribe !== null) await this.chain;
+  }
+
+  /** The interceptors the activated plugins registered, in chain order. Independent of any other run. */
+  public interceptors(): InterceptorChain {
+    return new HostInterceptorChain(
+      this.plugins.map((plugin) => ({ plugin, registrations: this.activations.get(plugin.id)?.interceptors ?? [] })),
+      this,
+    );
+  }
+
+  /**
+   * Runs one interceptor under the plugin's deadline and records the result. Returns the accepted value, or null
+   * when the invocation failed or its proposal was refused; the caller then keeps the value unchanged. A failure is
+   * recorded under `on_error`, so `stop` and `fail` create the plugin hold and no new exit point is added.
+   */
+  public async invokeInterceptor<T>(plugin: SelectedPlugin, spec: InterceptorInvocation<T>): Promise<T | null> {
+    const invocationId = randomUUID();
+    recordHookInvoked(this.log, plugin, { hook: spec.hook, triggerSeq: null, invocationId });
+    const timeoutSec = resolveTimeoutSec(plugin);
+    const controller = new AbortController();
+    const invocation = new InvocationState();
+    const { stageId } = spec;
+    const caller = this.callerFor(plugin, { invocationId, stageId, timeoutSec, signal: controller.signal });
+    const outcome = await this.call(
+      () => spec.run(buildCallContext(this.sourcesOf(plugin), invocation, caller)),
+      { timeoutSec, controller, caller, invocation },
+    );
+    return settleInterceptor(
+      this.log,
+      { plugin, invocationId, spec, outcome, caller, notes: invocation.notes, onError: resolveOnError(plugin) },
+    );
+  }
+
   /** Activates every selected plugin once, in selection order. A failure leaves that plugin out of the scope. */
   private async activateAll(): Promise<void> {
     for (const plugin of this.plugins) await this.activate(plugin);
@@ -304,19 +344,12 @@ export class PluginHost {
     const { hook } = trigger;
     const invocationId = randomUUID();
     const onError = resolveOnError(plugin);
-    sessionEventLog.record(this.directory, {
-      event: 'plugin.hook_invoked',
-      timestamp: utcNow(),
-      data: {
-        plugin: plugin.id, version: plugin.version, hook, trigger_seq: trigger.seq,
-        invocation_id: invocationId, advisory: plugin.manifest.advisory,
-      },
-    });
-    sessionEventLog.commit(this.workspace, this.directory);
+    recordHookInvoked(this.log, plugin, { hook, triggerSeq: trigger.seq, invocationId });
     const timeoutSec = resolveTimeoutSec(plugin);
     const controller = new AbortController();
     const invocation = new InvocationState();
-    const caller = this.callerFor(plugin, { invocationId, trigger, timeoutSec, signal: controller.signal });
+    const stageId = typeof trigger.record?.stage_id === 'string' ? trigger.record.stage_id : '';
+    const caller = this.callerFor(plugin, { invocationId, stageId, timeoutSec, signal: controller.signal });
     const input = this.inputFor(plugin, trigger);
     const callContext = buildCallContext(this.sourcesOf(plugin), invocation, caller);
     const outcome = await this.call(
@@ -340,12 +373,12 @@ export class PluginHost {
   /** The `invokeAgent` capability: offered only when the manifest declares it and the config has an `agent`. */
   private callerFor(
     plugin: SelectedPlugin,
-    context: { invocationId: string; trigger: Trigger; timeoutSec: number; signal: AbortSignal },
+    context: { invocationId: string; stageId: string; timeoutSec: number; signal: AbortSignal },
   ): AgentCaller | null {
     const { clients } = this;
     if (clients === null || !declaresAgent(plugin.manifest) || plugin.config.agent === undefined) return null;
     const target = this.targetOf(plugin, clients);
-    const stageId = typeof context.trigger.record?.stage_id === 'string' ? context.trigger.record.stage_id : '';
+    const { stageId } = context;
     return new AgentCaller({
       workspace: this.workspace,
       sessionId: this.sessionId,

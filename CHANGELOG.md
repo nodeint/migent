@@ -21,6 +21,12 @@
 
 ### Added
 
+- Operation interception. A plugin registers `operations.intercept('agent.turn', { before, after })`, and the
+  runtime runs the interceptors of an operation in chain order around its handler. `agent.turn` lets a `before`
+  interceptor patch `prompt`; an undeclared field, an invalid patch, or a failing, timed-out or cancelled
+  interceptor leaves the value unchanged and records `plugin.decision` (`rejected`) or `plugin.failed`, and
+  `on_error: stop` and `fail` create the existing plugin hold. No plugin is registered, so no session changes.
+  ([#166](https://github.com/nodeint/migent/issues/166))
 - Plugin host core. The `plugins` config section is registered: sessions freeze it per entry, record a
   `plugins.frozen` event at every freeze, and check the frozen plugins on resume, and `migent doctor` validates the
   entries against the plugin registry. Registered plugins run at `session.started`, `execution.finished` and

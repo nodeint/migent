@@ -92,7 +92,9 @@ async function executeLocked(
   };
   try {
     const opts = { limits, resumeCancelled, reopenLatestCancelled, scoped: request.resumeTarget === true };
-    return heldResult(store, await runWithHooks(host, opened.started, () => runOpened(run, opts)));
+    return heldResult(store, await runWithHooks(
+      { host, runner: activeRunner }, opened.started, () => runOpened(run, opts),
+    ));
   } catch (error) {
     return await settleFailedRun(host, error, { store, sessionId, tasks });
   } finally {
@@ -117,13 +119,22 @@ async function settleFailedRun(
  * settles before the caller releases the session lock.
  */
 async function runWithHooks(
-  host: PluginHost,
+  scope: { host: PluginHost; runner: AgentToolRunner },
   started: boolean,
   schedule: () => Promise<ExecuteResult>,
 ): Promise<ExecuteResult> {
+  const { host, runner } = scope;
   host.start();
+  await host.ready();
   if (started) host.fireSessionStarted();
-  const result = await schedule();
+  const previous = runner.interceptors;
+  runner.interceptors = host.interceptors();
+  let result: ExecuteResult;
+  try {
+    result = await schedule();
+  } finally {
+    runner.interceptors = previous;
+  }
   await host.finish({ fireStopped: true });
   return result;
 }
@@ -446,6 +457,7 @@ function continueReopenedExecution(
     stage: verifyOnlyStage(workflow, item.stageId),
     verifyRunner: activeRunner.verifyRunner,
     clients: activeRunner.registry,
+    ...(activeRunner.interceptors === undefined ? {} : { interceptors: activeRunner.interceptors }),
     executionId: item.executionId,
   });
 }

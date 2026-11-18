@@ -456,6 +456,7 @@ async function dispatchVerifyOnly(
     stage: stageSpec,
     verifyRunner: runner.verifyRunner,
     clients: runner.registry,
+    ...(runner.interceptors === undefined ? {} : { interceptors: runner.interceptors }),
     onExecution,
   });
   const outcome = result.failure_reason === VERIFY_FAILED ? 'verify_failed' : 'complete';

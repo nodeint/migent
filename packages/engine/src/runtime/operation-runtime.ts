@@ -1,5 +1,6 @@
 import { debugEnabled, log } from '@nodeint/migent-kernel';
 
+import type { InterceptorChain, InterceptProposal, Judgement } from './interception.js';
 import type {
   AnyOperation,
   ChangeApplier,
@@ -28,6 +29,8 @@ export type RuntimeOptions<Change> = {
   readonly operations: readonly AnyOperation<Change>[];
   readonly applier: ChangeApplier<Change>;
   readonly policy?: Policy;
+  /** Ordered interceptors. Without it, or with no interceptor for an operation, the cycle makes no extra await. */
+  readonly interceptors?: InterceptorChain;
   /** Receives the decision trace, but only while debug is enabled. The default sink writes the debug channel. */
   readonly trace?: TraceSink;
 };
@@ -55,6 +58,7 @@ export class OperationRuntime<Change> {
   private readonly applier: ChangeApplier<Change>;
   private readonly policy: Policy;
   private readonly sink: TraceSink;
+  private readonly interceptors: InterceptorChain | null;
   private invocationCount = 0;
 
   constructor(options: RuntimeOptions<Change>) {
@@ -62,6 +66,7 @@ export class OperationRuntime<Change> {
     this.applier = options.applier;
     this.policy = options.policy ?? ALLOW_ALL_POLICY;
     this.sink = options.trace ?? DEFAULT_TRACE_SINK;
+    this.interceptors = options.interceptors ?? null;
   }
 
   public async run<State, Result>(input: RunInput<State, Change, Result>): Promise<Result> {
@@ -95,7 +100,7 @@ export class OperationRuntime<Change> {
 
     const decision = this.policy.evaluate(request, policyContext(input.scope, request));
     trace({ kind: 'policy', invocationId, verdict: decision.kind });
-    const outcome = await this.invoke(operation, request, decision);
+    const outcome = await this.invoke(operation, request, { decision, scope: input.scope });
     trace({ kind: 'outcome', invocationId, outcome: outcome.kind });
 
     const transition = input.definition.decide(state, request, outcome);
@@ -124,18 +129,111 @@ export class OperationRuntime<Change> {
   private async invoke(
     operation: AnyOperation<Change>,
     request: OperationRequest,
-    decision: PolicyDecision,
+    context: { readonly decision: PolicyDecision; readonly scope: RuntimeScope },
   ): Promise<OperationOutcome<PlainData, Change>> {
+    const { decision } = context;
     switch (decision.kind) {
       case 'deny':
         return { kind: 'denied', reason: decision.reason };
       case 'allow':
-        return validateResult(operation, await operation.handle(request.input));
+        if (!this.intercepts(operation.id)) return validateResult(operation, await operation.handle(request.input));
+        return this.invokeAllowed(operation, request, context.scope);
       default:
         return assertNever(decision, 'policy decision');
     }
   }
+
+  /** Whether any phase has interceptors. Without them the cycle keeps its direct handler path. */
+  private intercepts(operationId: string): boolean {
+    const chain = this.interceptors;
+    return chain !== null && (chain.has(operationId, 'before') || chain.has(operationId, 'after'));
+  }
+
+  /** Before chain, handler (or the short-circuit output), output check, after chain. */
+  private async invokeAllowed(
+    operation: AnyOperation<Change>,
+    request: OperationRequest,
+    scope: RuntimeScope,
+  ): Promise<HandlerResult<PlainData, Change>> {
+    const { identity } = request;
+    const chain = this.interceptors;
+    let {input} = request;
+    let supplied: { readonly output: PlainData } | null = null;
+    if (chain?.has(operation.id, 'before') === true) {
+      const passed = await chain.run({
+        phase: 'before', scope, identity, value: input,
+        judge: (current, proposal) => judge({ operation, phase: 'before' }, current, proposal),
+      });
+      if (passed.shortCircuit) supplied = { output: passed.value };
+      else input = passed.value;
+    }
+    const result = supplied === null
+      ? validateResult(operation, await operation.handle(input))
+      : { kind: 'succeeded' as const, output: supplied.output, changes: [] };
+    if (result.kind !== 'succeeded' || chain?.has(operation.id, 'after') !== true) return result;
+    const passed = await chain.run({
+      phase: 'after', scope, identity, value: result.output,
+      judge: (current, proposal) => judge({ operation, phase: 'after' }, current, proposal),
+    });
+    return { ...result, output: passed.value };
+  }
 }
+
+const rejected = (reason: string): Judgement => ({ kind: 'rejected', reason });
+
+/** The runtime's check of one interceptor proposal. Plugins can only patch declared fields of plain data. */
+function judge<Change>(
+  point: { readonly operation: AnyOperation<Change>; readonly phase: 'before' | 'after' },
+  current: PlainData,
+  proposal: InterceptProposal,
+): Judgement {
+  switch (proposal.kind) {
+    case 'continue':
+      return { kind: 'accepted', value: current, shortCircuit: false };
+    case 'patch':
+      return judgePatch(point, current, proposal.fields);
+    case 'short_circuit':
+      return judgeShortCircuit(point, proposal.output);
+    default:
+      return assertNever(proposal, 'interceptor proposal');
+  }
+}
+
+function judgePatch<Change>(
+  { operation, phase }: { readonly operation: AnyOperation<Change>; readonly phase: 'before' | 'after' },
+  current: PlainData,
+  fields: Readonly<Record<string, unknown>>,
+): Judgement {
+  const declared = operation.interceptable?.[phase] ?? [];
+  const undeclared = Object.keys(fields).filter((field) => !declared.includes(field));
+  if (undeclared.length > 0) return rejected(`Undeclared ${phase} field: ${undeclared.join(', ')}.`);
+  if (typeof current !== 'object' || current === null || Array.isArray(current)) {
+    return rejected('The value is not an object, so it cannot be patched.');
+  }
+  const merged = { ...current, ...fields };
+  if (!isPlainData(merged)) return rejected('The patched value is not plain data.');
+  const detached = detach(merged);
+  const accepts = phase === 'before' ? operation.acceptsInput(detached) : operation.producesOutput(detached);
+  return accepts
+    ? { kind: 'accepted', value: detached, shortCircuit: false }
+    : rejected(`The patched ${phase === 'before' ? 'input' : 'output'} is invalid.`);
+}
+
+function judgeShortCircuit<Change>(
+  { operation, phase }: { readonly operation: AnyOperation<Change>; readonly phase: 'before' | 'after' },
+  output: unknown,
+): Judgement {
+  if (phase !== 'before' || operation.interceptable?.shortCircuit !== true) {
+    return rejected(`Operation ${operation.id} does not allow a short circuit here.`);
+  }
+  if (!isPlainData(output)) return rejected('The short-circuit output is not plain data.');
+  const detached = detach(output);
+  return operation.producesOutput(detached)
+    ? { kind: 'accepted', value: detached, shortCircuit: true }
+    : rejected('The short-circuit output is invalid.');
+}
+
+const detach = (value: PlainData): PlainData => JSON.parse(JSON.stringify(value)) as PlainData;
 
 /** Every handler result kind is decided here, so a new variant fails to compile until it is handled (D8). */
 function validateResult<Change>(
