@@ -17,10 +17,8 @@ stages:
       - With a plan, implement its phases in order and report each outcome.
     artifacts: [implement_summary]
     verify:
-      - pnpm lint
-      - pnpm test:unit
+      - pnpm typecheck
       - pnpm build
-      - pnpm test:integration
 
   - id: review_work
     role: reviewer

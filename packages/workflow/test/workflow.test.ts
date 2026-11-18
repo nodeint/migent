@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -230,6 +230,25 @@ test('catalog checks file ids and requires', () => {
   expect(loadNamedWorkflow(workspace, 'renamed').id).toBe('renamed');
   expect(() => loadNamedWorkflow(workspace, 'other')).toThrow(ConfigurationError);
   expect(() => loadNamedWorkflow(workspace, 'other')).toThrow(/Workflow not found: other/);
+});
+
+test('an invalid workflow file is reported as invalid, not missing', () => {
+  const workspace = tempDir('migent-catalog-');
+  try {
+    const workflows = path.join(workspace, '.migent', 'workflows');
+    mkdirSync(workflows, { recursive: true });
+    writeFileSync(path.join(workflows, 'broken.yaml'), 'id: broken\nconstraints: nope\nstages:\n  - id: a\n    role: r\n', 'utf8');
+    writeFileSync(
+      path.join(workflows, 'plan.yaml'),
+      'schema_version: 4\nid: plan\nstages:\n  - id: plan\n    role: planner\ndownstream:\n  - workflow: broken\n    task: go\n',
+      'utf8',
+    );
+    expect(() => loadNamedWorkflow(workspace, 'broken')).toThrow(/Workflow broken is invalid\. broken\.yaml: /);
+    expect(() => loadNamedWorkflow(workspace, 'broken')).not.toThrow(/not found/);
+    expect(loadWorkflowCatalog(workspace).problems).toContain('plan: downstream workflow broken failed to load.');
+  } finally {
+    rmSync(workspace, { recursive: true, force: true });
+  }
 });
 
 test('omitted id uses the file name', () => {

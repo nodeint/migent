@@ -133,9 +133,10 @@ export function checkEntryReferences(
   for (const [index, next] of entry.downstream.entries()) {
     if (!next.workflow.known) continue;
     if (!Object.hasOwn(documents, next.workflow.value) && !isDraftEntry(entries, next.workflow.value)) {
+      const reason = failed.has(next.workflow.value) ? 'failed to load.' : 'is not in .migent/workflows.';
       problems.push({
         code: 'unknown-downstream',
-        message: `${workflowId}: downstream workflow ${next.workflow.value} is not in .migent/workflows.`,
+        message: `${workflowId}: downstream workflow ${next.workflow.value} ${reason}`,
         workflow: workflowId,
         path: ['downstream', next.index ?? index, 'workflow'],
         ...mark,
