@@ -84,7 +84,7 @@ function envelopeDecisions(options: ProviderPromptOptions, mode: EnvelopeMode): 
 }
 
 function artifactFileLine(item: ArtifactFile): string {
-  const when = item.decision === null ? '' : ` (with \`decision: ${item.decision}\`)`;
+  const when = item.decision === null ? '' : ` only when you choose \`decision: ${item.decision}\``;
   const kind = item.required ? '' : ' [optional]';
   const note = item.description === null ? '' : `: ${item.description}`;
   return `- \`${item.file}\`${when}${kind}${note}`;
@@ -92,8 +92,15 @@ function artifactFileLine(item: ArtifactFile): string {
 
 function artifactLines(files: readonly ArtifactFile[], artifactName: string | null): string[] {
   const multi = files.length > 1 || files.some((item) => item.decision !== null || item.description !== null);
-  if (multi) return ['Write these artifacts in the artifacts directory:', ...files.map(artifactFileLine)];
-  return artifactName ? [`Write the artifact as \`${artifactName}\` in the artifacts directory.`] : [];
+  if (!multi) return artifactName ? [`Write the artifact as \`${artifactName}\` in the artifacts directory.`] : [];
+  const stageLevel = files.filter((item) => item.decision === null);
+  const decisionScoped = files.filter((item) => item.decision !== null);
+  const lines: string[] = [];
+  if (stageLevel.length > 0) lines.push('Write these artifacts in the artifacts directory:', ...stageLevel.map(artifactFileLine));
+  if (decisionScoped.length > 0) {
+    lines.push('Write these only for the decision you choose; skip them for other decisions:', ...decisionScoped.map(artifactFileLine));
+  }
+  return lines;
 }
 
 function reminderLine(handoff: boolean, statusLabel: string, decisions: readonly EnvelopeDecision[]): string {

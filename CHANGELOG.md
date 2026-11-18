@@ -62,6 +62,9 @@
 
 ### Fixed
 
+- A stage prompt lists decision-scoped artifacts under their own lead, `Write these only for the decision you
+  choose`, so a reviewer that chooses `revise` is no longer told to write a file that only another decision needs.
+  ([#163](https://github.com/nodeint/migent/issues/163))
 - A workflow file that exists but fails validation is now reported as `Workflow <id> is invalid` with the validation
   error, instead of `Workflow not found`. A `downstream` entry naming such a file reports that it failed to load.
   ([#162](https://github.com/nodeint/migent/issues/162))
