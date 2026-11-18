@@ -14,6 +14,8 @@ import {
   QUESTIONS_SCHEMA_VERSION,
   SessionLockFile,
   SessionManifest,
+  SessionMetrics,
+  SessionMetricsLegacy,
   SessionNext,
   SessionQuestions,
   SessionStatusFile,
@@ -25,6 +27,7 @@ import { afterEach, expect, test } from 'vitest';
 
 import { MANIFEST_SCHEMA_EVENT_LOG } from '../src/constants.ts';
 import { sessionEventLog } from '../src/event-log.ts';
+import { sessionMetrics } from '../src/metrics.ts';
 import { publishNextSuggestions } from '../src/next-handoff.ts';
 import { EVENT_VERSION } from '../src/session-events.ts';
 import { readFoldedStatus } from '../src/session-fold.ts';
@@ -32,7 +35,7 @@ import { SessionLock } from '../src/session-lock.ts';
 import { createAgentSession, createPreparedSession, createWorkflowSession } from '../src/session-records.ts';
 import { repairSession } from '../src/session-repair.ts';
 import { SessionStore } from '../src/session-store.ts';
-import { holdSessionLock, SESSION_CONFIG } from './support.ts';
+import { defaultClients, holdSessionLock, SESSION_CONFIG } from './support.ts';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -114,6 +117,14 @@ test('next.json validates', () => {
   writeFileSync(path.join(directory, 'status.json'), JSON.stringify({ session_id: id, workflow_id: 'plan', status: 'completed', outputs: { approved_plan: { path: 'outputs/plan.md' } } }));
   const published = publishNextSuggestions(root, id);
   expectValid(SessionNext, JSON.parse(readFileSync(published.path!, 'utf8')));
+});
+
+test('sealed metrics validate against the plugin and legacy file schemas', () => {
+  const root = workspace();
+  const id = createWorkflowSession(root, 'plan', { task: 'Plan the work' });
+  const document = JSON.parse(JSON.stringify(sessionMetrics(root, id, defaultClients()))) as unknown;
+  expectValid(SessionMetrics, document);
+  expectValid(SessionMetricsLegacy, document);
 });
 
 test('a historical session questions.json still validates and is never rewritten', () => {

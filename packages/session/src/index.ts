@@ -12,10 +12,7 @@ export type {
 export { legacyExecutionClient } from './legacy-execution-client.js';
 export { readExecutionClient } from './legacy-execution-client.js';
 export {
-  listSealedMetrics,
   listSessionMetrics,
-  readSealedMetrics,
-  sealedMetricsPath,
   sealSessionMetrics,
   sessionMetrics,
 } from './metrics.js';

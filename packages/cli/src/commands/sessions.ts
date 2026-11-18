@@ -1,6 +1,6 @@
 import { SealedMetrics, SealedMetricsLine, SESSION_STATUS_CATALOG, SessionRow, SessionRowOrNull, SessionRows, type Static } from '@nodeint/migent-contracts';
 import { ConfigurationError } from '@nodeint/migent-kernel';
-import { listSealedMetrics, listSessionRows, readSealedMetrics } from '@nodeint/migent-session';
+import { listSessionRows } from '@nodeint/migent-session';
 import { Command, type OptionValues } from 'commander';
 
 import { printError, printSessions } from '../display.js';
@@ -12,6 +12,7 @@ import { findWorkspace, invocationCwdPath } from '../workspace.js';
 import { cancelSession } from './cancel.js';
 import { completeSession } from './complete.js';
 import { deleteSessions } from './delete.js';
+import { listSealedMetrics, readSealedMetrics } from './metrics-read.js';
 import { renameSession } from './rename.js';
 import { repairWorkflowSession } from './repair.js';
 import { resumeSession } from './resume.js';

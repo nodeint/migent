@@ -306,6 +306,237 @@ Type: object \| object
 | `failure` | map of any | no | | |
 | `stderr_tail` | string | no | | |
 
+<a id="session-metrics-json"></a>
+
+### Session metrics (`plugins/metrics/metrics.json`)
+
+Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/session/metrics.json`
+
+Written once when a workflow session completes, by the `metrics` plugin.
+Absent for agent sessions.
+
+Path:
+`plugins/metrics/metrics.json`; class: known; framing: document
+
+Type: object
+
+| Field | Type | Required | Notes | Description |
+| --- | --- | --- | --- | --- |
+| `session_id` | string | yes | | |
+| `workflow_id` | string \| null | yes | | |
+| `workflow_hash` | string \| null | yes | | |
+| `status` | string \| null | yes | | |
+| `latest_decision` | string \| null | yes | | |
+| `task_sha256` | string \| null | yes | | |
+| `prior_session_id` | string \| null | yes | | |
+| `created_at` | string \| null | yes | | |
+| `updated_at` | string \| null | yes | | |
+| `totals` | object | yes | | |
+| `totals.executions` | number | yes | | |
+| `totals.skipped` | number | yes | | |
+| `totals.wall_seconds` | number \| null | yes | | |
+| `totals.active_seconds` | number | yes | | |
+| `totals.verify_seconds` | number | yes | | |
+| `totals.turns` | number | yes | | |
+| `totals.uncaptured_turns` | number | yes | | |
+| `totals.provider_exit_anomalies` | number | yes | | |
+| `totals.provider_exit_anomalies_accepted` | number | yes | | |
+| `totals.usage` | object | yes | | |
+| `totals.usage.input_tokens` | number \| null | yes | | |
+| `totals.usage.output_tokens` | number \| null | yes | | |
+| `totals.usage.reasoning_tokens` | number \| null | yes | | |
+| `totals.usage.cache_read_tokens` | number \| null | yes | | |
+| `totals.usage.cache_write_tokens` | number \| null | yes | | |
+| `totals.usage.cost_usd` | number \| null | yes | | |
+| `totals.usage_missing` | object | yes | | |
+| `totals.usage_missing.input_tokens` | number | yes | | |
+| `totals.usage_missing.output_tokens` | number | yes | | |
+| `totals.usage_missing.reasoning_tokens` | number | yes | | |
+| `totals.usage_missing.cache_read_tokens` | number | yes | | |
+| `totals.usage_missing.cache_write_tokens` | number | yes | | |
+| `totals.usage_missing.cost_usd` | number | yes | | |
+| `totals.cost_partial` | boolean | yes | | |
+| `totals.failed_executions` | number | yes | | |
+| `totals.blocked` | number | yes | | |
+| `totals.cancelled` | number | yes | | |
+| `totals.verify_red` | number | yes | | |
+| `totals.revisions` | number \| null | yes | | |
+| `totals.revisions_reset` | number | yes | | |
+| `totals.fresh_starts` | number | yes | | |
+| `totals.expired_resumes` | number | yes | | |
+| `stages` | map of object | yes | | |
+| `stages.*.executions` | number | yes | | |
+| `stages.*.skipped` | number | yes | | |
+| `stages.*.revisions` | number \| null | yes | | |
+| `stages.*.failed` | number | yes | | |
+| `stages.*.blocked` | number | yes | | |
+| `executions` | object[] | yes | | |
+| `executions[].execution_id` | string | yes | | |
+| `executions[].execution_order` | number \| null | yes | | |
+| `executions[].stage_id` | string | yes | | |
+| `executions[].stage_attempt` | number \| null | yes | | |
+| `executions[].role` | string \| null | yes | | |
+| `executions[].client` | string \| null | yes | | |
+| `executions[].model` | string \| null | yes | | |
+| `executions[].cli_version` | string \| null | yes | | |
+| `executions[].argv` | string[] \| null | yes | | |
+| `executions[].agent_id` | string \| null | yes | | |
+| `executions[].resumes_execution_id` | string \| null | yes | | |
+| `executions[].routed_from` | string \| null | yes | | |
+| `executions[].git_head` | string \| null | yes | | |
+| `executions[].git_dirty` | boolean \| null | yes | | |
+| `executions[].status` | string \| null | yes | | |
+| `executions[].outcome_status` | string \| null | yes | | |
+| `executions[].decision` | string \| null | yes | | |
+| `executions[].blocker` | string \| null | yes | | |
+| `executions[].error` | string \| null | yes | | |
+| `executions[].failure_reason` | string \| null | yes | | |
+| `executions[].created_at` | string \| null | yes | | |
+| `executions[].completed_at` | string \| null | yes | | |
+| `executions[].wall_seconds` | number \| null | yes | | |
+| `executions[].verify_seconds` | number | yes | | |
+| `executions[].turns` | number | yes | | |
+| `executions[].uncaptured_turns` | number | yes | | |
+| `executions[].provider_exit_anomalies` | number | yes | | |
+| `executions[].provider_exit_anomalies_accepted` | number | yes | | |
+| `executions[].usage` | object | yes | | |
+| `executions[].usage.input_tokens` | number \| null | yes | | |
+| `executions[].usage.output_tokens` | number \| null | yes | | |
+| `executions[].usage.reasoning_tokens` | number \| null | yes | | |
+| `executions[].usage.cache_read_tokens` | number \| null | yes | | |
+| `executions[].usage.cache_write_tokens` | number \| null | yes | | |
+| `executions[].usage.cost_usd` | number \| null | yes | | |
+| `executions[].usage_missing` | object | yes | | |
+| `executions[].usage_missing.input_tokens` | number | yes | | |
+| `executions[].usage_missing.output_tokens` | number | yes | | |
+| `executions[].usage_missing.reasoning_tokens` | number | yes | | |
+| `executions[].usage_missing.cache_read_tokens` | number | yes | | |
+| `executions[].usage_missing.cache_write_tokens` | number | yes | | |
+| `executions[].usage_missing.cost_usd` | number | yes | | |
+| `executions[].verify` | object \| null | yes | | |
+| `executions[].verify.runs` | number | yes | | |
+| `executions[].verify.red` | number | yes | | |
+| `executions[].verify.first_pass` | boolean | yes | | |
+| `executions[].verify.failed_commands` | string[] | yes | | |
+| `executions[].skip` | map of any \| null | yes | | |
+| `executions[].fresh_reason` | string \| null | yes | | |
+
+<a id="session-metrics-legacy-json"></a>
+
+### Session metrics, legacy root file (`metrics.json`)
+
+Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/session/metrics-legacy.json`
+
+Sealed in the session root before the `metrics` plugin existed.
+Read when the plugin file is absent.
+All fields optional.
+
+Path:
+`metrics.json`; class: known; framing: document
+
+Type: object
+
+| Field | Type | Required | Notes | Description |
+| --- | --- | --- | --- | --- |
+| `session_id` | string | no | | |
+| `workflow_id` | string \| null | no | | |
+| `workflow_hash` | string \| null | no | | |
+| `status` | string \| null | no | | |
+| `latest_decision` | string \| null | no | | |
+| `task_sha256` | string \| null | no | | |
+| `prior_session_id` | string \| null | no | | |
+| `created_at` | string \| null | no | | |
+| `updated_at` | string \| null | no | | |
+| `totals` | object | no | | |
+| `totals.executions` | number | no | | |
+| `totals.skipped` | number | no | | |
+| `totals.wall_seconds` | number \| null | no | | |
+| `totals.active_seconds` | number | no | | |
+| `totals.verify_seconds` | number | no | | |
+| `totals.turns` | number | no | | |
+| `totals.uncaptured_turns` | number | no | | |
+| `totals.provider_exit_anomalies` | number | no | | |
+| `totals.provider_exit_anomalies_accepted` | number | no | | |
+| `totals.usage` | object | no | | |
+| `totals.usage.input_tokens` | number \| null | yes | | |
+| `totals.usage.output_tokens` | number \| null | yes | | |
+| `totals.usage.reasoning_tokens` | number \| null | yes | | |
+| `totals.usage.cache_read_tokens` | number \| null | yes | | |
+| `totals.usage.cache_write_tokens` | number \| null | yes | | |
+| `totals.usage.cost_usd` | number \| null | yes | | |
+| `totals.usage_missing` | object | no | | |
+| `totals.usage_missing.input_tokens` | number | yes | | |
+| `totals.usage_missing.output_tokens` | number | yes | | |
+| `totals.usage_missing.reasoning_tokens` | number | yes | | |
+| `totals.usage_missing.cache_read_tokens` | number | yes | | |
+| `totals.usage_missing.cache_write_tokens` | number | yes | | |
+| `totals.usage_missing.cost_usd` | number | yes | | |
+| `totals.cost_partial` | boolean | no | | |
+| `totals.failed_executions` | number | no | | |
+| `totals.blocked` | number | no | | |
+| `totals.cancelled` | number | no | | |
+| `totals.verify_red` | number | no | | |
+| `totals.revisions` | number \| null | no | | |
+| `totals.revisions_reset` | number | no | | |
+| `totals.fresh_starts` | number | no | | |
+| `totals.expired_resumes` | number | no | | |
+| `stages` | map of object | no | | |
+| `stages.*.executions` | number | no | | |
+| `stages.*.skipped` | number | no | | |
+| `stages.*.revisions` | number \| null | no | | |
+| `stages.*.failed` | number | no | | |
+| `stages.*.blocked` | number | no | | |
+| `executions` | object[] | no | | |
+| `executions[].execution_id` | string | no | | |
+| `executions[].execution_order` | number \| null | no | | |
+| `executions[].stage_id` | string | no | | |
+| `executions[].stage_attempt` | number \| null | no | | |
+| `executions[].role` | string \| null | no | | |
+| `executions[].client` | string \| null | no | | |
+| `executions[].model` | string \| null | no | | |
+| `executions[].cli_version` | string \| null | no | | |
+| `executions[].argv` | string[] \| null | no | | |
+| `executions[].agent_id` | string \| null | no | | |
+| `executions[].resumes_execution_id` | string \| null | no | | |
+| `executions[].routed_from` | string \| null | no | | |
+| `executions[].git_head` | string \| null | no | | |
+| `executions[].git_dirty` | boolean \| null | no | | |
+| `executions[].status` | string \| null | no | | |
+| `executions[].outcome_status` | string \| null | no | | |
+| `executions[].decision` | string \| null | no | | |
+| `executions[].blocker` | string \| null | no | | |
+| `executions[].error` | string \| null | no | | |
+| `executions[].failure_reason` | string \| null | no | | |
+| `executions[].created_at` | string \| null | no | | |
+| `executions[].completed_at` | string \| null | no | | |
+| `executions[].wall_seconds` | number \| null | no | | |
+| `executions[].verify_seconds` | number | no | | |
+| `executions[].turns` | number | no | | |
+| `executions[].uncaptured_turns` | number | no | | |
+| `executions[].provider_exit_anomalies` | number | no | | |
+| `executions[].provider_exit_anomalies_accepted` | number | no | | |
+| `executions[].usage` | object | no | | |
+| `executions[].usage.input_tokens` | number \| null | yes | | |
+| `executions[].usage.output_tokens` | number \| null | yes | | |
+| `executions[].usage.reasoning_tokens` | number \| null | yes | | |
+| `executions[].usage.cache_read_tokens` | number \| null | yes | | |
+| `executions[].usage.cache_write_tokens` | number \| null | yes | | |
+| `executions[].usage.cost_usd` | number \| null | yes | | |
+| `executions[].usage_missing` | object | no | | |
+| `executions[].usage_missing.input_tokens` | number | yes | | |
+| `executions[].usage_missing.output_tokens` | number | yes | | |
+| `executions[].usage_missing.reasoning_tokens` | number | yes | | |
+| `executions[].usage_missing.cache_read_tokens` | number | yes | | |
+| `executions[].usage_missing.cache_write_tokens` | number | yes | | |
+| `executions[].usage_missing.cost_usd` | number | yes | | |
+| `executions[].verify` | object \| null | no | | |
+| `executions[].verify.runs` | number | yes | | |
+| `executions[].verify.red` | number | yes | | |
+| `executions[].verify.first_pass` | boolean | yes | | |
+| `executions[].verify.failed_commands` | string[] | yes | | |
+| `executions[].skip` | map of any \| null | no | | |
+| `executions[].fresh_reason` | string \| null | no | | |
+
 <a id="session-event-json"></a>
 
 ### Session event envelope (`events.jsonl`)

@@ -2,11 +2,16 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node
 import path from 'node:path';
 
 import type { TurnUsage, UsageCapture } from '@nodeint/migent-kernel';
-import { createAgentSession, listSealedMetrics, listSessionMetrics, readSealedMetrics, sealedMetricsPath, sessionMetrics } from '@nodeint/migent-session';
+import { createAgentSession, listSessionMetrics, sessionMetrics } from '@nodeint/migent-session';
 import { expect, test } from 'vitest';
 
 import { AgentToolRunner, executeNamedWorkflow } from '../src/index.ts';
 import { FakeClient, holdSessionLock, registryOf, ScriptedClient, tempDir } from './support.ts';
+
+/** The core seal still writes the root file until the producer moves to the plugin. */
+function sealedMetricsPath(workspace: string, sessionId: string): string {
+  return path.join(workspace, '.migent', 'sessions', sessionId, 'metrics.json');
+}
 
 const PLAN = `\
 id: plan
@@ -556,13 +561,11 @@ test('a completed session seals metrics and later normalization leaves the file'
   };
   expect(sealed.status).toBe('completed');
   expect(sealed.totals.usage.input_tokens).toBe(4);
-  expect(readSealedMetrics(workspace, result.sessionId)).toEqual({ state: 'ok', metrics: sealed });
 
   provider.readUsage = () => ({ values: { ...blank(), input_tokens: 99 }, cumulative: [] });
   const derived = sessionMetrics(workspace, result.sessionId, registryOf({ fake: provider }));
   expect((derived.totals as { usage: TurnUsage }).usage.input_tokens).toBe(99);
   expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual(sealed);
-  expect(listSealedMetrics(workspace, { workflow: 'once', status: 'completed', limit: null })).toEqual([sealed]);
 });
 
 test('an agent session does not seal metrics', async () => {
@@ -593,8 +596,6 @@ test('a blocked session has no sealed metrics and is omitted from the list', asy
   );
   expect(result.status).toBe('blocked');
   expect(existsSync(sealedMetricsPath(workspace, result.sessionId))).toBe(false);
-  expect(readSealedMetrics(workspace, result.sessionId)).toEqual({ state: 'missing' });
-  expect(listSealedMetrics(workspace, { workflow: null, status: null, limit: null })).toEqual([]);
 });
 
 test('a corrupt metrics file is reported and left in place', () => {
@@ -604,9 +605,7 @@ test('a corrupt metrics file is reported and left in place', () => {
   writeFileSync(path.join(sessions, 'status.json'), JSON.stringify({ workflow_id: 'once', status: 'completed', updated_at: at(1) }));
   const file = path.join(sessions, 'metrics.json');
   writeFileSync(file, 'not-json');
-  expect(readSealedMetrics(workspace, 'kept')).toEqual({ state: 'corrupt' });
   expect(readFileSync(file, 'utf8')).toBe('not-json');
-  expect(listSealedMetrics(workspace, { workflow: null, status: null, limit: null })).toEqual([]);
 });
 
 test('mixed legacy CLI turns use their own parsers without inventing an execution client', () => {

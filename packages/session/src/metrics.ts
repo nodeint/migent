@@ -57,29 +57,18 @@ export function listSessionMetrics(
   return rows.map((row) => sessionMetrics(workspace, row[1] ?? '', clients));
 }
 
-export function sealedMetricsPath(workspace: string, sessionId: string): string {
+function sealedMetricsPath(workspace: string, sessionId: string): string {
   return path.join(workspace, MIGENT_DIRNAME, SESSIONS_DIRNAME, sessionId, 'metrics.json');
 }
 
-/** The sealed file, or why it cannot be used. A present file is never rewritten. */
-export function readSealedMetrics(
-  workspace: string,
-  sessionId: string,
-): { state: 'ok'; metrics: Record<string, unknown> } | { state: 'missing' } | { state: 'corrupt' } {
-  let text: string;
+/** Whether the legacy root file exists. A present file, even a corrupt one, is never rewritten. */
+function rootMetricsPresent(workspace: string, sessionId: string): boolean {
   try {
-    text = readFileSync(sealedMetricsPath(workspace, sessionId), 'utf8');
+    readFileSync(sealedMetricsPath(workspace, sessionId), 'utf8');
+    return true;
   } catch {
-    return { state: 'missing' };
+    return false;
   }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    return { state: 'corrupt' };
-  }
-  if (!isRecord(parsed)) return { state: 'corrupt' };
-  return { state: 'ok', metrics: parsed };
 }
 
 /** Write metrics.json once when a session is completed. An existing file stays. */
@@ -88,32 +77,10 @@ export function sealSessionMetrics(
   sessionId: string,
   clients: ClientRegistry,
 ): void {
-  if (readSealedMetrics(workspace, sessionId).state !== 'missing') return;
+  if (rootMetricsPresent(workspace, sessionId)) return;
   const metrics = sessionMetrics(workspace, sessionId, clients);
   if (metrics.status !== 'completed') return;
   writeJsonAtomic(sealedMetricsPath(workspace, sessionId), metrics);
-}
-
-/** Sealed sessions, newest first. Sessions without a usable metrics.json are omitted. */
-export function listSealedMetrics(
-  workspace: string,
-  filters: { workflow: string | null; status: string | null; limit: number | null },
-): Record<string, unknown>[] {
-  const sealed: Record<string, unknown>[] = [];
-  for (const row of listSessionRows(workspace)) {
-    const read = readSealedMetrics(workspace, row[1] ?? '');
-    if (read.state !== 'ok') continue;
-    sealed.push(read.metrics);
-  }
-  let rows = sealed;
-  if ((filters.workflow !== null && filters.workflow !== undefined)) {
-    rows = rows.filter((row) => row.workflow_id === filters.workflow);
-  }
-  if ((filters.status !== null && filters.status !== undefined)) {
-    rows = rows.filter((row) => row.status === filters.status);
-  }
-  if ((filters.limit !== null && filters.limit !== undefined)) rows = rows.slice(0, filters.limit);
-  return rows;
 }
 
 /** What one session's metrics are read from. */
