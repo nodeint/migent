@@ -193,10 +193,15 @@ function writeArtifact(prompt, step) {
   // The latest Execution block wins: replayed history can hold earlier ones.
   const directory = [...prompt.matchAll(/^- Artifacts: `(.+)`$/gm)].at(-1)?.[1];
   const single = [...prompt.matchAll(/^Write the artifact as `(.+?)`/gm)].at(-1)?.[1];
-  const listAt = prompt.lastIndexOf("Write these artifacts in the artifacts directory:");
-  const names = single
-    ? [single]
-    : listAt < 0 ? [] : [...prompt.slice(listAt).split("\n").slice(1).join("\n").matchAll(/^- `(.+?)`/gm)].map((match) => match[1]);
+  const listed = [];
+  for (const lead of ["Write these artifacts in the artifacts directory:", "Write these only for the decision you choose; skip them for other decisions:"]) {
+    const listAt = prompt.lastIndexOf(lead);
+    if (listAt < 0) continue;
+    const block = prompt.slice(listAt).split("\n").slice(1);
+    const end = block.findIndex((line) => !line.startsWith("- `"));
+    listed.push(...block.slice(0, end < 0 ? undefined : end).map((line) => line.match(/^- `(.+?)`/)?.[1]).filter(Boolean));
+  }
+  const names = single ? [single] : listed;
   if (!directory || names.length === 0) return;
   mkdirSync(directory, { recursive: true });
   for (const name of names) writeFileSync(path.join(directory, name), typeof step.artifact === "string" ? step.artifact : "# ready\n", "utf8");

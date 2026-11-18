@@ -235,8 +235,8 @@ test("an unselected decision's absent file does not fail the gate", async () => 
   expect(execution.status).toBe('completed');
   // The producer prompt names each file with the decision that requires it.
   const prompt = client.calls[0]?.prompt ?? '';
-  expect(prompt).toContain('`findings.md` (with `decision: redo`)');
-  expect(prompt).toContain('`comments.md` (with `decision: done`) [optional]');
+  expect(prompt).toContain('`findings.md` only when you choose `decision: redo`');
+  expect(prompt).toContain('`comments.md` only when you choose `decision: done` [optional]');
 });
 
 // Finding 7: session show lists absent optional artifacts as not produced.

@@ -195,3 +195,22 @@ test('a stage without declared artifacts still names the artifact directory for 
   expect(reminder).not.toContain('Previous artifacts');
   expect(renderProviderPrompt('body', { contract: true, handoffFile: '/h.json' })).not.toContain('Artifacts:');
 });
+
+test('decision-scoped artifacts are listed under a conditional lead, never an unconditional one', () => {
+  const only = renderProviderPrompt('body', {
+    contract: true, turn: 'start', handoffFile: '/h.json', artifactDirectory: '/a',
+    artifactFiles: [{ file: 'review.md', description: 'Write only when revise.', required: true, decision: 'revise' }],
+  });
+  expect(only).not.toContain('Write these artifacts');
+  expect(only).toContain('Write these only for the decision you choose; skip them for other decisions:\n- `review.md` only when you choose `decision: revise`: Write only when revise.');
+
+  const mixed = renderProviderPrompt('body', {
+    contract: true, turn: 'start', handoffFile: '/h.json', artifactDirectory: '/a',
+    artifactFiles: [
+      { file: 'main.md', description: 'Main.', required: true, decision: null },
+      { file: 'findings.md', description: null, required: true, decision: 'redo' },
+      { file: 'comments.md', description: 'Notes.', required: false, decision: 'done' },
+    ],
+  });
+  expect(mixed).toContain('Write these artifacts in the artifacts directory:\n- `main.md`: Main.\nWrite these only for the decision you choose; skip them for other decisions:\n- `findings.md` only when you choose `decision: redo`\n- `comments.md` only when you choose `decision: done` [optional]: Notes.');
+});
