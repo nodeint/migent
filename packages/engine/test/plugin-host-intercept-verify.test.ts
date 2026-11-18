@@ -77,7 +77,7 @@ test('the input handed to an interceptor is deeply frozen and detached', async (
   const host = {
     invokeInterceptor: async (_plugin: unknown, spec: { run(call: never): Promise<unknown> }) => {
       await spec.run({} as never);
-      return null;
+      return { value: null, invocationId: 'i', calls: [], notes: [], evidence: [], commit: () => undefined };
     },
   };
   const selected: unknown = { id: 'demo' };
@@ -88,7 +88,7 @@ test('the input handed to an interceptor is deeply frozen and detached', async (
   const chain = new HostInterceptorChain([entry], host as never);
   await chain.run({
     phase: 'before', scope: scope as never, identity: identity as never,
-    value: value as never, judge: () => ({ kind: 'rejected', reason: 'n/a' }),
+    value: value as never, retry: { take: () => false }, fingerprint: () => null, judge: () => ({ kind: 'rejected', reason: 'n/a' }),
   });
   expect(seen.every((item) => Object.isFrozen(item))).toBe(true);
   expect(value).toEqual({ a: { b: [1, { c: 2 }] } });

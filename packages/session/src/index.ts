@@ -98,6 +98,7 @@ export {
   selectRunWorkflow,
   selectSessionWorkflow,
 } from './session-selection.js';
+export { lastBasisSeq, readBasisSeq, readSessionSnapshot } from './session-snapshot.js';
 export type { CancelledReplyOrigin, ExecutionSaveInput, HumanInput, LoadOrCreateInput, ManualCompletionResult, QuestionAnswerRecord, SessionRecordFallback, SessionRecordInit, SkipDetails } from './session-store.js';
 export {
   AgentSessionRecord,

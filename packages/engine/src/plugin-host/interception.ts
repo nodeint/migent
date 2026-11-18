@@ -9,6 +9,7 @@ import type {
 import type { PlainData } from '../runtime/plain-data.js';
 import type { AgentCaller } from './agent-call.js';
 import type { PluginRegistrations } from './context.js';
+import { type ReadEvidence, readsStale, type SessionReads } from './evidence.js';
 import { type PluginFailure, recordPluginFailure } from './holds.js';
 import type { SelectedPlugin } from './selection.js';
 
@@ -35,8 +36,39 @@ export type InterceptorInvocation<T> = {
   judge(raw: unknown): InterceptorVerdict<T>;
 };
 
+/**
+ * One settled interceptor invocation. An accepted proposal is not recorded yet: `commit` records it as applied, or,
+ * when the pass is discarded as stale, as rejected with reason `stale`, so no discarded change is called applied.
+ */
+export type SettledInterceptor<T> = {
+  readonly value: T | null;
+  readonly invocationId: string;
+  /** The agent calls and notes of the invocation, kept on its stale failure so inspection still counts them. */
+  readonly calls: readonly unknown[];
+  readonly notes: readonly unknown[];
+  readonly evidence: readonly ReadEvidence[];
+  commit(discarded: boolean): void;
+};
+
+/** Where a stale failure is recorded: the interceptor invocation, with what it already recorded. */
+export type StaleAt = {
+  readonly hook: string;
+  readonly invocationId: string;
+  readonly calls: readonly unknown[];
+  readonly notes: readonly unknown[];
+};
+
 type Runner = {
-  invokeInterceptor<T>(plugin: SelectedPlugin, spec: InterceptorInvocation<T>): Promise<T | null>;
+  invokeInterceptor<T>(plugin: SelectedPlugin, spec: InterceptorInvocation<T>): Promise<SettledInterceptor<T>>;
+  /** Records `plugin.failed: stale` for the invocation, under the plugin's `on_error`. */
+  reportStale(plugin: SelectedPlugin, at: StaleAt, error: string): void;
+};
+
+/** One interceptor's part in a pass: what it read, and whether its accepted proposal changed the value. */
+type Taken = {
+  readonly plugin: SelectedPlugin;
+  readonly settled: SettledInterceptor<Step>;
+  readonly changed: boolean;
 };
 
 type Entry = { readonly plugin: SelectedPlugin; readonly registrations: PluginRegistrations['interceptors'] };
@@ -54,28 +86,70 @@ const recorded = (proposal: InterceptProposal): Record<string, unknown> =>
  * the value the previous accepted proposal produced. A failed or refused interceptor leaves the value unchanged.
  */
 export class HostInterceptorChain implements InterceptorChain {
-  constructor(private readonly entries: readonly Entry[], private readonly host: Runner) {}
+  constructor(
+    private readonly entries: readonly Entry[],
+    private readonly host: Runner,
+    private readonly reads?: SessionReads,
+  ) {}
 
   public has(operationId: string, phase: InterceptPhase): boolean {
     return this.steps(operationId, phase).length > 0;
   }
 
+  /**
+   * Runs the pass, then checks the evidence it captured. On a mismatch the whole pass is discarded and re-run once
+   * per operation cycle (D10). A second mismatch records `stale` and the value continues unmodified (D8).
+   */
   public async run(call: InterceptionCall): Promise<InterceptionResult> {
+    for (;;) {
+      const fingerprint = JSON.stringify(call.fingerprint());
+      const { result, taken } = await this.pass(call);
+      const stale = this.staleTaken(taken, JSON.stringify(call.fingerprint()) !== fingerprint);
+      if (stale.length === 0) {
+        for (const { settled } of taken) settled.commit(false);
+        return result;
+      }
+      // The whole pass is discarded: no proposal of it is recorded as applied.
+      for (const { settled } of taken) settled.commit(true);
+      if (call.retry.take()) continue;
+      const hook = `operation:${call.identity.operationId}:${call.phase}`;
+      for (const { plugin, settled } of stale) {
+        this.host.reportStale(
+          plugin, { hook, invocationId: settled.invocationId, calls: settled.calls, notes: settled.notes },
+          'The facts the interceptor relied on changed again; its proposal was discarded.',
+        );
+      }
+      return { value: call.value, shortCircuit: false };
+    }
+  }
+
+  private staleTaken(taken: readonly Taken[], fingerprintMoved: boolean): Taken[] {
+    const { reads } = this;
+    return taken.filter((item) =>
+      (fingerprintMoved && item.changed) || (reads !== undefined && readsStale(reads, item.settled.evidence)));
+  }
+
+  private async pass(call: InterceptionCall): Promise<{ result: InterceptionResult; taken: Taken[] }> {
     const { phase, identity, scope } = call;
     let {value} = call;
+    const taken: Taken[] = [];
     for (const { plugin, interceptor } of this.steps(identity.operationId, phase)) {
       const seen = value;
-      const accepted = await this.host.invokeInterceptor<Step>(plugin, {
+      const settled = await this.host.invokeInterceptor<Step>(plugin, {
         hook: `operation:${identity.operationId}:${phase}`,
         stageId: scope.stageId,
         run: (context) => callInterceptor(interceptor, { phase, seen }, context),
         judge: (raw) => judgeProposal(call, seen, raw),
       });
+      const accepted = settled.value;
+      const changed = accepted !== null
+        && (accepted.shortCircuit || JSON.stringify(accepted.value) !== JSON.stringify(seen));
+      taken.push({ plugin, settled, changed });
       if (accepted === null) continue;
       value = accepted.value;
-      if (accepted.shortCircuit) return { value, shortCircuit: true };
+      if (accepted.shortCircuit) return { result: { value, shortCircuit: true }, taken };
     }
-    return { value, shortCircuit: false };
+    return { result: { value, shortCircuit: false }, taken };
   }
 
   private steps(operationId: string, phase: InterceptPhase): StepEntry[] {
@@ -122,8 +196,8 @@ function judgeProposal(call: InterceptionCall, seen: PlainData, raw: unknown): I
 }
 
 /**
- * Records what one settled interceptor invocation decided. Returns the accepted value, or null when the invocation
- * failed or its proposal was refused, so the caller keeps its value unchanged.
+ * Records what one settled interceptor invocation decided. A failure or a refused proposal is recorded now and
+ * yields no value. An accepted proposal is recorded by `commit`, once the caller knows whether the pass was stale.
  */
 export function settleInterceptor<T>(
   log: { workspace: string; sessionId: string; directory: string },
@@ -136,23 +210,30 @@ export function settleInterceptor<T>(
     notes: readonly unknown[];
     onError: PluginFailure['onError'];
   },
-): T | null {
+): Omit<SettledInterceptor<T>, 'evidence'> {
   const { plugin, invocationId, spec, outcome, caller, notes, onError } = settled;
   const calls = caller?.calls ?? [];
   let failure: Extract<InterceptorOutcome, { kind: 'fail' }>;
   if (outcome.kind === 'ok') {
     const verdict = spec.judge(outcome.value);
-    sessionEventLog.record(log.directory, {
-      event: 'plugin.decision',
-      timestamp: utcNow(),
-      data: {
-        plugin: plugin.id, invocation_id: invocationId, proposed: verdict.proposed, results: [verdict.result],
-        ...(calls.length === 0 ? {} : { agent_calls: calls }),
-        ...(notes.length === 0 ? {} : { notes }),
-      },
-    });
-    sessionEventLog.commit(log.workspace, log.directory);
-    if (verdict.kind === 'accepted') return verdict.value;
+    const record = (result: Record<string, unknown>): void => {
+      sessionEventLog.record(log.directory, {
+        event: 'plugin.decision',
+        timestamp: utcNow(),
+        data: {
+          plugin: plugin.id, invocation_id: invocationId, proposed: verdict.proposed, results: [result],
+          ...(calls.length === 0 ? {} : { agent_calls: calls }),
+          ...(notes.length === 0 ? {} : { notes }),
+        },
+      });
+      sessionEventLog.commit(log.workspace, log.directory);
+    };
+    if (verdict.kind === 'accepted') {
+      const discarded = { kind: verdict.result.kind, status: 'rejected', reason: 'stale' };
+      const commit = (drop: boolean): void => { record(drop ? discarded : verdict.result); };
+      return { value: verdict.value, invocationId, calls, notes, commit };
+    }
+    record(verdict.result);
     failure = { kind: 'fail', reason: 'invalid_intent', error: verdict.reason };
   } else if (caller?.unavailable !== null && caller?.unavailable !== undefined && outcome.reason === 'error') {
     failure = { kind: 'fail', reason: 'unavailable', error: caller.unavailable };
@@ -161,7 +242,7 @@ export function settleInterceptor<T>(
     plugin: plugin.id, hook: spec.hook, invocationId, reason: failure.reason, error: failure.error, onError,
     agentCalls: calls, notes,
   });
-  return null;
+  return { value: null, invocationId, calls, notes, commit: () => undefined };
 }
 
 /** Records `plugin.hook_invoked` before a plugin runs, so the invocation is visible even if the run ends. */

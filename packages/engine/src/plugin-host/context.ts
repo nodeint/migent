@@ -9,9 +9,12 @@ import {
   type PluginHook,
   type PluginInterceptor,
   type PluginManifest,
+  type PluginResumeFacts,
+  type PluginSessionSnapshot,
 } from '@nodeint/migent-contracts';
 
 import type { AgentCaller } from './agent-call.js';
+import { hashFacts, type SessionReads } from './evidence.js';
 import type { InvocationState } from './invocation.js';
 
 /** What an activation registered. Kept only when `activate` settles successfully. */
@@ -29,6 +32,8 @@ interface ContextSources {
   readonly options: Readonly<Record<string, unknown>>;
   /** Reads one core config key. Called only for keys the manifest declares. */
   readonly readCore: (key: string) => unknown;
+  /** The core's session reads. Absent means `call.session` rejects. */
+  readonly reads?: SessionReads;
 }
 
 function deepFreeze<T>(value: T): T {
@@ -61,6 +66,29 @@ function sharedMembers(sources: ContextSources, invocation: InvocationState) {
   };
 }
 
+/**
+ * One `call.session` read. It is declared in `uses.session`, rejected once the invocation settled (without
+ * reading), and recorded as evidence by `read`. The result is detached and deeply frozen.
+ */
+async function readSession<T>(
+  bound: { readonly sources: ContextSources; readonly invocation: InvocationState },
+  kind: 'snapshot' | 'resume_facts',
+  read: (reads: SessionReads) => T,
+): Promise<T> {
+  const { sources, invocation } = bound;
+  const { manifest, reads } = sources;
+  if (!manifest.uses.session.includes(kind)) {
+    throw new Error(`Plugin "${manifest.id}" did not declare "${kind}" in uses.session.`);
+  }
+  if (!invocation.open) throw new PluginContextClosed('session.' + kind);
+  if (reads === undefined) throw new Error(`Plugin "${manifest.id}" has no session to read.`);
+  const value = read(reads);
+  // The read is synchronous, but the plugin may await long after; a read that lands after settlement is refused.
+  await Promise.resolve();
+  if (!invocation.open) throw new PluginContextClosed('session.' + kind);
+  return detached(value);
+}
+
 /** The per-invocation context: a new, frozen object for every interceptor and handler call. */
 export function buildCallContext(
   sources: ContextSources,
@@ -79,6 +107,19 @@ export function buildCallContext(
         if (caller === null) return Promise.reject(new Error(`Plugin "${manifest.id}" has no agent configured.`));
         return caller.invokeAgent(prompt);
       },
+    }),
+    session: Object.freeze({
+      snapshot: (): Promise<PluginSessionSnapshot> => readSession({ sources, invocation }, 'snapshot', (reads) => {
+        const snapshot = reads.snapshot();
+        invocation.recordRead({ kind: 'snapshot', basisSeq: snapshot.basis_seq });
+        return snapshot;
+      }),
+      resumeFacts: (executionId: string): Promise<PluginResumeFacts> =>
+        readSession({ sources, invocation }, 'resume_facts', (reads) => {
+          const facts = reads.resumeFacts(executionId);
+          invocation.recordRead({ kind: 'resume_facts', executionId, hash: hashFacts(facts) });
+          return facts;
+        }),
     }),
     artifacts: Object.freeze({
       propose: (name: string, content: string): PluginEventProposal => {

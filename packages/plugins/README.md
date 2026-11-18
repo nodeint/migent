@@ -13,6 +13,8 @@ First-party Migent plugins and their static registry. Internal; no stable public
   context; each handler gets its own per-invocation `call` context. Keep per-invocation state out of module
   scope: two stages can run one handler concurrently. The core writes an artifact and then records it, so a
   handler must not assume a written file has a `plugin.decision`; `session show` reports the ones that lack it.
+- `call.session.snapshot()` and `resumeFacts()` need `uses.session`. Never cache their result across invocations: a
+  changed read makes the core discard the result and re-run the handler once, then record `stale`.
 - Register a plugin in `src/registry.ts`. The registry is empty until a feature plugin lands.
 
 ## Key symbols

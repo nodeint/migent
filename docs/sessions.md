@@ -128,6 +128,18 @@ The session-level files have distinct purposes:
   the run is cancelled, the provider process is stopped before the failure is recorded, a later call starts no
   process, and it rejects with `PluginContextClosed`.
   `session show` reports the plugin facts from these events; see [CLI](cli.md#inspect-sessions).
+- A plugin that declares `uses.session` can read `call.session.snapshot()` and
+  `call.session.resumeFacts(executionId)` during an invocation. The core records the read: a `resumeFacts` hash, and
+  the snapshot's `basis_seq`, the last event seq that is not a `plugin.*` event. An invocation that proposes a `fresh`
+  artifact is also checked against the session as it was when the invocation started. If a read changed by the time
+  the result is applied, the result is discarded and the pass or handler runs once more; a second change records
+  `plugin.failed` with reason `stale` (tied to the invocation, keeping its agent calls and notes), and the value
+  continues unmodified. An interceptor proposal from a discarded pass is recorded as `rejected` with reason
+  `stale`, never `applied`. A handler's agent calls from a discarded attempt stay recorded, and its retry continues
+  the call numbering. Whole-invocation validation runs before the freshness check, so an invalid result is
+  `invalid_intent`, not `stale`. The snapshot's `events` are the ordered parsed events (`executionId`, `stageId`,
+  `summary`, `data`, `raw`). A read after the invocation
+  settles rejects with `PluginContextClosed`.
 - `task.md` is the task body. A one-line `session run --workflow --task` writes
   that sentence here. A prepared session creates an empty file for you to write, along with any
   other files that belong next to it. Stage prompts name this path and the

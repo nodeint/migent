@@ -27,6 +27,16 @@
   `withPluginScope`, which settles every invocation before the caller releases the lock, and `session` exposes
   `completeManuallyHeld` for a caller that already holds it. Manual completion is unchanged. No plugin is
   registered, so no session changes. ([#166](https://github.com/nodeint/migent/issues/166))
+- Session reads and freshness. A plugin that declares `uses.session` reads `call.session.snapshot()` (basis seq,
+  status, executions, events, workflow, normalized turns, exit anomalies) and `call.session.resumeFacts(executionId)`;
+  a read after the invocation settles rejects without reading. The core records what each invocation read, and an
+  operation may declare an `evidence` fingerprint (`agent.turn` declares none). When a read changed, or a `fresh`
+  artifact's session moved, the result is discarded and the pass or invocation re-runs once per operation cycle or
+  trigger; a second change records `plugin.failed` with reason `stale` and the value continues unmodified. A
+  discarded interceptor proposal is recorded as `rejected` (`stale`), and a retried handler keeps its first attempt's
+  agent calls. Plugin
+  events never make evidence stale. No plugin is registered, so no session changes.
+  ([#166](https://github.com/nodeint/migent/issues/166))
 - Operation interception. A plugin registers `operations.intercept('agent.turn', { before, after })`, and the
   runtime runs the interceptors of an operation in chain order around its handler. `agent.turn` lets a `before`
   interceptor patch `prompt`; an undeclared field, an invalid patch, or a failing, timed-out or cancelled

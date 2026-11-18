@@ -15,6 +15,9 @@ export type Judgement =
   | { readonly kind: 'accepted'; readonly value: PlainData; readonly shortCircuit: boolean }
   | { readonly kind: 'rejected'; readonly reason: string };
 
+/** One re-run per operation cycle, shared by every pass of that cycle (D10). `take` is true at most once. */
+export type RetryBudget = { take(): boolean };
+
 /** One pass over the interceptors of one phase of one cycle. */
 export type InterceptionCall = {
   readonly phase: InterceptPhase;
@@ -22,6 +25,13 @@ export type InterceptionCall = {
   readonly identity: LogicalIdentity;
   /** The request input (before) or the handler output (after) the first interceptor sees. */
   readonly value: PlainData;
+  /** Shared by the before and after passes of one cycle, so a cycle never re-runs more than once in total. */
+  readonly retry: RetryBudget;
+  /**
+   * The operation's own evidence fingerprint of the facts its result depends on, or null when it declares none.
+   * The chain compares it before and after a pass and re-runs the pass when it changed.
+   */
+  fingerprint(): PlainData | null;
   /** Judges a proposal against the value the proposing interceptor saw. */
   judge(current: PlainData, proposal: InterceptProposal): Judgement;
 };

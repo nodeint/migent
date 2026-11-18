@@ -157,6 +157,45 @@ export const PluginAgentResult = Type.Object(
 );
 export type PluginAgentResult = Static<typeof PluginAgentResult>;
 
+/** One turn with usage normalized by the core, the same path the resume facts use. */
+export interface PluginSessionTurn {
+  readonly execution_id: string;
+  readonly client: string | null;
+  readonly usage: Readonly<Record<string, number | null>>;
+  readonly captured: boolean;
+}
+
+/** One parsed session event, ordered by seq. `raw` is the record as stored. */
+export interface PluginSessionEvent {
+  readonly v: number;
+  readonly seq: number | null;
+  readonly event: string;
+  readonly timestamp: string;
+  readonly executionId: string | null;
+  readonly stageId: string | null;
+  readonly summary: string | null;
+  readonly data: Readonly<Record<string, unknown>>;
+  readonly raw: Readonly<Record<string, unknown>>;
+}
+
+/** Detached facts about one session at one moment. `basis_seq` is the last non-`plugin.*` event seq. */
+export interface PluginSessionSnapshot {
+  readonly basis_seq: number | null;
+  readonly status: Readonly<Record<string, unknown>>;
+  readonly corrupt: boolean;
+  readonly executions: readonly Readonly<Record<string, unknown>>[];
+  readonly events: readonly PluginSessionEvent[];
+  readonly workflow: Readonly<Record<string, unknown>> | null;
+  readonly turns: readonly PluginSessionTurn[];
+  readonly exit_anomalies: readonly Readonly<Record<string, unknown>>[];
+}
+
+/** What the resume gate knows about one execution. Unknown values are null. */
+export interface PluginResumeFacts {
+  readonly completedAt: string | null;
+  readonly contextTokens: number | null;
+}
+
 /** Thrown by a context member used after its invocation settled, or by a registration after `activate` settled. */
 export class PluginContextClosed extends Error {
   constructor(member: string) {
@@ -184,6 +223,14 @@ export interface PluginSharedContext {
 export interface PluginCallContext extends PluginSharedContext {
   readonly agents: {
     readonly invoke: (prompt: string) => Promise<PluginAgentResult>;
+  };
+  /**
+   * Detached, frozen reads, declared in `uses.session`. The core records what each read returned. If it changes
+   * before the invocation's proposal takes effect, the core discards the proposal and re-runs once (D10).
+   */
+  readonly session: {
+    readonly snapshot: () => Promise<PluginSessionSnapshot>;
+    readonly resumeFacts: (executionId: string) => Promise<PluginResumeFacts>;
   };
   readonly artifacts: {
     /** Builds the proposal for a declared artifact claim. Pure: nothing is written. */

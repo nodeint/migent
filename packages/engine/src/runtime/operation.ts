@@ -42,6 +42,11 @@ export type Operation<Input extends PlainData, Output extends PlainData, Change>
   readonly id: string;
   /** Absent means no interceptor can change this operation. */
   readonly interceptable?: Interceptable;
+  /**
+   * Fingerprints exactly the facts this operation's result depends on. An interceptor pass that proposed a change
+   * is re-run once when the fingerprint moved while it ran. Absent means no operation evidence.
+   */
+  evidence?(input: Input): PlainData;
   acceptsInput(input: PlainData): input is Input;
   producesOutput(output: PlainData): output is Output;
   handle(input: Input): Promise<HandlerResult<Output, Change>>;

@@ -1,3 +1,5 @@
+import type { ReadEvidence } from './evidence.js';
+
 /** One note a plugin logged during an invocation. */
 export interface PluginNote {
   readonly level: 'info' | 'warn';
@@ -11,6 +13,7 @@ export interface PluginNote {
  */
 export class InvocationState {
   private readonly recorded: PluginNote[] = [];
+  private readonly reads: ReadEvidence[] = [];
   private isOpen = true;
 
   public get open(): boolean {
@@ -19,6 +22,15 @@ export class InvocationState {
 
   public get notes(): readonly PluginNote[] {
     return [...this.recorded];
+  }
+
+  /** What this invocation's `session` reads returned. Empty when it read nothing. */
+  public get evidence(): readonly ReadEvidence[] {
+    return [...this.reads];
+  }
+
+  public recordRead(read: ReadEvidence): void {
+    this.reads.push(read);
   }
 
   /** A note is accepted only while the invocation's result can still be recorded. */

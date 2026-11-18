@@ -1,6 +1,6 @@
 import { debugEnabled, log } from '@nodeint/migent-kernel';
 
-import type { InterceptorChain, InterceptProposal, Judgement } from './interception.js';
+import type { InterceptorChain, InterceptProposal, Judgement, RetryBudget } from './interception.js';
 import type {
   AnyOperation,
   ChangeApplier,
@@ -158,10 +158,12 @@ export class OperationRuntime<Change> {
     const { identity } = request;
     const chain = this.interceptors;
     let {input} = request;
+    const retry = oneRetry();
+    const fingerprint = (at: PlainData) => (): PlainData | null => operation.evidence?.(at) ?? null;
     let supplied: { readonly output: PlainData } | null = null;
     if (chain?.has(operation.id, 'before') === true) {
       const passed = await chain.run({
-        phase: 'before', scope, identity, value: input,
+        phase: 'before', scope, identity, value: input, retry, fingerprint: fingerprint(request.input),
         judge: (current, proposal) => judge({ operation, phase: 'before' }, current, proposal),
       });
       if (passed.shortCircuit) supplied = { output: passed.value };
@@ -172,12 +174,17 @@ export class OperationRuntime<Change> {
       : { kind: 'succeeded' as const, output: supplied.output, changes: [] };
     if (result.kind !== 'succeeded' || chain?.has(operation.id, 'after') !== true) return result;
     const passed = await chain.run({
-      phase: 'after', scope, identity, value: result.output,
+      phase: 'after', scope, identity, value: result.output, retry, fingerprint: fingerprint(input),
       judge: (current, proposal) => judge({ operation, phase: 'after' }, current, proposal),
     });
     return { ...result, output: passed.value };
   }
 }
+
+const oneRetry = (): RetryBudget => {
+  let used = false;
+  return { take: () => !used && (used = true) };
+};
 
 const rejected = (reason: string): Judgement => ({ kind: 'rejected', reason });
 
