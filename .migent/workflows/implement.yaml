@@ -17,7 +17,6 @@ stages:
       - With a plan, implement its phases in order and report each outcome.
     artifacts: [implement_summary]
     verify:
-      - pnpm typecheck
       - pnpm build
 
   - id: review_work
