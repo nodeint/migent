@@ -59,6 +59,8 @@
 - A workflow file that exists but fails validation is now reported as `Workflow <id> is invalid` with the validation
   error, instead of `Workflow not found`. A `downstream` entry naming such a file reports that it failed to load.
   ([#162](https://github.com/nodeint/migent/issues/162))
+- Agent stage prompts now always list the execution artifact directory, even when the stage declares no artifact,
+  and point supporting files there. ([#172](https://github.com/nodeint/migent/pull/172))
 
 ## 0.8.0
 
