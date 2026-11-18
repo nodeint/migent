@@ -5,7 +5,7 @@ import { createWorkflowSession, SessionStore } from '@nodeint/migent-session';
 import { afterEach, expect, test } from 'vitest';
 
 import { AgentToolRunner, executeNamedWorkflow } from '../src/index.ts';
-import { registryOf, ScriptedClient, tempDir as makeTempDir } from './support.ts';
+import { ageProviderEvents,registryOf, ScriptedClient, tempDir as makeTempDir } from './support.ts';
 
 const roots: string[] = [];
 
@@ -79,6 +79,7 @@ function ageAll(workspace: string, sessionId: string): void {
     const file = path.join(workspace, '.migent', 'sessions', sessionId, 'executions', row.executionId, 'execution.json');
     const metadata = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
     writeFileSync(file, JSON.stringify({ ...metadata, completed_at: '2026-01-01T00:00:00.000+00:00' }));
+    ageProviderEvents(file);
   }
 }
 

@@ -9,6 +9,7 @@ import { expect, test } from 'vitest';
 import { continueAgent, dispatchAgent } from '../src/commands/agent.ts';
 import { cliHooks } from '../src/hooks.ts';
 import { main } from '../src/index.ts';
+import { ageProviderEvents } from './resume-support.ts';
 import { capture, registryOf, removeWorkspace, ScriptedClient, writeFakeWorkflowWorkspace } from './support.ts';
 
 const question = 'status: question\n\n' + JSON.stringify({ schema_version: 1, questions: [{
@@ -30,6 +31,7 @@ async function asked(onExpired: string | null, responses: string[]) {
   const file = path.join(root, '.migent/sessions', id, 'executions', readdirSync(path.join(root, '.migent/sessions', id, 'executions'))[0]!, 'execution.json');
   const metadata = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
   writeFileSync(file, JSON.stringify({ ...metadata, completed_at: '2026-01-01T00:00:00.000+00:00' }));
+  ageProviderEvents(file);
   return { root, provider, runner, id };
 }
 
@@ -105,6 +107,7 @@ async function cancelledRole(onExpired: string, responses: string[]) {
   const file = path.join(directory, readdirSync(directory)[0]!, 'execution.json');
   const metadata = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
   writeFileSync(file, JSON.stringify({ ...metadata, completed_at: '2026-01-01T00:00:00.000+00:00' }));
+  ageProviderEvents(file);
   const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   return { root, id, provider, runner, file };
 }
@@ -151,6 +154,7 @@ test('a used human decision does not exempt the same source from a later expiry 
     expect((await capture(() => continueAgent(run.root, args))).value).toBe(9);
     const metadata = JSON.parse(readFileSync(run.file, 'utf8')) as Record<string, unknown>;
     writeFileSync(run.file, JSON.stringify({ ...metadata, completed_at: '2026-01-01T00:00:00.000+00:00' }));
+    ageProviderEvents(run.file);
     const again = await capture(() => continueAgent(run.root, { sessionId: run.id, reply: 'New only', runner: run.runner }));
     expect(again.value).toBe(10);
     expect(new SessionStore(run.root).pendingResumes(run.id)).toHaveLength(1);
@@ -271,6 +275,7 @@ async function cancelledLaterTurn(onExpired: string, responses: string[]) {
   const metadata = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
   expect(metadata.status).toBe('cancelled');
   writeFileSync(file, JSON.stringify({ ...metadata, completed_at: '2026-01-01T00:00:00.000+00:00' }));
+  ageProviderEvents(file);
   return { root, id, provider, runner, file };
 }
 

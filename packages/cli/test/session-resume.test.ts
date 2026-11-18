@@ -9,7 +9,7 @@ import { expect, test } from 'vitest';
 import { executeWorkflow } from '../src/commands/execute.ts';
 import { cliHooks } from '../src/hooks.ts';
 import { main } from '../src/index.ts';
-import { question, waiting } from './resume-support.ts';
+import { ageProviderEvents,question, waiting } from './resume-support.ts';
 import { capture, registryOf, removeWorkspace, ScriptedClient, writeFakeWorkflowWorkspace } from './support.ts';
 
 /** `main` clears the runner hook when it returns, so every command sets it again. */
@@ -130,6 +130,7 @@ test('a sibling question survives an expired stage: the decision runs only the d
     const file = path.join(dir, planDir, 'execution.json');
     const metadata = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
     writeFileSync(file, JSON.stringify({ ...metadata, completed_at: '2026-01-01T00:00:00.000+00:00' }));
+    ageProviderEvents(file);
     const stopped = await capture(() => { cliHooks.runner = runner; return main(['session', 'continue', run.id, '--stage', 'plan', '--reply', 'New only'], root); });
     // A question outranks an expiry in the session status, but the expiry still waits for its decision.
     expect(stopped.value).toBe(9);
@@ -164,6 +165,7 @@ test('a sibling blocker survives an expired stage: the decision runs only the de
     const file = path.join(dir, planDir, 'execution.json');
     const metadata = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
     writeFileSync(file, JSON.stringify({ ...metadata, completed_at: '2026-01-01T00:00:00.000+00:00' }));
+    ageProviderEvents(file);
     const blockedBefore = JSON.parse(readFileSync(path.join(dir, readdirSync(dir).find((name) => name.includes('-other--')) ?? '', 'execution.json'), 'utf8')) as Record<string, unknown>;
     await capture(() => { cliHooks.runner = runner; return main(['session', 'continue', run.id, '--stage', 'plan', '--reply', 'New only'], root); });
     expect(new SessionStore(root).pendingResumes(run.id).map((stop) => stop.stageId)).toEqual(['plan']);

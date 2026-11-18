@@ -39,7 +39,18 @@ export async function waiting(
   const file = path.join(directory, readdirSync(directory)[0] ?? '', 'execution.json');
   const metadata = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
   writeFileSync(file, JSON.stringify({ ...metadata, completed_at: '2026-01-01T00:00:00.000+00:00' }));
+  ageProviderEvents(file);
   const stopped = await capture(() => { cliHooks.runner = runner; return main(['session', 'continue', id, '--reply', 'New only'], root); });
   expect(stopped.value).toBe(EXIT_EXPIRED);
   return { root, id, provider, runner };
+}
+
+/** Backdates the provider activity events beside an `execution.json`, so a test can age the prompt cache. */
+export function ageProviderEvents(executionFile: string, at = '2026-01-01T00:00:00.000+00:00'): void {
+  const events = path.join(path.dirname(executionFile), '..', '..', 'events.jsonl');
+  const lines = readFileSync(events, 'utf8').split('\n').map((line) => {
+    if (!/"event":"provider\.(item|turn)_completed"/.test(line)) return line;
+    return JSON.stringify({ ...(JSON.parse(line) as Record<string, unknown>), timestamp: at });
+  });
+  writeFileSync(events, lines.join('\n'));
 }

@@ -82,7 +82,7 @@ describe('resumeFacts', () => {
       turn(1, { input: 100, read: 0, write: 50 }),
       turn(2, { input: 10, read: 900, write: 40 }),
     ]);
-    expect(resumeFacts(workspace, { sessionId: 's1', executionId: 'e1' }, incremental)).toEqual({ completedAt: COMPLETED, contextTokens: 950 });
+    expect(resumeFacts(workspace, { sessionId: 's1', executionId: 'e1' }, incremental)).toEqual({ completedAt: COMPLETED, lastActivityAt: COMPLETED, contextTokens: 950 });
   });
 
   test('cumulative usage is normalized against the previous turn', () => {
@@ -93,17 +93,38 @@ describe('resumeFacts', () => {
 
   test('no captured turn leaves the context unknown', () => {
     const { workspace } = session([turn(1, null)]);
-    expect(resumeFacts(workspace, { sessionId: 's1', executionId: 'e1' }, incremental)).toEqual({ completedAt: COMPLETED, contextTokens: null });
+    expect(resumeFacts(workspace, { sessionId: 's1', executionId: 'e1' }, incremental)).toEqual({ completedAt: COMPLETED, lastActivityAt: COMPLETED, contextTokens: null });
   });
 
   test('an unknown execution reads as unknown', () => {
     const { workspace } = session([]);
-    expect(resumeFacts(workspace, { sessionId: 's1', executionId: 'missing' }, incremental)).toEqual({ completedAt: null, contextTokens: null });
+    expect(resumeFacts(workspace, { sessionId: 's1', executionId: 'missing' }, incremental)).toEqual({ completedAt: null, lastActivityAt: null, contextTokens: null });
   });
 
-  test('a cancelled source uses the cancel time', () => {
+  test('cache age follows the last completed item, not heartbeats or the end time', () => {
+    const item = '2026-10-20T00:00:20.000+00:00';
+    const events = [
+      turn(1, { input: 1, read: 1, write: 1 }),
+      { v: 2, seq: 2, event: 'provider.item_completed', timestamp: item, execution_id: 'e1', provider: 'fake', data: {} },
+      { v: 2, seq: 3, event: 'provider.heartbeat', timestamp: '2026-10-20T00:00:30.000+00:00', execution_id: 'e1', provider: 'fake', data: {} },
+    ];
+    const { workspace } = session(events, { completed_at: '2026-10-20T00:01:00.000+00:00' });
+    expect(resumeFacts(workspace, { sessionId: 's1', executionId: 'e1' }, incremental).lastActivityAt).toBe(item);
+  });
+
+  test('a turn completed after a delayed exit does not refresh an older item', () => {
+    const item = '2026-10-20T00:00:02.000+00:00';
+    const events = [
+      { v: 2, seq: 1, event: 'provider.item_completed', timestamp: item, execution_id: 'e1', provider: 'fake', data: {} },
+      turn(2, { input: 1, read: 1, write: 1 }),
+    ];
+    const { workspace } = session(events);
+    expect(resumeFacts(workspace, { sessionId: 's1', executionId: 'e1' }, incremental).lastActivityAt).toBe(item);
+  });
+
+  test('a cancelled source without items uses the cancel time', () => {
     const cancelledAt = '2026-10-20T00:05:00.000+00:00';
     const { workspace } = session([turn(1, { input: 5, read: 5, write: 5 })], { status: 'cancelled', completed_at: cancelledAt });
-    expect(resumeFacts(workspace, { sessionId: 's1', executionId: 'e1' }, incremental)).toEqual({ completedAt: cancelledAt, contextTokens: 15 });
+    expect(resumeFacts(workspace, { sessionId: 's1', executionId: 'e1' }, incremental)).toEqual({ completedAt: cancelledAt, lastActivityAt: cancelledAt, contextTokens: 15 });
   });
 });

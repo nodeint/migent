@@ -8,7 +8,7 @@ import { afterEach, describe, expect, test } from 'vitest';
 
 import { AgentToolRunner } from '../src/agent-runner.ts';
 import { executeNamedWorkflow } from '../src/execute.ts';
-import { registryOf, ScriptedClient } from './support.ts';
+import { ageProviderEvents,registryOf, ScriptedClient } from './support.ts';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -55,6 +55,7 @@ async function asked(root: string, responses: string[]) {
   const directory = path.join(root, '.migent/sessions', first.sessionId, 'executions/0001-plan--attempt-01/execution.json');
   const metadata = JSON.parse(readFileSync(directory, 'utf8')) as Record<string, unknown>;
   writeFileSync(directory, JSON.stringify({ ...metadata, completed_at: '2026-01-01T00:00:00.000+00:00' }));
+  ageProviderEvents(directory);
   const sessionDirectory = path.join(root, '.migent/sessions', first.sessionId);
   return { provider, runner, sessionId: first.sessionId, sessionDirectory };
 }
@@ -169,6 +170,7 @@ describe('resume_from target with no execution of its own', () => {
     const file = path.join(sessionDirectory, 'executions/0001-a--attempt-01/execution.json');
     const metadata = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
     writeFileSync(file, JSON.stringify({ ...metadata, completed_at: '2026-01-01T00:00:00.000+00:00' }));
+    ageProviderEvents(file);
     return { provider, runner, sessionId: first.sessionId, sessionDirectory };
   }
 
@@ -247,6 +249,7 @@ describe('a running sibling finishes before the expiry stops the session', () =>
     const file = path.join(sessionDirectory, 'executions/0001-ask--attempt-01/execution.json');
     const metadata = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
     writeFileSync(file, JSON.stringify({ ...metadata, completed_at: '2026-01-01T00:00:00.000+00:00' }));
+    ageProviderEvents(file);
     const running = executeNamedWorkflow(root, { sessionId: first.sessionId, reply: 'New sessions only' }, runner);
     // slow is held; the asked stage must not dispatch, and nothing stops the session yet.
     const deadline = Date.now() + 10_000;
