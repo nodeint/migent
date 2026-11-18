@@ -1,16 +1,34 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-import type { TurnUsage, UsageCapture } from '@nodeint/migent-kernel';
-import { createAgentSession, listSessionMetrics, sessionMetrics } from '@nodeint/migent-session';
-import { expect, test } from 'vitest';
+import { SealedMetricsCurrent, validationIssues } from '@nodeint/migent-contracts';
+import { AgentToolRunner, executeNamedWorkflow } from '@nodeint/migent-engine';
+import type { ClientRegistry, TurnUsage, UsageCapture } from '@nodeint/migent-kernel';
+import { buildMetrics, createPluginRegistry, METRICS_ARTIFACT_NAME, METRICS_PLUGIN_ID } from '@nodeint/migent-plugins';
+import { createAgentSession, readSessionSnapshot, SessionLock } from '@nodeint/migent-session';
+import { afterEach, expect, onTestFinished, test } from 'vitest';
 
-import { AgentToolRunner, executeNamedWorkflow } from '../src/index.ts';
-import { FakeClient, holdSessionLock, registryOf, ScriptedClient, tempDir } from './support.ts';
+import { removeTempDirs, tempDir } from './metrics-fixtures.ts';
+import { FakeClient, registryOf, ScriptedClient } from './support.ts';
 
-/** The core seal still writes the root file until the producer moves to the plugin. */
+afterEach(removeTempDirs);
+
+/** The metrics document the plugin builds for a session, from the same snapshot the host hands it. */
+function metricsOf(workspace: string, sessionId: string, clients: ClientRegistry): Record<string, unknown> {
+  const snapshot = readSessionSnapshot(workspace, sessionId, clients);
+  const document = buildMetrics(sessionId, snapshot);
+  expect(validationIssues(SealedMetricsCurrent, document)).toEqual([]);
+  return document;
+}
+
+/** Where the metrics plugin writes the file. */
 function sealedMetricsPath(workspace: string, sessionId: string): string {
-  return path.join(workspace, '.migent', 'sessions', sessionId, 'metrics.json');
+  return path.join(workspace, '.migent', 'sessions', sessionId, 'plugins', METRICS_PLUGIN_ID, METRICS_ARTIFACT_NAME);
+}
+
+/** A runner that runs the first-party plugins, as the CLI composition root does. */
+function runnerOf(clients: ClientRegistry): AgentToolRunner {
+  return Object.assign(new AgentToolRunner(clients, 10), { pluginRegistry: createPluginRegistry() });
 }
 
 const PLAN = `\
@@ -219,7 +237,7 @@ test('counts a revision and keeps routed_from across a failed retry', () => {
       event(2, 'revisions.reset', null),
     ],
   );
-  const metrics = sessionMetrics(workspace, sessionId, registryOf({ fake: new FakeClient() }));
+  const metrics = metricsOf(workspace, sessionId, registryOf({ fake: new FakeClient() }));
   const stages = metrics.stages as Record<string, Record<string, unknown>>;
   const executions = metrics.executions as Record<string, unknown>[];
   expect(Object.keys(stages)).toEqual(['plan', 'review']);
@@ -246,7 +264,7 @@ test('counts fresh starts and expired resumes, and a session without them report
     event(2, 'resume.expired', null, { data: { stage_id: 'plan', source_execution_id: 'y', action: 'fresh', origin: 'policy' } }),
     event(3, 'resume.decided', null, { data: { stage_id: 'plan', source_execution_id: 'z', choice: 'resume', origin: 'human' } }),
   ]);
-  const metrics = sessionMetrics(workspace, 'exp', registryOf({ fake: new FakeClient() }));
+  const metrics = metricsOf(workspace, 'exp', registryOf({ fake: new FakeClient() }));
   expect(metrics.totals).toMatchObject({ fresh_starts: 1, expired_resumes: 2 });
   const executions = metrics.executions as Record<string, unknown>[];
   expect(executions.map((item) => item.fresh_reason)).toEqual([null, 'expired']);
@@ -264,7 +282,7 @@ test('a failed attempt then a success is not a revision', () => {
     ],
     [event(1, 'session.created', null, { data: {} })],
   );
-  const metrics = sessionMetrics(workspace, 'retry', registryOf({}));
+  const metrics = metricsOf(workspace, 'retry', registryOf({}));
   const stage = (metrics.stages as Record<string, Record<string, unknown>>).implement;
   expect(stage).toMatchObject({ failed: 1, revisions: 0, executions: 2 });
 });
@@ -286,7 +304,7 @@ test('verify red then red then pass', () => {
       event(6, 'verify.passed', executionId, { timestamp: at(5) }),
     ],
   );
-  const metrics = sessionMetrics(workspace, 'verify', registryOf({}));
+  const metrics = metricsOf(workspace, 'verify', registryOf({}));
   const [execution] = (metrics.executions as Record<string, unknown>[]);
   expect(execution?.verify).toEqual({
     runs: 3,
@@ -316,7 +334,7 @@ test.each([
     [{ id: '0001', order: 1, stage: 'agent', status: 'completed', client: null, provider }],
     [turn(1, '0001', { total: 100 }, command)],
   );
-  const metrics = sessionMetrics(workspace, 'legacy', registryOf({ opencode: client, 'claude-code': client }));
+  const metrics = metricsOf(workspace, 'legacy', registryOf({ opencode: client, 'claude-code': client }));
   const execution = (metrics.executions as Record<string, unknown>[])[0]!;
   expect(execution.client).toBe(expected);
   const parsed = command === 'unknown' ? null : 100;
@@ -338,12 +356,13 @@ test('a cumulative provider deltas across executions that share an agent', () =>
     ],
     [turn(1, '0001', { total: 100 }), turn(2, '0002', { total: 140 })],
   );
-  const metrics = sessionMetrics(workspace, 'cost', registryOf({ fake: provider }));
+  const metrics = metricsOf(workspace, 'cost', registryOf({ fake: provider }));
   const executions = metrics.executions as Record<string, unknown>[];
   expect((executions[0]?.usage as TurnUsage).input_tokens).toBe(100);
   expect((executions[1]?.usage as TurnUsage).input_tokens).toBe(40);
   expect((metrics.totals as { usage: TurnUsage }).usage.input_tokens).toBe(140);
-  expect(executions[0]?.role).toBe('developer');
+  // The plugin builds from the snapshot, which has no agent-session role; role stays null.
+  expect(executions[0]?.role).toBeNull();
 });
 
 test("a cancelled turn's spend is in the next delta", () => {
@@ -364,7 +383,7 @@ test("a cancelled turn's spend is in the next delta", () => {
       turn(3, '0002', { total: 180 }),
     ],
   );
-  const metrics = sessionMetrics(workspace, 'cancel', registryOf({ fake: provider }));
+  const metrics = metricsOf(workspace, 'cancel', registryOf({ fake: provider }));
   const executions = metrics.executions as Record<string, unknown>[];
   const totals = metrics.totals as Record<string, unknown>;
   expect((executions[1]?.usage as TurnUsage).input_tokens).toBe(80);
@@ -389,7 +408,7 @@ test('cost totals keep the known sum and count the gap', () => {
     ],
     [turn(1, '0001', { ok: true }, 'priced'), turn(2, '0002', { ok: true }, 'free')],
   );
-  const totals = sessionMetrics(workspace, 'mix', registryOf({ priced, free })).totals as {
+  const totals = metricsOf(workspace, 'mix', registryOf({ priced, free })).totals as {
     usage: TurnUsage;
     usage_missing: Record<string, number>;
     cost_partial: boolean;
@@ -413,7 +432,7 @@ test('a progress turn_failed does not count as a turn', () => {
       turn(2, '0001', null),
     ],
   );
-  const totals = sessionMetrics(workspace, 'dup', registryOf({ fake: new FakeClient() })).totals as Record<string, unknown>;
+  const totals = metricsOf(workspace, 'dup', registryOf({ fake: new FakeClient() })).totals as Record<string, unknown>;
   expect(totals.turns).toBe(1);
   expect(totals.uncaptured_turns).toBe(1);
 });
@@ -433,7 +452,7 @@ test('a session recorded before usage captures still has a row', () => {
     [{ id: '0001', order: 1, stage: 'implement', status: 'completed', createdAt: at(0), completedAt: at(10) }],
     [event(1, 'provider.turn_completed', '0001')],
   );
-  const metrics = sessionMetrics(workspace, 'old', registryOf({ fake: new FakeClient() }));
+  const metrics = metricsOf(workspace, 'old', registryOf({ fake: new FakeClient() }));
   const totals = metrics.totals as {
     turns: number;
     wall_seconds: number;
@@ -465,7 +484,7 @@ test('a missing workflow leaves revisions null', () => {
     [{ id: '0001', order: 1, stage: 'plan', status: 'completed', createdAt: at(0), completedAt: at(10) }],
     [event(1, 'session.created', null, { data: { hash: 'abc' } })],
   );
-  const metrics = sessionMetrics(workspace, 'gone', registryOf({}));
+  const metrics = metricsOf(workspace, 'gone', registryOf({}));
   expect(metrics.workflow_id).toBe('plan');
   expect((metrics.totals as Record<string, unknown>).revisions).toBeNull();
   expect((metrics.stages as Record<string, Record<string, unknown>>).plan?.revisions).toBeNull();
@@ -482,7 +501,7 @@ test('a running execution has no wall time', () => {
     [{ id: '0001', order: 1, stage: 'agent', status: 'running', createdAt: at(0), completedAt: null }],
     [],
   );
-  const metrics = sessionMetrics(workspace, 'run', registryOf({}));
+  const metrics = metricsOf(workspace, 'run', registryOf({}));
   const [execution] = (metrics.executions as Record<string, unknown>[]);
   expect(execution?.completed_at).toBeNull();
   expect(execution?.wall_seconds).toBeNull();
@@ -490,7 +509,7 @@ test('a running execution has no wall time', () => {
   expect((metrics.totals as Record<string, unknown>).active_seconds).toBe(0);
 });
 
-test('corrupt sessions are a short row and a directory without status is skipped', () => {
+test('corrupt sessions are detected from the snapshot', () => {
   const workspace = tempDir('migent-metrics-');
   const sessions = path.join(workspace, '.migent', 'sessions');
   mkdirSync(path.join(sessions, 'broken'), { recursive: true });
@@ -520,13 +539,11 @@ test('corrupt sessions are a short row and a directory without status is skipped
     [],
     [event(1, 'session.created', null)],
   );
-  expect(sessionMetrics(workspace, 'broken', registryOf({}))).toEqual({ session_id: 'broken', status: 'corrupt' });
-  expect(sessionMetrics(workspace, 'bad-exec', registryOf({}))).toEqual({ session_id: 'bad-exec', status: 'corrupt' });
-  const listed = listSessionMetrics(workspace, {}, { workflow: null, status: null, limit: null });
-  expect(listed.map((row) => row.session_id)).toEqual(['newer', 'bad-exec', 'older', 'broken']);
-  expect(listed.some((row) => row.session_id === 'nostatus')).toBe(false);
-  const filtered = listSessionMetrics(workspace, {}, { workflow: 'agent', status: 'completed', limit: 1 });
-  expect(filtered.map((row) => row.session_id)).toEqual(['newer']);
+  // A corrupt session proposes nothing: the plugin handler skips a corrupt snapshot, so no file is written.
+  expect(readSessionSnapshot(workspace, 'broken', registryOf({})).corrupt).toBe(true);
+  expect(readSessionSnapshot(workspace, 'bad-exec', registryOf({})).corrupt).toBe(true);
+  expect(readSessionSnapshot(workspace, 'newer', registryOf({})).corrupt).toBe(false);
+  expect(readSessionSnapshot(workspace, 'older', registryOf({})).corrupt).toBe(false);
 });
 
 const SEAL_CONFIG = `\
@@ -540,7 +557,7 @@ roles:
     agent: fake
 `;
 
-test('a completed session seals metrics and later normalization leaves the file', async () => {
+test('a completed session writes metrics through the plugin and later normalization leaves the file', async () => {
   const workspace = tempDir('migent-metrics-seal-');
   mkdirSync(path.join(workspace, '.migent', 'workflows'), { recursive: true });
   writeFileSync(path.join(workspace, '.migent', 'config.yaml'), SEAL_CONFIG, 'utf8');
@@ -551,7 +568,7 @@ test('a completed session seals metrics and later normalization leaves the file'
   const result = await executeNamedWorkflow(
     workspace,
     { workflowId: 'once', task: 'write notes' },
-    new AgentToolRunner(registryOf({ fake: provider }), 10),
+    runnerOf(registryOf({ fake: provider })),
   );
   expect(result.status).toBe('completed');
   const file = sealedMetricsPath(workspace, result.sessionId);
@@ -563,7 +580,7 @@ test('a completed session seals metrics and later normalization leaves the file'
   expect(sealed.totals.usage.input_tokens).toBe(4);
 
   provider.readUsage = () => ({ values: { ...blank(), input_tokens: 99 }, cumulative: [] });
-  const derived = sessionMetrics(workspace, result.sessionId, registryOf({ fake: provider }));
+  const derived = metricsOf(workspace, result.sessionId, registryOf({ fake: provider }));
   expect((derived.totals as { usage: TurnUsage }).usage.input_tokens).toBe(99);
   expect(JSON.parse(readFileSync(file, 'utf8'))).toEqual(sealed);
 });
@@ -571,8 +588,9 @@ test('a completed session seals metrics and later normalization leaves the file'
 test('an agent session does not seal metrics', async () => {
   const workspace = tempDir('migent-metrics-agent-');
   const sessionId = createAgentSession(workspace, 'reviewer', 'review the plan');
-  holdSessionLock(workspace, sessionId);
-  const result = await new AgentToolRunner(registryOf({ fake: new FakeClient() }), 10).run({
+  const lock = SessionLock.acquire(path.join(workspace, '.migent', 'sessions', sessionId));
+  onTestFinished(() => lock.release());
+  const result = await runnerOf(registryOf({ fake: new ScriptedClient(['status: complete\nreviewed']) })).run({
     client: 'fake',
     model: 'm1',
     prompt: 'review',
@@ -592,7 +610,7 @@ test('a blocked session has no sealed metrics and is omitted from the list', asy
   const result = await executeNamedWorkflow(
     workspace,
     { workflowId: 'once', task: 'write notes' },
-    new AgentToolRunner(registryOf({ fake: new ScriptedClient(['status: blocked\nblocker: gate']) }), 10),
+    runnerOf(registryOf({ fake: new ScriptedClient(['status: blocked\nblocker: gate']) })),
   );
   expect(result.status).toBe('blocked');
   expect(existsSync(sealedMetricsPath(workspace, result.sessionId))).toBe(false);
@@ -621,7 +639,7 @@ test('mixed legacy CLI turns use their own parsers without inventing an executio
     writeSession(workspace, 'legacy', { workflow_id: 'legacy', status: 'active' },
       [{ id: '0001', order: 1, stage: 'work', status: 'failed', client: null, provider: 'codex' }],
       [turn(1, '0001', { opencode: 10 }, 'opencode'), turn(2, '0001', { codex: 25 }, 'codex')]);
-    const metrics = sessionMetrics(workspace, 'legacy', registryOf({ codex, opencode }));
+    const metrics = metricsOf(workspace, 'legacy', registryOf({ codex, opencode }));
     const execution = (metrics.executions as Record<string, unknown>[])[0]!;
     expect(execution.client).toBeNull();
     expect((execution.usage as TurnUsage).input_tokens).toBe(35);

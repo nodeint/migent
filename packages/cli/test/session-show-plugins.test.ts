@@ -290,6 +290,43 @@ test('continuing an old session runs an implicit default; --refresh-workflow pin
   } finally { cliHooks.runner = null; removeWorkspace(root); }
 }, 60_000);
 
+test('session complete with a version-changed plugin completes without plugins and warns', async () => {
+  const root = writeFakeWorkflowWorkspace({ wf: TWO_STAGES });
+  const run = { root, runner: new AgentToolRunner(registryOf({ fake: new ScriptedClient([OK]) }), 10) };
+  const core = (version: string): Plugin => ({
+    ...plugin('core', {}), manifest: { ...plugin('core', {}).manifest, version, defaultEnabled: true },
+  });
+  try {
+    run.runner.pluginRegistry = registryOfPlugins(core('1.0.0'));
+    expect((await cli(run, 'session', 'run', '--workflow', 'wf', '--task', 'Task', '--max-dispatches', '1')).value).toBe(LIMIT);
+    const id = path.basename(sessionDir(root));
+    run.runner.pluginRegistry = registryOfPlugins(core('2.0.0'));
+    const text = await cli(run, 'session', 'complete', id);
+    expect(text.value).toBe(0);
+    expect(text.stderr).toMatch(/warning: plugins not run:.*core.*version/s);
+    expect(JSON.parse(readFileSync(path.join(sessionDir(root), 'status.json'), 'utf8')).status).toBe('completed');
+  } finally { cliHooks.runner = null; removeWorkspace(root); }
+}, 60_000);
+
+test('session complete --json with a version-changed plugin keeps stdout one object', async () => {
+  const root = writeFakeWorkflowWorkspace({ wf: TWO_STAGES });
+  const run = { root, runner: new AgentToolRunner(registryOf({ fake: new ScriptedClient([OK]) }), 10) };
+  const core = (version: string): Plugin => ({
+    ...plugin('core', {}), manifest: { ...plugin('core', {}).manifest, version, defaultEnabled: true },
+  });
+  try {
+    run.runner.pluginRegistry = registryOfPlugins(core('1.0.0'));
+    await cli(run, 'session', 'run', '--workflow', 'wf', '--task', 'Task', '--max-dispatches', '1');
+    const id = path.basename(sessionDir(root));
+    run.runner.pluginRegistry = registryOfPlugins(core('2.0.0'));
+    const result = await cli(run, 'session', 'complete', id, '--json');
+    expect(result.value).toBe(0);
+    expect(result.stdout.trim().split('\n')).toHaveLength(1);
+    expect(JSON.parse(result.stdout)).toMatchObject({ status: 'completed' });
+    expect(result.stderr).toContain('warning: plugins not run:');
+  } finally { cliHooks.runner = null; removeWorkspace(root); }
+}, 60_000);
+
 test('an unreadable live config still shows the implicit default, with the cause in live_unavailable', async () => {
   const root = writeFakeWorkflowWorkspace({ wf: WORKFLOW });
   const run = { root, runner: new AgentToolRunner(registryOf({ fake: new ScriptedClient([OK]) }), 10) };

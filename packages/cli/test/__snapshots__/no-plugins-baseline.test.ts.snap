@@ -3,6 +3,7 @@
 exports[`a run without a plugins key: frozen bytes, events, status, show and exit code > events 1`] = `
 [
   "session.created",
+  "plugins.frozen",
   "baseline.captured",
   "task.frozen",
   "execution.started",
@@ -18,6 +19,8 @@ exports[`a run without a plugins key: frozen bytes, events, status, show and exi
   "execution.completed",
   "stage.complete",
   "session.completed",
+  "plugin.hook_invoked",
+  "plugin.decision",
 ]
 `;
 
@@ -51,6 +54,11 @@ targets:
     model: m1
     options:
       effort: medium
+config:
+  plugins:
+    entries:
+      metrics: {}
+    live_entries: []
 "
 `;
 
@@ -73,6 +81,39 @@ exports[`a run without a plugins key: frozen bytes, events, status, show and exi
   },
   "outputs": {},
   "outputs_not_produced": [],
+  "plugins": {
+    "active": [
+      {
+        "advisory": false,
+        "enabled": true,
+        "id": "metrics",
+        "version": "1.0.0",
+      },
+    ],
+    "added_after_freeze": [],
+    "freeze_mismatch": null,
+    "holds": [],
+    "invocations": [
+      {
+        "agent_calls": 0,
+        "failure": null,
+        "hook": "session.completed",
+        "invocation_id": "<uuid>",
+        "plugin": "metrics",
+        "results": [
+          {
+            "kind": "artifact",
+            "path": "plugins/metrics/metrics.json",
+            "reason": null,
+            "status": "applied",
+          },
+        ],
+        "status": "succeeded",
+      },
+    ],
+    "live_unavailable": null,
+    "unrecorded": [],
+  },
   "questions": [],
   "running_stages": [],
   "session_id": "1",
@@ -92,6 +133,8 @@ workflow  wf
 task  Task
 execution  0002-two--attempt-01 · completed
 outcome  complete
+plugins  metrics@1.0.0
+plugin  metrics session.completed · succeeded · artifact applied plugins/metrics/metrics.json
 updated_at  <time>
 outputs  none
 events_cursor  <cursor>
@@ -123,7 +166,7 @@ exports[`a run without a plugins key: frozen bytes, events, status, show and exi
     },
     "event": "provider.turn_completed",
     "execution_id": "0002-two--attempt-01",
-    "seq": 13,
+    "seq": 14,
     "session_id": "1",
     "stage_id": "two",
     "summary": "completed",
@@ -146,6 +189,7 @@ exports[`a run without a plugins key: frozen bytes, events, status, show and exi
 exports[`continue and --refresh-workflow on a session without plugins keep their exit codes and freeze > events after refresh 1`] = `
 [
   "session.created",
+  "plugins.frozen",
   "baseline.captured",
   "task.frozen",
   "execution.started",
@@ -155,6 +199,7 @@ exports[`continue and --refresh-workflow on a session without plugins keep their
   "execution.completed",
   "stage.complete",
   "workflow.refreshed",
+  "plugins.frozen",
   "revisions.reset",
   "execution.started",
   "execution.running",
@@ -163,5 +208,7 @@ exports[`continue and --refresh-workflow on a session without plugins keep their
   "execution.completed",
   "stage.complete",
   "session.completed",
+  "plugin.hook_invoked",
+  "plugin.decision",
 ]
 `;

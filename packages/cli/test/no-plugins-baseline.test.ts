@@ -6,6 +6,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { AgentToolRunner } from '@nodeint/migent-engine';
+import { createPluginRegistry } from '@nodeint/migent-plugins';
 import { expect, test } from 'vitest';
 
 import { cliHooks } from '../src/hooks.ts';
@@ -18,7 +19,10 @@ const OK = 'status: complete\n\nDone';
 function setup(responses: string[]): { root: string; provider: ScriptedClient; runner: AgentToolRunner } {
   const root = writeFakeWorkflowWorkspace({ wf: WORKFLOW });
   const provider = new ScriptedClient(responses);
-  return { root, provider, runner: new AgentToolRunner(registryOf({ fake: provider }), 10) };
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
+  // The production registry: the metrics plugin is the one default plugin a session without `plugins:` now runs.
+  runner.pluginRegistry = createPluginRegistry();
+  return { root, provider, runner };
 }
 
 /** `main` clears the runner hook when it returns, so every command sets it again. */
@@ -43,6 +47,7 @@ function normalize(text: string, root: string): string {
 /** Machine-specific leaves: the git error text, the byte-offset cursor, and the node binary path. */
 function normalizeLeaf(key: string, value: unknown, root: string): unknown {
   if (key === 'events_cursor') return '<cursor>';
+  if (key === 'invocation_id') return '<uuid>';
   if (key === 'error' && typeof value === 'string' && value.startsWith('not a Git work tree')) return '<git error>';
   if (typeof value === 'string') return normalize(value.replaceAll(process.execPath, '<node>'), root);
   return value;
@@ -69,7 +74,8 @@ test('a run without a plugins key: frozen bytes, events, status, show and exit c
     expect(result.value).toBe(0);
     const dir = sessionDir(run.root);
     const frozen = readFileSync(path.join(dir, 'workflow.frozen.yaml'), 'utf8');
-    expect(frozen).not.toContain('plugins');
+    // The one permitted freeze delta (#166 D4): the default metrics plugin is pinned, and nothing else.
+    expect(frozen).toContain('plugins:\n    entries:\n      metrics: {}');
     expect(normalize(frozen, run.root)).toMatchSnapshot('frozen');
     expect(eventKinds(dir)).toMatchSnapshot('events');
     const status = JSON.parse(readFileSync(path.join(dir, 'status.json'), 'utf8')) as Record<string, unknown>;
@@ -81,7 +87,7 @@ test('a run without a plugins key: frozen bytes, events, status, show and exit c
     expect(normalize(shown.stdout, run.root)).toMatchSnapshot('show text');
     const shownJson = await cli(run, 'session', 'show', path.basename(dir), '--json');
     const body = JSON.parse(shownJson.stdout) as Record<string, unknown>;
-    expect(body).not.toHaveProperty('plugins');
+    expect(body.plugins).toMatchObject({ active: [{ id: 'metrics' }], holds: [], freeze_mismatch: null });
     expect(normalizeJson(body, run.root)).toMatchSnapshot('show json');
   } finally { cliHooks.runner = null; removeWorkspace(run.root); }
 }, 30_000);

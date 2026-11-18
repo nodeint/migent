@@ -11,11 +11,7 @@ export type {
 } from './legacy-execution-client.js';
 export { legacyExecutionClient } from './legacy-execution-client.js';
 export { readExecutionClient } from './legacy-execution-client.js';
-export {
-  listSessionMetrics,
-  sealSessionMetrics,
-  sessionMetrics,
-} from './metrics.js';
+export { requireSessionDirectory } from './manual-completion.js';
 export { formatNextCommand,publishNextSuggestions, resolveNextSuggestions } from './next-handoff.js';
 export { resolveHandoff } from './next-handoff.js';
 export type { InspectedHold, InspectedInvocation, InspectedPlugin, InspectedResult, PluginsInspection, UnrecordedFile } from './plugin-inspection.js';

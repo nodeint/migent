@@ -3,9 +3,9 @@ import path from 'node:path';
 import type { ClientRegistry } from '@nodeint/migent-kernel';
 import { MIGENT_DIRNAME, SESSIONS_DIRNAME } from '@nodeint/migent-kernel';
 
-import { normalizeTurns, resolveExecutionClients } from './metrics.js';
-import { orderedEvents, readExecutions } from './metrics-read.js';
 import { readStatusFileState } from './query.js';
+import { orderedEvents, readExecutions } from './session-facts.js';
+import { normalizeTurns, resolveExecutionClients } from './usage-normalize.js';
 
 export interface ResumeFacts {
   /** When the source execution ended (a cancelled one uses the cancel's time); null when unknown. */

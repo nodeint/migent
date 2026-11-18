@@ -5,10 +5,10 @@ import type { ClientRegistry } from '@nodeint/migent-kernel';
 import { MIGENT_DIRNAME, SESSIONS_DIRNAME } from '@nodeint/migent-kernel';
 
 import { exitAnomaliesOf } from './exit-anomaly.js';
-import { normalizeTurns, resolveExecutionClients } from './metrics.js';
-import { loadMetricsWorkflow, orderedEvents, readExecutions, sessionIsCorrupt } from './metrics-read.js';
 import { readStatusFileState } from './query.js';
 import type { ParsedEvent } from './session-events.js';
+import { loadSessionWorkflow, orderedEvents, readExecutions, sessionIsCorrupt } from './session-facts.js';
+import { normalizeTurns, resolveExecutionClients } from './usage-normalize.js';
 
 const directoryOf = (workspace: string, sessionId: string): string =>
   path.join(workspace, MIGENT_DIRNAME, SESSIONS_DIRNAME, sessionId);
@@ -62,7 +62,7 @@ export function readSessionSnapshot(
       usage: { ...turn.usage },
       captured: turn.captured,
     }));
-  const workflow = loadMetricsWorkflow(workspace, sessionDirectory, status);
+  const workflow = loadSessionWorkflow(workspace, sessionDirectory, status);
   return {
     basis_seq: basisSeq,
     status,

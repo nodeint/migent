@@ -4,9 +4,9 @@ import path from 'node:path';
 
 import { afterEach, expect, test } from 'vitest';
 
-import { normalizeTurns, resolveExecutionClients } from '../src/metrics.ts';
-import { orderedEvents, readExecutions } from '../src/metrics-read.ts';
+import { orderedEvents, readExecutions } from '../src/session-facts.ts';
 import { readBasisSeq, readSessionSnapshot } from '../src/session-snapshot.ts';
+import { normalizeTurns, resolveExecutionClients } from '../src/usage-normalize.ts';
 import { FakeClient, registryOf } from './support.ts';
 
 const dirs: string[] = [];

@@ -1,58 +1,14 @@
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import path from 'node:path';
 
-import { StageOutcome } from '@nodeint/migent-kernel';
-import { createAgentSession, createPreparedSession, createWorkflowSession,SessionLock, SessionStore } from '@nodeint/migent-session';
+import { createAgentSession, createPreparedSession, SessionLock } from '@nodeint/migent-session';
 import { afterEach, expect, test } from 'vitest';
 
 import { main } from '../src/index.ts';
-import { capture, removeWorkspace, writeFakeWorkflowWorkspace } from './support.ts';
+import { cleanWorkspaces, stoppedSession } from './complete-fixtures.ts';
+import { capture } from './support.ts';
 
-const WORKFLOW = `schema_version: 7
-id: plan
-artifacts:
-  plan: { file: plan.md }
-  notes: { file: notes.md }
-stages:
-  - id: draft
-    role: planner
-    artifacts: [plan]
-  - id: extra
-    role: planner
-    depends_on: [draft]
-    artifacts: [notes]
-downstream:
-  - workflow: implement
-    task: Implement the plan
-    artifacts: { plan: plan }
-`;
-
-const workspaces: string[] = [];
-
-afterEach(() => {
-  for (const workspace of workspaces.splice(0)) removeWorkspace(workspace);
-});
-
-function stoppedSession(): { workspace: string; sessionId: string; directory: string } {
-  const workspace = writeFakeWorkflowWorkspace({
-    plan: WORKFLOW,
-    implement: 'schema_version: 7\nid: implement\nstages:\n  - { id: work, role: developer }\n',
-  });
-  workspaces.push(workspace);
-  const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
-  const directory = path.join(workspace, '.migent', 'sessions', sessionId);
-  const store = new SessionStore(workspace);
-  const lock = SessionLock.acquire(directory);
-  try {
-    const [record, , context] = store.loadOrCreate({ client: 'fake', model: 'model', options: {}, workspace, sessionId, stageId: 'draft', stageAttempt: null, executionOrder: null, prompt: 'draft' });
-    store.saveExecution(context, record, { status: 'running' });
-    writeFileSync(path.join(context.artifactDirectory, 'plan.md'), '# Plan\n', 'utf8');
-    store.saveExecution(context, record, { status: 'completed', outcome: new StageOutcome('complete') });
-  } finally {
-    lock.release();
-  }
-  return { workspace, sessionId, directory };
-}
+afterEach(cleanWorkspaces);
 
 test('complete prints the human report on stderr and exits 0', async () => {
   const { workspace, sessionId, directory } = stoppedSession();
@@ -90,7 +46,7 @@ test('complete --json writes exactly one object on stdout', async () => {
   });
   expect(path.isAbsolute(payload.outputs[0].path)).toBe(true);
   expect(payload.next.suggestions[0]).toMatchObject({ workflow: 'implement' });
-  expect(existsSync(path.join(directory, 'metrics.json'))).toBe(true);
+  expect(existsSync(path.join(directory, 'plugins', 'metrics', 'metrics.json'))).toBe(true);
 
   const again = await capture(() => main(['session', 'complete', sessionId, '--json'], workspace));
   expect(again.value).toBe(0);
@@ -134,4 +90,26 @@ test('continue leaves a manually completed session stopped', async () => {
   expect(readdirSync(executions)).toEqual(before);
   const status = JSON.parse(readFileSync(path.join(workspace, '.migent', 'sessions', sessionId, 'status.json'), 'utf8'));
   expect(status.status).toBe('completed');
+});
+
+test('complete twice records one plugin decision and does not rewrite the metrics', async () => {
+  const { workspace, sessionId, directory } = stoppedSession();
+  await capture(() => main(['session', 'complete', sessionId, '--json'], workspace));
+  const file = path.join(directory, 'plugins', 'metrics', 'metrics.json');
+  const before = readFileSync(file, 'utf8');
+  const events = (): string[] => readFileSync(path.join(directory, 'events.jsonl'), 'utf8').split('\n').filter((line) => line.includes('"plugin.decision"'));
+  expect(events()).toHaveLength(1);
+  const again = await capture(() => main(['session', 'complete', sessionId, '--json'], workspace));
+  expect(JSON.parse(again.stdout)).toMatchObject({ already_completed: true });
+  expect(readFileSync(file, 'utf8')).toBe(before);
+  expect(events()).toHaveLength(1);
+});
+
+test('complete a session with no frozen workflow writes no metrics', async () => {
+  const { workspace, sessionId, directory } = stoppedSession();
+  rmSync(path.join(directory, 'workflow.frozen.yaml'), { force: true });
+  const result = await capture(() => main(['session', 'complete', sessionId, '--json'], workspace));
+  expect(result.value).toBe(0);
+  expect(JSON.parse(result.stdout)).toMatchObject({ status: 'completed' });
+  expect(existsSync(path.join(directory, 'plugins', 'metrics', 'metrics.json'))).toBe(false);
 });

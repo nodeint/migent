@@ -12,7 +12,7 @@ import { createPreparedSession, createWorkflowSession } from '../src/session-rec
 import { StatusDraft } from '../src/session-status-draft.ts';
 import { SessionStore } from '../src/session-store.ts';
 import { freezeSessionTask } from '../src/task-file.ts';
-import { defaultClients, tempDir, writeSessionConfig } from './support.ts';
+import { tempDir, writeSessionConfig } from './support.ts';
 
 const PLAN = `schema_version: 7
 id: plan
@@ -37,7 +37,7 @@ function started(): { workspace: string; store: SessionStore; sessionId: string;
   } finally {
     lock.release();
   }
-  return { workspace, store: new SessionStore(workspace, undefined, defaultClients()), sessionId, directory };
+  return { workspace, store: new SessionStore(workspace), sessionId, directory };
 }
 
 function withLock(directory: string, action: () => void): void {

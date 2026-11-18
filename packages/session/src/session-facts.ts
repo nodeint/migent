@@ -5,7 +5,7 @@ import { ConfigurationError, EXECUTIONS_DIRNAME, isAtomicTempName } from '@nodei
 import { isRecord } from '@nodeint/migent-workflow';
 import { loadNamedWorkflow, loadWorkflowDocument, type WorkflowDocument } from '@nodeint/migent-workflow';
 
-import { finiteNumber, text } from './metrics-values.js';
+import { finiteNumber, text } from './fact-values.js';
 import { readStatusFileState } from './query.js';
 import { type ParsedEvent,readParsedEvents, streamFiles } from './session-events.js';
 import { loadFrozenWorkflow } from './session-freeze.js';
@@ -67,7 +67,7 @@ export function readJsonFile(filePath: string): { state: 'missing' | 'corrupt' |
   }
 }
 
-export function loadMetricsWorkflow(
+export function loadSessionWorkflow(
   workspace: string,
   sessionDirectory: string,
   status: Record<string, unknown>,

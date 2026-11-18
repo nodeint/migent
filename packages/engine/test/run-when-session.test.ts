@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { createWorkflowSession, readFoldedStatus, sessionMetrics, SessionStore, statusDriftMessage, watchSnapshot } from '@nodeint/migent-session';
+import { createWorkflowSession, readFoldedStatus, SessionStore, statusDriftMessage, watchSnapshot } from '@nodeint/migent-session';
 import { loadFrozenWorkflow } from '@nodeint/migent-session';
 import { expect, test, vi } from 'vitest';
 
@@ -140,13 +140,6 @@ test('a stage whose paths did not change is skipped and the session completes', 
   const snapshot = watchSnapshot(path.join(repo, '.migent', 'sessions', sessionId));
   expect(snapshot.skipped_stages).toEqual(status.skipped_stages);
   expect(snapshot.baseline).toMatchObject({ commit: base });
-
-  const metrics = sessionMetrics(repo, sessionId, registryOf({ fake: provider }));
-  expect(metrics.totals).toMatchObject({ executions: 1, skipped: 1 });
-  expect((metrics.stages as Record<string, unknown>).review_docs).toMatchObject({ executions: 0, skipped: 1 });
-  const row = (metrics.executions as Record<string, unknown>[]).find((item) => item.status === 'skipped')!;
-  expect(row).toMatchObject({ client: null, model: null, turns: 0, verify: null });
-  expect(row.skip).toMatchObject({ baseline: base });
 
   const frozen = loadFrozenWorkflow(path.join(repo, '.migent', 'sessions', sessionId));
   expect(frozen?.stages.review_docs?.runWhen).toEqual({ changedPaths: ['docs/**/*', '**/README.md'] });

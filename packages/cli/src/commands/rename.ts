@@ -2,7 +2,6 @@ import { RenameResult } from '@nodeint/migent-contracts';
 import { ConfigurationError, log } from '@nodeint/migent-kernel';
 import { SessionStore } from '@nodeint/migent-session';
 
-import { clientRegistry } from '../client.js';
 import { printError } from '../display.js';
 import { writeJson } from '../emit.js';
 import { EXIT_CONFIG } from '../exits.js';
@@ -18,7 +17,7 @@ export function renameSession(
   requireCurrentSchema(workspace);
   let result;
   try {
-    result = new SessionStore(workspace, undefined, clientRegistry()).rename(sessionId, title);
+    result = new SessionStore(workspace).rename(sessionId, title);
   } catch (error) {
     if (error instanceof ConfigurationError) {
       printError(error.message);

@@ -26,7 +26,6 @@ import { VERIFY_ARTIFACT, type WorkflowDocument } from '@nodeint/migent-workflow
 import { TURN_PAD_WIDTH } from './constants.js';
 import { sessionEventLog } from './event-log.js';
 import { completeManuallyLocked, requireSessionDirectory } from './manual-completion.js';
-import { sealSessionMetrics } from './metrics.js';
 import { publishNextSuggestions } from './next-handoff.js';
 import { readPendingResumes } from './resume-pending.js';
 import { writeFailureReport } from './session-failure-report.js';
@@ -425,17 +424,10 @@ export class SessionStore extends SessionStoreResume {
 
   /** Events, fold, and sealing after the execution file is final. Shared by saves and skip records. */
   private finishExecutionSave(input: FinishExecutionSaveInput): void {
-    const { context, sessionDirectory, plan, previousStatus } = input;
+    const { context, sessionDirectory, plan } = input;
     appendExecutionSaveEvents(input);
     if (plan.manifestStatus !== null) this.rewriteManifestStatus(sessionDirectory, plan.manifestStatus);
     sessionEventLog.commit(this.workspace, sessionDirectory);
-    if (
-      plan.sessionStatus === 'completed' &&
-      previousStatus.workflow_id !== 'agent' &&
-      this.metricsClients !== null
-    ) {
-      sealSessionMetrics(this.workspace, context.sessionId, this.metricsClients);
-    }
     if (plan.sessionStatus === 'completed') publishNextSuggestions(this.workspace, context.sessionId);
     if (plan.outputsMissing.length > 0) throw new OutputsMissing(plan.outputsMissing);
   }
@@ -458,7 +450,8 @@ export class SessionStore extends SessionStoreResume {
 
   /**
    * A human marks a stopped workflow session completed. Takes the session lock, so a live run is refused.
-   * Publishes what a normal completion would, seals metrics, and writes next.json. Terminal and idempotent.
+   * Publishes what a normal completion would and writes next.json. Plugins run only when the caller opens a
+   * plugin scope. Terminal and idempotent.
    */
   public completeManually(sessionId: string): ManualCompletionResult {
     const directory = requireSessionDirectory(this.sessionsDirectory, sessionId);
@@ -484,7 +477,6 @@ export class SessionStore extends SessionStoreResume {
     assertSessionLockHeld(directory);
     return completeManuallyLocked({
       workspace: this.workspace,
-      metricsClients: this.metricsClients,
       loadWorkflow: (status) => this.loadWorkflow(status),
       snapshotList: (id) => this.snapshotList(id),
       rewriteManifestStatus: (dir, status) => this.rewriteManifestStatus(dir, status),

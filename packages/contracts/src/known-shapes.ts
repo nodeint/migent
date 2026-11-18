@@ -153,7 +153,7 @@ const CurrentExecution = Type.Object({
   fresh_reason: nullable(str()),
 });
 
-/** What the current producer writes (`sessionMetrics` in the kernel) for a sealed session. */
+/** What the first-party metrics plugin writes to `plugins/metrics/metrics.json` for a completed session. */
 export const SealedMetricsCurrent = Type.Object(
   {
     session_id: str(),
