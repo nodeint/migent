@@ -46,7 +46,7 @@ export function readSessionSnapshot(
   if (sessionIsCorrupt(sessionDirectory)) {
     return {
       basis_seq: basisSeq, status: {}, corrupt: true, executions: [], events: [], workflow: null, turns: [],
-      exit_anomalies: [],
+      execution_clients: {}, exit_anomalies: [],
     };
   }
   const statusRead = readStatusFileState(path.join(sessionDirectory, 'status.json'));
@@ -74,6 +74,7 @@ export function readSessionSnapshot(
     })),
     workflow: workflow === null ? null : (workflow as unknown as Record<string, unknown>),
     turns,
+    execution_clients: Object.fromEntries(executionClients),
     exit_anomalies: exitAnomaliesOf(events) as unknown as Record<string, unknown>[],
   };
 }

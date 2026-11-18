@@ -187,6 +187,8 @@ export interface PluginSessionSnapshot {
   readonly events: readonly PluginSessionEvent[];
   readonly workflow: Readonly<Record<string, unknown>> | null;
   readonly turns: readonly PluginSessionTurn[];
+  /** The client each execution ran with, resolved from its record and legacy evidence. Null when unknown. */
+  readonly execution_clients: Readonly<Record<string, string | null>>;
   readonly exit_anomalies: readonly Readonly<Record<string, unknown>>[];
 }
 

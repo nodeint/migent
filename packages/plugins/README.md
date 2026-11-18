@@ -15,10 +15,13 @@ First-party Migent plugins and their static registry. Internal; no stable public
   handler must not assume a written file has a `plugin.decision`; `session show` reports the ones that lack it.
 - `call.session.snapshot()` and `resumeFacts()` need `uses.session`. Never cache their result across invocations: a
   changed read makes the core discard the result and re-run the handler once, then record `stale`.
-- Register a plugin in `src/registry.ts`. The registry is empty until a feature plugin lands.
+- Register a plugin in `src/registry.ts`. The `metrics` plugin is exported but not yet registered: `FIRST_PARTY` stays
+  empty until the producer switch.
 
 ## Key symbols
 
 | Symbol | File | Purpose |
 | --- | --- | --- |
 | `createPluginRegistry`, `PluginRegistry` | `src/registry.ts` | Static registry of plugins by manifest id |
+| `metricsPlugin`, `metricsManifest`, `buildMetrics` | `src/metrics/` | Session metrics plugin, its manifest and the pure document builder |
+| `METRICS_PLUGIN_ID`, `METRICS_ARTIFACT_NAME` | `src/metrics/index.ts` | Names the CLI reader builds the artifact path from |
