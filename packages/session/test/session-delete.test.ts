@@ -1,5 +1,4 @@
 import { existsSync, lstatSync, mkdirSync, readdirSync, renameSync, rmSync, symlinkSync, truncateSync, utimesSync, writeFileSync } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 
 import { ConfigurationError } from '@nodeint/migent-kernel';
@@ -203,7 +202,6 @@ test('list ignores bookkeeping entries', () => {
   writeFileSync(path.join(root, '.last-id'), '5');
   writeFileSync(path.join(root, '.last-id.lock'), '{}');
   expect(listSessionRows(ws)).toHaveLength(1);
-  expect(os.platform()).toBeTruthy();
   rmSync(path.join(root, '.deleting'), { recursive: true });
 });
 

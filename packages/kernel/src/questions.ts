@@ -69,7 +69,7 @@ export const questionBatchSchema = z.array(questionSchema).min(1)
   .superRefine(refineQuestionBatch)
   .transform((questions) => questions.map(numberQuestion));
 
-export const questionDocumentSchema = z.object({
+const questionDocumentSchema = z.object({
   schema_version: z.literal(1),
   questions: questionBatchSchema,
 }).strict();

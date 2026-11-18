@@ -118,7 +118,7 @@ export function startWrapper(spec: CommandSpec, launch: WrapperLaunch): ChildPro
   return child;
 }
 
-export const SIGNAL_SETTLE_MS = 300;
+const SIGNAL_SETTLE_MS = 300;
 
 const EXIT_DRAIN_MS = 200;
 

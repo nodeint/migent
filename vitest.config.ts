@@ -31,13 +31,21 @@ export default defineConfig({
     reporters: ['agent'],
     silent: true,
     setupFiles: ['scripts/vitest-quiet-setup.ts'],
+    // Measured only with `--coverage` (`pnpm test:coverage`); the unit project is the measured suite.
+    coverage: {
+      provider: 'v8',
+      include: ['packages/*/src/**/*.ts'],
+      exclude: ['**/*.d.ts', '**/dist/**'],
+      reporter: ['text-summary', 'json-summary'],
+      reportsDirectory: 'coverage',
+    },
     projects: [
       {
         extends: true,
         test: {
           name: 'unit',
           include: ['packages/**/*.test.ts', 'integration/**/*.test.ts', 'scripts/**/*.test.mjs'],
-          exclude: ['**/node_modules/**', '**/*.integration.test.ts'],
+          exclude: ['**/node_modules/**', '**/*.integration.test.ts', '**/*.integration.test.mjs'],
         },
       },
       {
@@ -45,7 +53,11 @@ export default defineConfig({
         extends: true,
         test: {
           name: 'integration',
-          include: ['packages/**/*.integration.test.ts', 'integration/**/*.integration.test.ts'],
+          include: [
+            'packages/**/*.integration.test.ts',
+            'integration/**/*.integration.test.ts',
+            'scripts/**/*.integration.test.mjs',
+          ],
           fileParallelism: false,
         },
       },

@@ -135,7 +135,7 @@ function routingStage(workflow: WorkflowDocument, latest: ExecutionSnapshot): St
 }
 
 /** Same stage list nextStage uses once a route has been followed. */
-export function sequentialCandidates(
+function sequentialCandidates(
   workflow: WorkflowDocument,
   snapshots: readonly ExecutionSnapshot[],
   status: StatusInput,

@@ -7,7 +7,7 @@ import { buildRouter, Call, Router, type WorkspaceRecords } from './routes.js';
 import type { RegistryStore } from './store.js';
 import { monotonic } from './time.js';
 
-export const DEFAULT_PORT = 47321;
+const DEFAULT_PORT = 47321;
 export const MAX_BODY_BYTES = 65536;
 
 const REASONS: Record<number, string> = {
@@ -22,7 +22,7 @@ const REASONS: Record<number, string> = {
   413: 'Payload Too Large',
 };
 
-export class RequestTimeout extends Error {
+class RequestTimeout extends Error {
   constructor() {
     super('request timeout');
     this.name = 'RequestTimeout';

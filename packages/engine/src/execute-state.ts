@@ -111,7 +111,7 @@ export function executeFinal(
   };
 }
 
-export function optionalText(value: unknown): string | null {
+function optionalText(value: unknown): string | null {
   return typeof value === 'string' && value ? value : null;
 }
 

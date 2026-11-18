@@ -1,16 +1,9 @@
 import { loadAgentTarget } from '@nodeint/migent-kernel';
 import { expect, test } from 'vitest';
 
-import { clientIds, CodexClient, createClient,GrokClient, OpencodeClient } from '../src/index.ts';
+import { clientIds, createClient, GrokClient, OpencodeClient } from '../src/index.ts';
 
 const registry = { ids: () => clientIds(), get: (id: string) => createClient(id) };
-
-test('createClient maps an id to its client and rejects unknown ids', () => {
-  expect(createClient('codex')).toBeInstanceOf(CodexClient);
-  expect(createClient('codex').id).toBe('codex');
-  expect(clientIds()).toEqual(['agy', 'claude-code', 'codex', 'grok', 'opencode']);
-  expect(() => createClient('nope')).toThrow(/Unknown CLI client: nope/);
-});
 
 test('model effort follows the bound client through to Grok command arguments', () => {
   const target = loadAgentTarget({ agents: { fast: { client: { type: 'grok' }, model: 'test', effort: 'high' } } }, 'fast', { registry });

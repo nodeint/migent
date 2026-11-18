@@ -74,7 +74,7 @@ export function detectPackageManager(installPath: string): PackageManager | null
   return 'npm';
 }
 
-export function upgradeCommand(manager: PackageManager): string[] {
+function upgradeCommand(manager: PackageManager): string[] {
   const spec = `${PACKAGE_NAME}@latest`;
   switch (manager) {
     case 'npm': return ['npm', 'install', '-g', spec];

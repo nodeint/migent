@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const stageArtifactSchema = z.object({
+const stageArtifactSchema = z.object({
   id: z.string(),
   file: z.string(),
   description: z.string().nullable(),
@@ -8,7 +8,7 @@ export const stageArtifactSchema = z.object({
   scope: z.enum(['published', 'local']),
 });
 
-export const stageFieldSchema = {
+const stageFieldSchema = {
   ask: z.literal('human').optional(),
   id: z.string(),
   description: z.string().nullable(),
@@ -58,7 +58,7 @@ export const workflowOutputSchema = z.object({
   decision: z.string().nullable().optional(),
 });
 
-export const artifactSpecSchema = stageArtifactSchema.extend({
+const artifactSpecSchema = stageArtifactSchema.extend({
   producer: z.object({ stage: z.string(), decision: z.string().nullable() }),
 });
 

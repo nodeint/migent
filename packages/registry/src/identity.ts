@@ -15,7 +15,7 @@ const serviceKeys = new Set(['schema_version', 'instance_id', 'pid', 'host', 'po
 // Migent 0.1 identified the service by libc process identity instead of a local endpoint.
 const legacyServiceKeys = new Set([...serviceKeys, 'pgid', 'start_key', 'boot_id', 'hostname']);
 
-export class ServiceCorrupt extends Error {
+class ServiceCorrupt extends Error {
   constructor() {
     super('service.json is corrupt.');
     this.name = 'ServiceCorrupt';
@@ -135,7 +135,7 @@ function validateServiceFields(record: Record<string, unknown>): void {
   if (port < 1 || port > MAX_PORT) throw new ServiceCorrupt();
 }
 
-export function parseServiceBytes(raw: Buffer): ServiceRecord {
+function parseServiceBytes(raw: Buffer): ServiceRecord {
   const record = parseServiceObject(raw);
   const keys = record.schema_version === 1 ? legacyServiceKeys : serviceKeys;
   if (record.schema_version !== 1 && record.schema_version !== SERVICE_SCHEMA_VERSION) throw new ServiceCorrupt();

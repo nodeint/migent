@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { BuildCommandInput, CliClient, ClientOption, ClientRegistry, CliModelCatalog, CliRunOutput, CliUsage, CommandSpec, UsageCapture } from '@nodeint/migent-kernel';
-import { createAgentSession, createWorkflowSession, SessionLock } from '@nodeint/migent-session';
+import { createWorkflowSession, SessionLock } from '@nodeint/migent-session';
 import { onTestFinished } from 'vitest';
 
 const optionKey = /^[A-Za-z][A-Za-z0-9_.-]*$/;
@@ -29,10 +29,6 @@ export function registryOf(clients: Record<string, CliClient>): ClientRegistry {
   };
 }
 
-export function whichFound(found: ReadonlySet<string>): (command: string) => string | null {
-  return (command) => (found.has(command) ? `/bin/${command}` : null);
-}
-
 export const SESSION_CONFIG = `\
 schema_version: 7
 agents:
@@ -54,7 +50,7 @@ export function writeSessionConfig(workspace: string): void {
   writeFileSync(path.join(workspace, '.migent', 'config.yaml'), SESSION_CONFIG, 'utf8');
 }
 
-export const STAGE_CONFIG = `\
+const STAGE_CONFIG = `\
 schema_version: 7
 agents:
   grok:
@@ -77,7 +73,7 @@ roles:
     agent: gpt-terra
 `;
 
-export const STAGE_WORKFLOW = `\
+const STAGE_WORKFLOW = `\
 schema_version: 7
 id: plan-implement
 artifacts:
@@ -105,27 +101,12 @@ export function tempDir(prefix: string): string {
   return mkdtempSync(path.join(tmpdir(), prefix));
 }
 
-export function writeConfig(contents: string): string {
-  const directory = tempDir('migent-config-');
-  const filePath = path.join(directory, 'config.yaml');
-  writeFileSync(filePath, contents, 'utf8');
-  return filePath;
-}
-
 export function writeStageWorkspace(): string {
   const workspace = tempDir('migent-stage-');
   const workflows = path.join(workspace, '.migent', 'workflows');
   mkdirSync(workflows, { recursive: true });
   writeFileSync(path.join(workspace, '.migent', 'config.yaml'), STAGE_CONFIG, 'utf8');
   writeFileSync(path.join(workflows, 'plan-implement.yaml'), STAGE_WORKFLOW, 'utf8');
-  return workspace;
-}
-
-export function writeRoleWorkspace(): string {
-  const workspace = tempDir('migent-role-');
-  const migent = path.join(workspace, '.migent');
-  mkdirSync(migent);
-  writeFileSync(path.join(migent, 'config.yaml'), STAGE_CONFIG, 'utf8');
   return workspace;
 }
 
@@ -431,7 +412,7 @@ function statusHandoffContent(status: string, headers: Map<string, string>): str
 }
 
 /** Protocol 2 shim: `status: question` plus a JSON body, or a `<<FILE>>` section, becomes the question request file. */
-export function writeQuestionRequestFromReply(prompt: string, response: string): string {
+function writeQuestionRequestFromReply(prompt: string, response: string): string {
   const target = [...prompt.matchAll(/^- Question file: `(.+)`$/gm)].at(-1)?.[1];
   const marker = '\n<<FILE>>';
   const split = response.indexOf(marker);
@@ -452,13 +433,6 @@ export function holdSessionLock(workspace: string, sessionId: string): SessionLo
   const lock = SessionLock.acquire(sessionDirectory);
   onTestFinished(() => lock.release());
   return lock;
-}
-
-/** A new agent session whose lock this test holds until it finishes. */
-export function lockedAgentSession(workspace: string, role = 'reviewer', task = 'task'): string {
-  const sessionId = createAgentSession(workspace, role, task);
-  holdSessionLock(workspace, sessionId);
-  return sessionId;
 }
 
 /** Backdates the provider activity events beside an `execution.json`, so a test can age the prompt cache. */

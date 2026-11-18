@@ -47,7 +47,7 @@ export function listSessions(workspace: string, options: SessionListOptions = {}
   return 0;
 }
 
-export function runSessionMetrics(
+function runSessionMetrics(
   workspace: string,
   session: string | undefined,
   options: { asJson: boolean; workflow: string | null; status: string | null; limit: string | null },
@@ -88,7 +88,7 @@ function writeSessionMetrics(workspace: string, sessionId: string): number {
   return 0;
 }
 
-export async function runSessions(
+async function runSessions(
   workspace: string,
   session: string | undefined,
   options: {

@@ -211,13 +211,6 @@ export function tempDir(prefix: string): string {
   return mkdtempSync(path.join(tmpdir(), prefix));
 }
 
-export function writeConfig(contents: string): string {
-  const directory = tempDir('migent-config-');
-  const filePath = path.join(directory, 'config.yaml');
-  writeFileSync(filePath, contents, 'utf8');
-  return filePath;
-}
-
 export function writeStageWorkspace(): string {
   const workspace = tempDir('migent-stage-');
   const workflows = path.join(workspace, '.migent', 'workflows');

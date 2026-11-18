@@ -15,7 +15,7 @@ import { pluginFreezeInput } from './plugin-host/freeze.js';
 import { resolvePluginHolds } from './plugin-host/holds.js';
 import { type PluginSelection, selectPlugins } from './plugin-host/selection.js';
 
-export function preflightFailed(sessionId: string): ExecuteResult {
+function preflightFailed(sessionId: string): ExecuteResult {
   return {
     code: 2,
     status: '',
@@ -28,7 +28,7 @@ export function preflightFailed(sessionId: string): ExecuteResult {
   };
 }
 
-export function requireEligibleStage(
+function requireEligibleStage(
   workflow: WorkflowDocument,
   snapshots: readonly ExecutionSnapshot[],
   target: { sessionStatus: string; stageId: string },

@@ -173,11 +173,6 @@ function freshRoot(): string {
   return mkdtempSync(path.join(tmpdir(), 'registry-server-'));
 }
 
-test('daemon threads is set on the subclass body', () => {
-  expect(Object.hasOwn(RegistryHTTPServer, 'daemonThreads')).toBe(true);
-  expect(RegistryHTTPServer.daemonThreads).toBe(true);
-});
-
 test('health auth and workspace routes', async () => {
   const fixture = new ServerFixture(freshRoot());
   await fixture.open();

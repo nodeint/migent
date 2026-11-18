@@ -43,14 +43,16 @@ Package tests live in `packages/<package>/test/`, cross-package suites in `integ
 
 | Kind | File | Run | Use for |
 | --- | --- | --- | --- |
-| Unit | `*.test.ts`, `scripts/**/*.test.mjs` | `pnpm test:unit`; no build | Behavior inside the test process: functions, and command entry points run through `main()` with injected fakes |
-| Integration | `*.integration.test.ts` | `pnpm test:integration`; build first; files run one at a time | Behavior that needs real child processes, sockets, cross-process locks, signals, or the built CLI (`packages/cli/dist`) |
+| Unit | `*.test.ts`, `scripts/**/*.test.mjs` | `pnpm test:unit`; no build | Behavior inside the test process: functions, and command entry points run through `main()` with injected fakes. Child processes, `git` repositories, and local sockets may serve as fixtures, such as scripted `node -e` providers or a temporary repository |
+| Integration | `*.integration.test.ts`, `scripts/**/*.integration.test.mjs` | `pnpm test:integration`; build first; files run one at a time | Tests whose subject is a process, socket, cross-process lock, signal, `git` itself (such as installed hooks), or the built CLI (`packages/cli/dist`) |
 
-- Name a test `*.integration.test.ts` when it needs another process or built output; otherwise it is a unit test,
-  even under `integration/`.
+- Classify a test by what it checks, not by what it uses. Name it `*.integration.test.*` when the behavior under
+  test is one of the subjects above; otherwise it is a unit test, even if it uses a child process, a `git`
+  repository, or a socket as a fixture, and even under `integration/`.
 
 ### Writing tests
 
+- Decide whether a test should exist with the `testing` skill: tests protect logic, not coverage.
 - Name each test as a behavior sentence: `test('a command that is not on PATH warns too', ...)`.
 - Test one behavior per test and assert what a user or caller observes: exit code, stdout and stderr, files, JSON.
 - Never call real client CLIs. Inject fake `which`/`runCommand` into command entry points.
@@ -72,6 +74,7 @@ Full-repository test and lint runs are very slow: avoid them unless a rule below
 | --- | --- |
 | Lint | `pnpm lint -- <paths>` |
 | Unit tests | `pnpm test:unit <paths>`; add `-t "<name>"` to select tests |
+| Unit coverage | `pnpm test:coverage`; reports to `coverage/`; measures `packages/*/src` with the unit project only |
 | Integration tests | `node scripts/wrappers/run-integration.mjs --file <suite> [--case <name>]` |
 | Typecheck and build | `pnpm build` |
 

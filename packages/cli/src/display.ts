@@ -203,7 +203,7 @@ function executionLines(snapshot: Record<string, unknown>): Line[] {
 }
 
 /** What a human needs to choose a resume: idle time against the threshold, policy, TTL, margin, and context size. */
-export function describeResumeEstimate(decision: Record<string, unknown>): string {
+function describeResumeEstimate(decision: Record<string, unknown>): string {
   const estimate = isRecord(decision.estimate) ? decision.estimate : null;
   if (estimate === null) return 'no estimate recorded';
   const seconds = (value: unknown): string => (typeof value === 'number' ? `${value}s` : 'unknown');
@@ -365,7 +365,7 @@ function printPluginEvent(event: Record<string, unknown>, eventName: string): vo
   process.stdout.write(`${formatWatchTimestamp(event.timestamp)} ${eventName}${detail === '' ? '' : ` ${detail}`}${summary}\n`);
 }
 
-export function formatWatchTimestamp(timestamp: unknown): string {
+function formatWatchTimestamp(timestamp: unknown): string {
   if (typeof timestamp !== 'string' || timestamp.trim() === '') return '--';
   let text = timestamp.trim();
   if (text.endsWith('Z')) text = `${text.slice(0, -1)}+00:00`;

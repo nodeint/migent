@@ -107,7 +107,7 @@ const BASE62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
  * An OpenCode session id in the shape the server itself issues: `ses_`, 12 hex digits, then 14
  * base62 characters. The server creates a session under any unused `ses_` id passed to `run -s`.
  */
-export function generateSessionId(random: (size: number) => Uint8Array = randomBytes): string {
+function generateSessionId(random: (size: number) => Uint8Array = randomBytes): string {
   const hex = Array.from(random(HEX_PREFIX_BYTES), (byte) => byte.toString(HEX_RADIX).padStart(HEX_PAIR_WIDTH, '0')).join('');
   let tail = '';
   // Rejection sampling keeps the base62 digits uniform.
@@ -121,7 +121,7 @@ export function generateSessionId(random: (size: number) => Uint8Array = randomB
 
 const SESSION_ID = /^ses_[0-9A-Za-z]{10,40}$/;
 
-export function lookup(source: unknown, path: readonly string[]): unknown {
+function lookup(source: unknown, path: readonly string[]): unknown {
   let value = source;
   for (const key of path) {
     if (!isRecord(value)) return undefined;

@@ -57,7 +57,7 @@ function itemSummary(item: unknown, itemType: unknown, action: string): string {
   return `${label} ${action}`;
 }
 
-export const CODEX_REASONING_OPTION = 'model_reasoning_effort';
+const CODEX_REASONING_OPTION = 'model_reasoning_effort';
 
 const CODEX_EVENT_TYPES: ReadonlySet<string> = new Set([
   'thread.started', 'turn.started', 'turn.completed', 'turn.failed', 'item.started', 'item.updated', 'item.completed', 'error',

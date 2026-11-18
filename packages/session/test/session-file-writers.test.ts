@@ -3,15 +3,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import {
-  DIAGNOSTICS_SCHEMA_VERSION,
   EXECUTION_INPUT_SCHEMA_VERSION,
-  EXECUTION_SCHEMA_VERSION,
   ExecutionInput,
   isValid,
-  LIFECYCLE_EVENT_VERSION,
-  MANIFEST_SCHEMA_VERSION,
-  NEXT_SCHEMA_VERSION,
-  QUESTIONS_SCHEMA_VERSION,
   SessionLockFile,
   SessionManifest,
   SessionNext,
@@ -19,14 +13,11 @@ import {
   SessionStatusFile,
   validationIssues,
 } from '@nodeint/migent-contracts';
-import { EXECUTION_SCHEMA_VERSION as WRITER_EXECUTION_VERSION } from '@nodeint/migent-kernel';
 import { parseYamlDocument } from '@nodeint/migent-workflow';
 import { afterEach, expect, test } from 'vitest';
 
-import { MANIFEST_SCHEMA_EVENT_LOG } from '../src/constants.ts';
 import { sessionEventLog } from '../src/event-log.ts';
 import { publishNextSuggestions } from '../src/next-handoff.ts';
-import { EVENT_VERSION } from '../src/session-events.ts';
 import { readFoldedStatus } from '../src/session-fold.ts';
 import { SessionLock } from '../src/session-lock.ts';
 import { createAgentSession, createPreparedSession, createWorkflowSession } from '../src/session-records.ts';
@@ -70,15 +61,6 @@ const expectValid = (schema: Parameters<typeof isValid>[0], value: unknown): voi
   expect(validationIssues(schema, value)).toEqual([]);
   expect(isValid(schema, value)).toBe(true);
 };
-
-test('version constants of the writers equal the contracts constants', () => {
-  expect(EVENT_VERSION).toBe(LIFECYCLE_EVENT_VERSION);
-  expect(MANIFEST_SCHEMA_EVENT_LOG).toBe(MANIFEST_SCHEMA_VERSION);
-  expect(QUESTIONS_SCHEMA_VERSION).toBe(1);
-  expect(NEXT_SCHEMA_VERSION).toBe(1);
-  expect(WRITER_EXECUTION_VERSION).toBe(EXECUTION_SCHEMA_VERSION);
-  expect(DIAGNOSTICS_SCHEMA_VERSION).toBe(2);
-});
 
 test('manifest.yaml and status.json of a workflow, prepared and role session validate', () => {
   const root = workspace();

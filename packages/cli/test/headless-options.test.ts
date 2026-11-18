@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -8,7 +8,6 @@ import { cliHooks } from '../src/hooks.ts';
 import { main } from '../src/index.ts';
 import { capture } from './support.ts';
 
-const CODEX_HELP = readFileSync(new URL('../../adapters/src/options/codex.txt', import.meta.url), 'utf8');
 
 function tempDir(): string {
   return mkdtempSync(path.join(tmpdir(), 'migent-headless-'));
@@ -74,8 +73,4 @@ test('unparseable help warns without losing models', async () => {
     cliHooks.which = null;
     cliHooks.runCommand = null;
   }
-});
-
-test('the codex help fixture still parses through get options --native', () => {
-  expect(CODEX_HELP.length).toBeGreaterThan(0);
 });

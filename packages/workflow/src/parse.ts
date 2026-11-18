@@ -29,7 +29,7 @@ export function parseWorkflowMapping(data: Record<string, unknown>, source: stri
   }
 }
 
-export function parseWorkflowMappingUnchecked(data: Record<string, unknown>, source: string): WorkflowDocument {
+function parseWorkflowMappingUnchecked(data: Record<string, unknown>, source: string): WorkflowDocument {
   const workflowId = documentId(data, source);
   const schemaVersion = documentVersion(data);
   const unknown = unknownWorkflowKeys(data);
@@ -139,7 +139,7 @@ function parseLegacyOutputs(
   return { registry: undefined, outputs };
 }
 
-export function parseDownstream(raw: unknown, outputs: readonly WorkflowOutput[]): WorkflowDownstream[] {
+function parseDownstream(raw: unknown, outputs: readonly WorkflowOutput[]): WorkflowDownstream[] {
   if (raw === undefined) return [];
   if (raw === null) throw new ConfigurationError('downstream must be a list.');
   requireContainer(DOCUMENT_FIELD_SCHEMAS.downstream, raw, 'downstream');
@@ -207,7 +207,7 @@ export function documentId(data: Record<string, unknown>, filePath: string): str
   return requiredString(data.id, 'id');
 }
 
-export interface ParseStagesVersions {
+interface ParseStagesVersions {
   readonly version2?: boolean;
   readonly version3?: boolean;
   readonly version5?: boolean;
@@ -299,7 +299,7 @@ function parseRoleStage(
   });
 }
 
-export function parseStages(raw: unknown, versions: ParseStagesVersions = {}): Record<string, StageSpec> {
+function parseStages(raw: unknown, versions: ParseStagesVersions = {}): Record<string, StageSpec> {
   if (!Array.isArray(raw) || raw.length === 0) return {};
   const stages: Record<string, StageSpec> = {};
   const items: Record<string, unknown>[] = [];
@@ -352,7 +352,7 @@ function parseStageItem(
 }
 
 /** Gives a parse error raised while reading stage `index` its code and author-coordinate path. */
-export function locatedAtStage(error: unknown, index: number, item: unknown): unknown {
+function locatedAtStage(error: unknown, index: number, item: unknown): unknown {
   if (!(error instanceof ConfigurationError) || error.path !== undefined) return error;
   const path = stageErrorPath(error.message, index, item);
   return new ConfigurationError(error.message, {

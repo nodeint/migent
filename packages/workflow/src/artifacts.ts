@@ -1,5 +1,5 @@
 
-import { ARTIFACT_ID_PATTERN, isValid,WorkflowArtifact, WorkflowDecisionEntry } from '@nodeint/migent-contracts';
+import { ARTIFACT_ID_PATTERN, isValid,WorkflowArtifact } from '@nodeint/migent-contracts';
 
 import type { DraftUnit } from './draft/problems.js';
 import { ConfigurationError } from './errors.js';
@@ -16,7 +16,7 @@ export function parseTopLevelOutputs(raw: unknown, stages: Record<string, StageS
   return parseOutputItems(raw, stages, 'outputs');
 }
 
-export function parseOutputItems(
+function parseOutputItems(
   raw: unknown,
   stages: Record<string, StageSpec>,
   field: string,
@@ -80,7 +80,7 @@ export function outputOfArtifact(artifact: ArtifactSpec): WorkflowOutput {
   };
 }
 
-export interface ArtifactProblem {
+interface ArtifactProblem {
   code: string;
   message: string;
   path: (string | number)[];
@@ -92,11 +92,9 @@ export interface ArtifactBuild {
   problems: ArtifactProblem[];
 }
 
-export const ARTIFACT_ID = new RegExp(ARTIFACT_ID_PATTERN);
+const ARTIFACT_ID = new RegExp(ARTIFACT_ID_PATTERN);
 
-export const DECISION_ENTRY_KEYS: readonly string[] = Object.keys(WorkflowDecisionEntry.properties);
-
-export const ARTIFACT_KEYS: readonly string[] = Object.keys(WorkflowArtifact.properties);
+const ARTIFACT_KEYS: readonly string[] = Object.keys(WorkflowArtifact.properties);
 
 type ArtifactPath = (string | number)[];
 

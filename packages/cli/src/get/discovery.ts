@@ -19,7 +19,7 @@ export type DiscoveryOutcome<T> =
   | { status: 'skipped'; message: string }
   | { status: 'failed'; message: string };
 
-export interface EffortRow {
+interface EffortRow {
   model: string;
   option: string;
   values: readonly string[];

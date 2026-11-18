@@ -362,7 +362,7 @@ function outputDrops(previous: Record<string, unknown>, folded: Record<string, u
   return drops;
 }
 
-export function repairRefusalMessage(sessionId: string, reasons: readonly string[]): string {
+function repairRefusalMessage(sessionId: string, reasons: readonly string[]): string {
   const lead = `Session ${sessionId} cannot be repaired because ${reasons.join('; ')}.`;
   const unparseable = reasons.some((reason) => reason.includes('does not parse'));
   if (!unparseable) return lead;

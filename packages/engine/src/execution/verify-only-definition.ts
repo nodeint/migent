@@ -11,7 +11,7 @@ export type VerifyOnlyEnd = { readonly passed: boolean };
 
 export type VerifyOnlyState = { readonly turn: number };
 
-export const VERIFY_ONLY_EDGES: readonly Edge[] = [{ from: VERIFY_RUN, outcome: 'succeeded', to: { kind: 'end' } }];
+const VERIFY_ONLY_EDGES: readonly Edge[] = [{ from: VERIFY_RUN, outcome: 'succeeded', to: { kind: 'end' } }];
 
 /** A stage with only a verify list: one run, then the execution ends. It shares `run.verify` with role stages. */
 export const verifyOnlyDefinition: Definition<VerifyOnlyState, Change, VerifyOnlyEnd> = {

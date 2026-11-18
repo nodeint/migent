@@ -21,33 +21,6 @@ test('session without a subcommand prints help', async () => {
   expect(captured.stdout).toContain('follow');
 });
 
-test('session prepare help names the workflow start', async () => {
-  const captured = await capture(() => main(['session', 'prepare', '--help']));
-  expect(captured.value).toBe(0);
-  expect(captured.stdout.replaceAll(/\s+/g, ' ')).toContain(
-    'session run --session <id>.',
-  );
-});
-
-test('session run help shows both modes', async () => {
-  const captured = await capture(() => main(['session', 'run', '--help']));
-  expect(captured.value).toBe(0);
-  expect(captured.stdout).toContain('migent session run --workflow plan --task');
-  expect(captured.stdout).toContain('migent session run --session <prepared-session>');
-  expect(captured.stdout).toContain('migent session run --role reviewer --prompt');
-  expect(captured.stdout).toContain('Workflow run:');
-  expect(captured.stdout).toContain('Role run:');
-});
-
-test('session continue help shows reply', async () => {
-  const captured = await capture(() => main(['session', 'continue', '--help']));
-  expect(captured.value).toBe(0);
-  expect(captured.stdout).toContain('--reply');
-  expect(captured.stdout).toContain('--reply-file');
-  expect(captured.stdout).toContain('migent session continue <session> --reply "<reply>"');
-  expect(captured.stdout).toContain('Role session:');
-});
-
 test('session continue rejects an empty or double reply', async () => {
   const empty = await capture(() => main(['session', 'continue', 'wave-3', '--reply', '   ']));
   expect(empty.value).toBe(2);

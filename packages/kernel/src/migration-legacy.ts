@@ -6,7 +6,7 @@
 
 export type MigrationBody = Record<string, unknown>;
 /** A step returns the migrated body; it never changes the body it receives. */
-export type MigrationFn = (body: MigrationBody) => MigrationBody;
+type MigrationFn = (body: MigrationBody) => MigrationBody;
 export type MigrationKind = 'model' | 'role' | 'stage';
 
 const CODEX_REASONING_OPTION = 'model_reasoning_effort';
@@ -17,7 +17,7 @@ function nonempty(value: unknown): value is string {
 }
 
 /** Renames the generic `thinking` setting to the CLI's own option, never overwriting one already set. */
-export function moveThinkingTo(option: string): MigrationFn {
+function moveThinkingTo(option: string): MigrationFn {
   return (body) => {
     if ('options' in body && !isRecord(body.options)) return body;
     let options = isRecord(body.options) ? { ...body.options } : null;

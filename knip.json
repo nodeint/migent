@@ -1,0 +1,17 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "workspaces": {
+    ".": {
+      "entry": ["scripts/**/*.{mjs,ts}", "integration/**/*.ts"],
+      "project": ["scripts/**", "integration/**"],
+      "ignoreDependencies": ["@nodeint/migent"]
+    },
+    "packages/*": {
+      "entry": ["test/**/*.test.ts", "test/**/*-worker.ts"],
+      "project": ["src/**/*.ts", "test/**/*.ts"],
+      "ignoreDependencies": ["@nodeint/migent-.*"],
+      "ignoreBinaries": ["build"]
+    }
+  },
+  "ignore": ["**/fixtures/**"]
+}

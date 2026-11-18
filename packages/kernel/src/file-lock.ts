@@ -6,7 +6,7 @@ import { INT32_BYTES } from './constants.js';
 // platform. A holder that dies without releasing leaves it stale after STALE_MS.
 const STALE_MS = 10_000;
 const POLL_MS = 20;
-export const FILE_LOCK_TIMEOUT_MS = 30_000;
+const FILE_LOCK_TIMEOUT_MS = 30_000;
 
 export class FileLockTimeout extends Error {
   constructor(filePath: string) {
@@ -15,7 +15,7 @@ export class FileLockTimeout extends Error {
   }
 }
 
-export const fileLockOps = {
+const fileLockOps = {
   /** One non-blocking attempt. Returns a release function, or null while another holder has it. */
   tryLock(filePath: string): (() => void) | null {
     try {

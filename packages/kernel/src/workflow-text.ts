@@ -9,7 +9,7 @@ import { ConfigurationError } from './errors.js';
 import { applyEdits, ConfigEditError, deepEqual, type Edit, splitComment, splitLines, yamlScalar } from './yaml-patch.js';
 
 /** An artifact id as a YAML flow scalar; words YAML may read as null or boolean stay strings. */
-export function artifactIdScalar(id: string): string {
+function artifactIdScalar(id: string): string {
   return AMBIGUOUS_SCALAR.test(id) ? JSON.stringify(id) : yamlScalar(id);
 }
 

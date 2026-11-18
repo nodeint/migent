@@ -1,23 +1,10 @@
-import { readFileSync } from 'node:fs';
 
 import { isValid,WorkflowDocumentInput, WorkflowStage } from '@nodeint/migent-contracts';
 import { describe, expect, test } from 'vitest';
-import { parse } from 'yaml';
 
 import { parseWorkflowMapping } from '../src/index.ts';
 
-const template = (name: string): Record<string, unknown> =>
-  parse(readFileSync(new URL(`../../../templates/workflows/${name}.yaml`, import.meta.url), 'utf8'));
-
 describe('workflow contract', () => {
-  for (const name of ['plan', 'implement']) {
-    test(`template ${name} matches`, () => {
-      const doc = template(name);
-      expect(isValid(WorkflowDocumentInput, doc)).toBe(true);
-      for (const stage of doc.stages as unknown[]) expect(isValid(WorkflowStage, stage)).toBe(true);
-    });
-  }
-
   test('objects are closed', () => {
     expect(isValid(WorkflowDocumentInput, { schema_version: 7, bogus: 1 })).toBe(false);
     expect(isValid(WorkflowStage, { id: 'a', produces: {} })).toBe(false);

@@ -4,7 +4,7 @@ import { isRecord } from '@nodeint/migent-workflow';
 
 import { type ParsedEvent,readParsedEvents } from './session-events.js';
 
-export const EXIT_ANOMALY_EVENT = 'provider.exit_anomaly';
+const EXIT_ANOMALY_EVENT = 'provider.exit_anomaly';
 
 /** One provider process that exited non-zero without reporting an error. */
 export interface ExitAnomaly {
@@ -20,7 +20,7 @@ export interface ExitAnomaly {
 }
 
 /** Parse one event. A malformed event (no execution id, no boolean `accepted`) is rejected, not guessed. */
-export function parseExitAnomaly(event: ParsedEvent): ExitAnomaly | null {
+function parseExitAnomaly(event: ParsedEvent): ExitAnomaly | null {
   if (event.event !== EXIT_ANOMALY_EVENT || event.executionId === null) return null;
   const details = isRecord(event.raw.details) ? event.raw.details : {};
   if (typeof details.accepted !== 'boolean') return null;

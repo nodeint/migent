@@ -21,7 +21,7 @@ export function optionsDict(body: unknown, key: string): Record<string, string> 
   return stringMap(options);
 }
 
-export function stringMap(options: Record<string, unknown>): Record<string, string> {
+function stringMap(options: Record<string, unknown>): Record<string, string> {
   const parsed: Record<string, string> = {};
   for (const [key, value] of Object.entries(options)) {
     const text = optionValueText(value);

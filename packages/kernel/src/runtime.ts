@@ -1,14 +1,12 @@
 import { MS_PER_SECOND, PAD_WIDTH_2, SECONDS_PER_HOUR, SECONDS_PER_MINUTE } from './constants.js';
 
-export { addArtifactContext, addStageOutcomeContract, flattenHistory, type ProviderPromptOptions,renderProviderPrompt } from '@nodeint/migent-prompts';
+export { addArtifactContext, addStageOutcomeContract, flattenHistory, renderProviderPrompt } from '@nodeint/migent-prompts';
 export const MIGENT_DIRNAME = '.migent';
 export const EXECUTIONS_DIRNAME = 'executions';
 export const SESSIONS_DIRNAME = 'sessions';
 export const CONVERSATION_FILENAME = 'conversation.json';
 export const LEGACY_CONVERSATION_FILENAME = 'session.json';
 export const EXECUTION_SCHEMA_VERSION = 2;
-
-export { debugEnabled } from './env.js';
 
 export function log(message: string): void {
   process.stderr.write(`[migent] ${message}\n`);

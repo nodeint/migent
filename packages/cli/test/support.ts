@@ -257,7 +257,7 @@ export class CancelOnCommand extends ScriptedClient {
  * file the prompt names. `status: question` with a JSON body, or a `<<FILE>>` section, supplies the
  * questions. Replies without a status header write nothing.
  */
-export function writeHandoffFromReply(prompt: string, response: string): string {
+function writeHandoffFromReply(prompt: string, response: string): string {
   if (!/^- Handoff file: `/m.test(prompt)) return writeQuestionRequestFromReply(prompt, response);
   const target = [...prompt.matchAll(/^- Handoff file: `(.+)`$/gm)].at(-1)?.[1];
   const marker = '\n<<FILE>>';
@@ -320,7 +320,7 @@ function headerHandoff(status: string | undefined, headers: ReadonlyMap<string, 
 }
 
 /** Protocol 2 shim: `status: question` plus a JSON body, or a `<<FILE>>` section, becomes the question request file. */
-export function writeQuestionRequestFromReply(prompt: string, response: string): string {
+function writeQuestionRequestFromReply(prompt: string, response: string): string {
   const target = [...prompt.matchAll(/^- Question file: `(.+)`$/gm)].at(-1)?.[1];
   const marker = '\n<<FILE>>';
   const split = response.indexOf(marker);

@@ -22,7 +22,7 @@ export type StageAgent =
   | { kind: 'named'; name: string }
   | { kind: 'inline'; value: Record<string, unknown> };
 
-export interface StageFields {
+interface StageFields {
   ask?: AskTarget;
   id: string;
   description: string | null;

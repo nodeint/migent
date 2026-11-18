@@ -16,7 +16,7 @@ import { NativeOptions } from '../utils/native-options.js';
 import { parseHelpOptions } from '../utils/parse-help-options.js';
 import { compact, finite, isRecord, labelOf, parseJsonObject, picked } from './json.js';
 
-export const GROK_REASONING_OPTION = 'reasoning-effort';
+const GROK_REASONING_OPTION = 'reasoning-effort';
 const GROK_EFFORT_PROBE = 'migent-probe';
 const GROK_EFFORTS = /use one of: ([^\n]+)/;
 

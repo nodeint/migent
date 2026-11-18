@@ -26,7 +26,6 @@ import { ConfigurationError } from './errors.js';
 export const STAGE_FIELD_SCHEMAS = WorkflowStage.properties;
 export const DOCUMENT_FIELD_SCHEMAS = WorkflowDocumentInput.properties;
 export const RUN_WHEN_KEYS: readonly string[] = Object.keys(WorkflowRunWhen.properties);
-export const DOWNSTREAM_KEYS: readonly string[] = Object.keys(WorkflowDownstream.properties);
 
 const typeIssue = (schema: TSchema, value: unknown): string | null =>
   schemaIssues(schema, value).find((issue) => issue.path.length === 0 && issue.keyword === 'type')?.message ?? null;

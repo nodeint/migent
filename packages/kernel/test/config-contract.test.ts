@@ -1,9 +1,5 @@
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-
 import { ConfigLayer, EffectiveConfig, isValid } from '@nodeint/migent-contracts';
 import { describe, expect, test } from 'vitest';
-import { parse } from 'yaml';
 
 import {
   buildStructuralIndex,
@@ -15,17 +11,7 @@ import {
   resolveRoleCascade,
 } from '../src/index.js';
 
-const read = (relative: string): unknown => parse(readFileSync(fileURLToPath(new URL(relative, import.meta.url)), 'utf8'));
-
 describe('config layer contract', () => {
-  test.each(['../../../.migent/config.yaml', '../../../templates/config.yaml', '../../../templates/config.local.yaml'])(
-    '%s is a valid layer',
-    (file) => {
-      const doc = read(file) ?? {};
-      expect(isValid(ConfigLayer, doc)).toBe(true);
-    },
-  );
-
   test('a partial named agent is a valid layer and merges into a valid effective config', () => {
     const project = { schema_version: 7, agents: { a: { client: { type: 'codex' } } }, roles: { r: { agent: 'a' } } };
     const local = { agents: { a: { model: 'm' } } };

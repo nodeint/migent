@@ -6,7 +6,7 @@ import { createWorkflowSession, SessionLock, SessionStore } from '@nodeint/migen
 
 import { removeWorkspace, writeFakeWorkflowWorkspace } from './support.ts';
 
-export const WORKFLOW = `schema_version: 7
+const WORKFLOW = `schema_version: 7
 id: plan
 artifacts:
   plan: { file: plan.md }

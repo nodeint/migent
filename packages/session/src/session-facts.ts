@@ -51,7 +51,7 @@ export function sessionIsCorrupt(sessionDirectory: string): boolean {
   return false;
 }
 
-export function readJsonFile(filePath: string): { state: 'missing' | 'corrupt' | 'ok'; value: Record<string, unknown> | null } {
+function readJsonFile(filePath: string): { state: 'missing' | 'corrupt' | 'ok'; value: Record<string, unknown> | null } {
   let text: string;
   try {
     text = readFileSync(filePath, 'utf8');
@@ -113,7 +113,7 @@ export function readExecutions(sessionDirectory: string): ExecutionRow[] {
   return rows;
 }
 
-export function executionRow(directoryName: string, raw: Record<string, unknown>): ExecutionRow {
+function executionRow(directoryName: string, raw: Record<string, unknown>): ExecutionRow {
   const outcome = isRecord(raw.outcome) ? raw.outcome : null;
   return {
     id: typeof raw.execution_id === 'string' ? raw.execution_id : directoryName,

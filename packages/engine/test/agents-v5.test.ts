@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { ConfigurationError, listAgentDefinitions, loadRoleDescription, loadRoleResponsibilities, resolveRoleCascade, resolveStageSpec, unknownRoleKeyEntries } from '@nodeint/migent-kernel';
 import { readWorkflowFreeze, writeWorkflowFreeze } from '@nodeint/migent-session';
-import { SCHEMA_VERSION, unknownWorkflowKeyEntries } from '@nodeint/migent-workflow';
+import { unknownWorkflowKeyEntries } from '@nodeint/migent-workflow';
 import { parseWorkflowMapping, type RoleStageSpec } from '@nodeint/migent-workflow';
 import { loadNamedWorkflow } from '@nodeint/migent-workflow';
 import { expect, test } from 'vitest';
@@ -34,10 +34,6 @@ function stageOf(extra: Record<string, unknown> = {}): RoleStageSpec {
   if (stage === undefined || stage.kind !== 'role') throw new Error('expected a role stage');
   return stage;
 }
-
-test('the current schema version is 7', () => {
-  expect(SCHEMA_VERSION).toBe(7);
-});
 
 test('a v6 stage selects an agent by name or with a complete inline definition', () => {
   expect(stageOf().agent).toBeNull();

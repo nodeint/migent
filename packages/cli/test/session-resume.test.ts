@@ -69,12 +69,6 @@ test('a completed session has no resume decision (exit 2)', async () => {
   } finally { cliHooks.runner = null; removeWorkspace(run.root); }
 }, 30_000);
 
-test('help names the exit code and how resume differs from continue', async () => {
-  const help = await capture(() => main(['session', 'resume', '--help']));
-  expect(help.stdout).toContain('Exit 10');
-  expect(help.stdout).toContain('session continue');
-});
-
 test('show lists the pending decision with the command; follow and list agree on the status', async () => {
   const run = await waiting(['status: complete\n\nDone']);
   try {

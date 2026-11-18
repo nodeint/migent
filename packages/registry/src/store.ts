@@ -69,7 +69,7 @@ export class InvalidRecord extends Error {
   }
 }
 
-export interface ToolRecord {
+interface ToolRecord {
   name: string;
   version?: string;
 }

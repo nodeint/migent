@@ -40,7 +40,7 @@ export function turnDebugStep(
 
 // The runner alone decides whether a turn failed. A protocol-level failure the CLI
 // announces mid-stream stays visible as a diagnostic, never as a second verdict.
-export function forwardProviderEvent(eventReporter: TurnEvents, event: unknown): void {
+function forwardProviderEvent(eventReporter: TurnEvents, event: unknown): void {
   if (!isRecord(event) || typeof event.event !== 'string') return;
   eventReporter.emit(
     event.event === 'provider.turn_failed' || event.event === 'provider.turn_completed'
@@ -51,7 +51,7 @@ export function forwardProviderEvent(eventReporter: TurnEvents, event: unknown):
   );
 }
 
-export function captureUsage(client: CliClient, stdout: string): UsageCapture | null {
+function captureUsage(client: CliClient, stdout: string): UsageCapture | null {
   try {
     const captured = client.captureUsage(stdout);
     return isRecord(captured) ? captured : null;
@@ -61,7 +61,7 @@ export function captureUsage(client: CliClient, stdout: string): UsageCapture | 
 }
 
 // Parses the finished process into the turn result, classifying failures the exit code hides.
-export function finishTurn(
+function finishTurn(
   client: CliClient,
   turn: { result: CommandResult; argv: string[]; lastMessageFile: string; summarizer: StreamSummarizer },
   reportMismatch: (reported: string) => void,

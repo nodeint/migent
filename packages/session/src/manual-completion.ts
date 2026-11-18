@@ -25,7 +25,7 @@ import type { ManualCompletionResult } from './session-store-types.js';
 import { existingNext } from './session-store-util.js';
 
 /** `published_by_execution_id` for outputs published by `migent session complete`. */
-export const MANUAL_PUBLISHER = 'manual';
+const MANUAL_PUBLISHER = 'manual';
 
 /** The directory of an existing session, or a `ConfigurationError`. */
 export function requireSessionDirectory(sessionsDirectory: string, sessionId: string): string {
@@ -37,7 +37,7 @@ export function requireSessionDirectory(sessionsDirectory: string, sessionId: st
   return directory;
 }
 
-export interface ManualCompletionPlan {
+interface ManualCompletionPlan {
   outputs: LedgerOutput[];
   /** Required outputs that cannot be resolved or are empty. */
   missing: string[];
@@ -86,7 +86,7 @@ function collectManualSources(workflow: WorkflowDocument, snapshots: readonly Ex
  * version 1 uses `completion.outputs`. Empty or unresolvable sources are not published.
  * Returns empty plan with no missing artifacts when workflow is null (caller validates).
  */
-export function publishManualCompletion(
+function publishManualCompletion(
   sessionDirectory: string,
   workflow: WorkflowDocument | null,
   snapshots: readonly ExecutionSnapshot[],

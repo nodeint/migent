@@ -33,7 +33,7 @@ import {
 // wrapper is alive its endpoint accepts connections, which is how other processes tell a
 // running execution from an orphaned one without trusting pids.
 
-export { WRAPPER_FAILED, WRAPPER_READY, WRAPPER_START };
+export { WRAPPER_READY, WRAPPER_START };
 
 const FAILURE_SEND_TIMEOUT_MS = 500;
 const DEBUG = debugEnabled();

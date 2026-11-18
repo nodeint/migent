@@ -42,7 +42,7 @@ export function executionIdFor(order: number, stageId: string, attempt: number):
 }
 
 /** Create a fresh execution directory; an existing one is an error. */
-export function makeExecutionDirectory(directory: string): void {
+function makeExecutionDirectory(directory: string): void {
   mkdirSync(path.dirname(directory), { recursive: true });
   try {
     mkdirSync(directory);
@@ -54,7 +54,7 @@ export function makeExecutionDirectory(directory: string): void {
   }
 }
 
-export function copyTaskFile(sessionDirectory: string, directory: string): void {
+function copyTaskFile(sessionDirectory: string, directory: string): void {
   const taskSource = path.join(sessionDirectory, 'task.md');
   if (existsSync(taskSource)) copyFileSync(taskSource, path.join(directory, 'task.md'));
 }
@@ -94,7 +94,7 @@ export function skippedExecutionMetadata(input: {
   };
 }
 
-export function runningExecutionMetadata(input: {
+function runningExecutionMetadata(input: {
   sessionId: string;
   executionId: string;
   order: number;

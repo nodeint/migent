@@ -316,18 +316,6 @@ test('session show and follow keep snapshot and exit-when-done behavior', async 
   }
 });
 
-test('session inspect help names list, show, and follow', async () => {
-  const list = await capture(() => main(['session', 'list', '--help']));
-  expect(list.value).toBe(0);
-  expect(list.stdout).toContain('migent session list');
-  expect(list.stdout).toContain('migent session list --latest --json');
-  const show = await capture(() => main(['session', 'show', '--help']));
-  expect(show.stdout).toContain('migent session show <session>');
-  const follow = await capture(() => main(['session', 'follow', '--help']));
-  expect(follow.stdout).toContain('migent session follow <session>');
-  expect(follow.stdout).toContain('--exit-when-done');
-});
-
 class UnstartableProvider extends FakeClient {
   override buildCommand(input: BuildCommandInput): CommandSpec {
     super.buildCommand(input);

@@ -27,8 +27,6 @@ function isObject(value: PlainData | undefined): value is PlainObject {
 export const isString: Check = (value) => typeof value === 'string';
 export const isNumber: Check = (value) => typeof value === 'number';
 export const isBoolean: Check = (value) => typeof value === 'boolean';
-/** Any present plain value, for a member the operation only carries to a consumer that validates it. */
-export const isPresent: Check = (value) => value !== undefined;
 export const isRecord: Check = (value) => isObject(value);
 
 export function nullable(check: Check): Check {

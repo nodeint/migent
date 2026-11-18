@@ -26,7 +26,7 @@ export function failedResumed(
   );
 }
 
-export function unresumedStageFailure(
+function unresumedStageFailure(
   latest: ExecutionSnapshot,
   sessionStatus: ScheduleState['sessionStatus'],
   resumes: ScheduleState['resumes'],

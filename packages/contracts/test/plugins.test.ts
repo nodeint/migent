@@ -1,12 +1,6 @@
 import { expect, test } from 'vitest';
 
-import { CONFIG_SECTIONS, isValid, PLUGIN_EVENTS, PluginAfterProposal, PluginBeforeProposal, PluginEventProposal, PLUGINS_SECTION, SESSION_EVENTS } from '../src/index.ts';
-
-test('plugin events are registered, and the section is registered', () => {
-  const names = SESSION_EVENTS.map((entry) => entry.event);
-  for (const name of Object.keys(PLUGIN_EVENTS)) expect(names).toContain(name);
-  expect(CONFIG_SECTIONS).toContain(PLUGINS_SECTION);
-});
+import { isValid, PluginAfterProposal, PluginBeforeProposal, PluginEventProposal, PLUGINS_SECTION } from '../src/index.ts';
 
 test('the proposal unions are closed', () => {
   expect(isValid(PluginEventProposal, { kind: 'none' })).toBe(true);

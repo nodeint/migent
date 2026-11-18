@@ -56,7 +56,7 @@ export function parseFailedMessage(message: unknown): WrapperFailedMessage | nul
   return parsed;
 }
 
-export type WrapperReported = Omit<WrapperFailedMessage, 'type'> & { kind: 'wrapper-reported' };
+type WrapperReported = Omit<WrapperFailedMessage, 'type'> & { kind: 'wrapper-reported' };
 
 /** The outcome of the start handshake, as the owner sees it. */
 export type StartResult =

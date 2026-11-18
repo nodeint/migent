@@ -11,8 +11,8 @@ import { isRecord } from '@nodeint/migent-workflow';
 const LOCK_NONCE_BYTES = 12;
 
 export const SESSION_LOCK_FILENAME = 'session.lock';
-export const SESSION_LOCK_STALE_MS = 30_000;
-export const SESSION_LOCK_HEARTBEAT_MS = 10_000;
+const SESSION_LOCK_STALE_MS = 30_000;
+const SESSION_LOCK_HEARTBEAT_MS = 10_000;
 export const CANCEL_REQUEST_FILENAME = 'cancel.requested';
 const CANCEL_POLL_MS = 500;
 

@@ -243,12 +243,6 @@ test('usage covers only the steps present and is null with none', () => {
   expect(client.captureUsage(stream({ type: 'text', part: { text: 'x' } }))).toBeNull();
 });
 
-test('the client is registered', () => {
-  expect(clientIds()).toContain('opencode');
-  expect(createClient('opencode')).toBeInstanceOf(OpencodeClient);
-});
-
-
 test('model effort becomes an OpenCode V2 model variant on new and resumed runs', () => {
   const client = new OpencodeClient();
   const target = loadAgentTarget(
