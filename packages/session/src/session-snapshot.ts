@@ -5,10 +5,10 @@ import type { ClientRegistry } from '@nodeint/migent-kernel';
 import { MIGENT_DIRNAME, SESSIONS_DIRNAME } from '@nodeint/migent-kernel';
 
 import { exitAnomaliesOf } from './exit-anomaly.js';
-import { normalizeTurns, resolveExecutionClients } from './metrics.js';
-import { loadMetricsWorkflow, orderedEvents, readExecutions, sessionIsCorrupt } from './metrics-read.js';
 import { readStatusFileState } from './query.js';
 import type { ParsedEvent } from './session-events.js';
+import { loadSessionWorkflow, orderedEvents, readExecutions, sessionIsCorrupt } from './session-facts.js';
+import { normalizeTurns, resolveExecutionClients } from './usage-normalize.js';
 
 const directoryOf = (workspace: string, sessionId: string): string =>
   path.join(workspace, MIGENT_DIRNAME, SESSIONS_DIRNAME, sessionId);
@@ -46,7 +46,7 @@ export function readSessionSnapshot(
   if (sessionIsCorrupt(sessionDirectory)) {
     return {
       basis_seq: basisSeq, status: {}, corrupt: true, executions: [], events: [], workflow: null, turns: [],
-      exit_anomalies: [],
+      execution_clients: {}, exit_anomalies: [],
     };
   }
   const statusRead = readStatusFileState(path.join(sessionDirectory, 'status.json'));
@@ -62,7 +62,7 @@ export function readSessionSnapshot(
       usage: { ...turn.usage },
       captured: turn.captured,
     }));
-  const workflow = loadMetricsWorkflow(workspace, sessionDirectory, status);
+  const workflow = loadSessionWorkflow(workspace, sessionDirectory, status);
   return {
     basis_seq: basisSeq,
     status,
@@ -74,6 +74,7 @@ export function readSessionSnapshot(
     })),
     workflow: workflow === null ? null : (workflow as unknown as Record<string, unknown>),
     turns,
+    execution_clients: Object.fromEntries(executionClients),
     exit_anomalies: exitAnomaliesOf(events) as unknown as Record<string, unknown>[],
   };
 }

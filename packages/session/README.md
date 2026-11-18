@@ -46,4 +46,4 @@ diagnostics. Depends on the kernel. Internal; no stable public API. Behavior:
 | `repairSession` | `src/session-repair.ts` | Repair broken state |
 | `selectRunWorkflow`, `selectSessionWorkflow` | `src/session-selection.ts` | Resolve workflow for a run |
 | `publishNextSuggestions`, `resolveHandoff` | `src/next-handoff.ts` | Downstream handoff |
-| metrics exports | `src/metrics.ts` | `metrics.json` |
+| `normalizeTurns`, `resolveExecutionClients` | `src/usage-normalize.ts` | Normalize turn usage into the snapshot `execution_clients` fact. Core no longer writes metrics; the metrics plugin does, and readers live in cli `commands/metrics-read.ts` |

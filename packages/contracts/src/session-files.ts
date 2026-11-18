@@ -2,6 +2,7 @@ import Type, { type Static } from 'typebox';
 
 import { id, nullable } from './common.js';
 import { DIAGNOSTICS_SCHEMA_VERSION, EXECUTION_INPUT_SCHEMA_VERSION, EXECUTION_SCHEMA_VERSION, MANIFEST_SCHEMA_VERSION, NEXT_SCHEMA_VERSION, QUESTIONS_SCHEMA_VERSION } from './data/versions.js';
+import { SealedMetricsCurrent, SealedMetricsHistorical } from './known-shapes.js';
 
 /**
  * Persisted files under `.migent/sessions/<id>/`. Objects are open: readers ignore unknown fields.
@@ -145,6 +146,24 @@ export const SessionNext = Type.Object(
   { $id: id('session/next'), title: 'Next suggestions (`next.json`)' },
 );
 export type SessionNext = Static<typeof SessionNext>;
+
+// ---- plugins/metrics/metrics.json and legacy metrics.json -------------------------------------
+
+/** Metrics sealed by the `metrics` plugin. Same fields as the current producer in `known/metrics-current`. */
+export const SessionMetrics = Type.Object(SealedMetricsCurrent.properties, {
+  $id: id('session/metrics'),
+  title: 'Session metrics (`plugins/metrics/metrics.json`)',
+  description: 'Written once when a workflow session completes, by the `metrics` plugin. Absent for agent sessions.',
+});
+export type SessionMetrics = Static<typeof SessionMetrics>;
+
+/** Metrics sealed in the session root by earlier releases. Any released Migent may have written a subset of fields. */
+export const SessionMetricsLegacy = Type.Object(SealedMetricsHistorical.properties, {
+  $id: id('session/metrics-legacy'),
+  title: 'Session metrics, legacy root file (`metrics.json`)',
+  description: 'Sealed in the session root before the `metrics` plugin existed. Read when the plugin file is absent. All fields optional.',
+});
+export type SessionMetricsLegacy = Static<typeof SessionMetricsLegacy>;
 
 // ---- status.json ------------------------------------------------------------------------------
 

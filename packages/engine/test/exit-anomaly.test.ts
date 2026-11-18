@@ -2,7 +2,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import path from 'node:path';
 
 import { type CliRunOutput, type FailureOrigin, type RawFailure, type ResponseSource } from '@nodeint/migent-kernel';
-import { createWorkflowSession, sessionMetrics } from '@nodeint/migent-session';
+import { createWorkflowSession } from '@nodeint/migent-session';
 import { watchSnapshot } from '@nodeint/migent-session';
 import { expect, test, vi } from 'vitest';
 
@@ -346,62 +346,6 @@ function sessionDirectory(workspace: string, sessionId: string): string {
   return path.join(workspace, '.migent', 'sessions', sessionId);
 }
 
-function counters(value: unknown): Record<string, unknown> {
-  const record = value as Record<string, unknown>;
-  return {
-    total: record.provider_exit_anomalies,
-    accepted: record.provider_exit_anomalies_accepted,
-  };
-}
-
-test('metrics: an accepted exit-only turn counts once in the execution row and the totals', async () => {
-  const { workspace, sessionId } = setup(workflowText());
-  const provider = new ExitProvider([{ reply: OK, artifact: '# notes\n', exit: 1, source: 'model' }]);
-  const result = await runStage(provider, workspace, sessionId);
-  const metrics = sessionMetrics(workspace, sessionId, {});
-  expect(counters(metrics.totals)).toEqual({ total: 1, accepted: 1 });
-  const rows = metrics.executions as Record<string, unknown>[];
-  expect(rows.map((row) => [row.execution_id, counters(row)])).toEqual([
-    [result.execution_id, { total: 1, accepted: 1 }],
-  ]);
-  expect(counters(sessionMetrics(workspace, sessionId, {}).totals)).toEqual({ total: 1, accepted: 1 });
-});
-
-test('metrics: a rejected exit-only turn counts in the total and not in the accepted subset', async () => {
-  const { workspace, sessionId } = setup(workflowText());
-  await runStage(new ExitProvider([{ reply: 'no header', exit: 1, source: 'model' }, { reply: 'no header', exit: 0, source: 'model' }]), workspace, sessionId);
-  const metrics = sessionMetrics(workspace, sessionId, {});
-  expect(counters(metrics.totals)).toEqual({ total: 1, accepted: 0 });
-});
-
-test('metrics: clean turns and provider errors record zero anomalies', async () => {
-  const { workspace, sessionId } = setup(workflowText());
-  await runStage(new ExitProvider([{ reply: OK, artifact: '# notes\n', exit: 0, source: 'model' }]), workspace, sessionId);
-  await runStage(
-    new ExitProvider([{ reply: OK, exit: 1, origin: 'provider-error', source: 'model' }]),
-    workspace,
-    sessionId,
-  );
-  expect(counters(sessionMetrics(workspace, sessionId, {}).totals)).toEqual({ total: 0, accepted: 0 });
-});
-
-test('metrics: a resumed execution counts each anomaly once, even on a shared turn number', async () => {
-  const { workspace, sessionId } = setup(workflowText());
-  const provider = new ExitProvider([
-    { reply: OK, artifact: '# notes\n', exit: 1, source: 'model' },
-    { reply: OK, artifact: '# notes\n', exit: 1, source: 'model' },
-  ]);
-  const first = await runStage(provider, workspace, sessionId);
-  const second = await runStage(provider, workspace, sessionId, { resumeExecutionId: first.execution_id });
-  const metrics = sessionMetrics(workspace, sessionId, {});
-  expect(counters(metrics.totals)).toEqual({ total: 2, accepted: 2 });
-  const rows = metrics.executions as Record<string, unknown>[];
-  expect(rows.map((row) => [row.execution_id, counters(row)])).toEqual([
-    [first.execution_id, { total: 1, accepted: 1 }],
-    [second.execution_id, { total: 1, accepted: 1 }],
-  ]);
-});
-
 test("snapshot: lists the stage's latest anomaly with its diagnostics pointer", async () => {
   const { workspace, sessionId } = setup(workflowText());
   const first = await runStage(
@@ -437,7 +381,7 @@ test('snapshot: the key is absent when no anomaly was recorded', async () => {
   expect(watchSnapshot(sessionDirectory(workspace, sessionId))).not.toHaveProperty('exit_anomalies');
 });
 
-test('metrics: two anomalies of one execution on the same turn number are both counted, and stay stable', async () => {
+test('snapshot: two anomalies of one execution on the same turn number are both listed', async () => {
   const { workspace, sessionId } = setup(workflowText());
   const result = await runStage(
     new ExitProvider([{ reply: OK, artifact: '# notes\n', exit: 1, source: 'model' }]),
@@ -461,12 +405,6 @@ test('metrics: two anomalies of one execution on the same turn number are both c
     [result.execution_id, 1],
     [result.execution_id, 1],
   ]);
-  for (let reread = 0; reread < 2; reread += 1) {
-    const metrics = sessionMetrics(workspace, sessionId, {});
-    expect(counters(metrics.totals)).toEqual({ total: 2, accepted: 1 });
-    const rows = metrics.executions as Record<string, unknown>[];
-    expect(rows.map((row) => counters(row))).toEqual([{ total: 2, accepted: 1 }]);
-  }
   const [entry] = (watchSnapshot(sessionDirectory(workspace, sessionId)).exit_anomalies as Record<string, unknown>[]);
   expect(entry).toMatchObject({ count: 2, accepted: false });
 });

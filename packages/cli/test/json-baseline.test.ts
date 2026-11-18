@@ -15,6 +15,7 @@ import {
 } from '@nodeint/migent-contracts';
 import { AgentToolRunner } from '@nodeint/migent-engine';
 import { StageOutcome } from '@nodeint/migent-kernel';
+import { createPluginRegistry } from '@nodeint/migent-plugins';
 import { createPreparedSession, createWorkflowSession,SessionLock, SessionStore } from '@nodeint/migent-session';
 import { afterEach, beforeEach, expect, test } from 'vitest';
 
@@ -578,11 +579,12 @@ test('known shapes describe files written by a real scripted run', async () => {
     registryOf({ fake: new ScriptedClient(['status: complete\n\nplanned'], ['# Plan\n']) }),
     10,
   );
+  cliHooks.runner.pluginRegistry = createPluginRegistry();
   const run = await json(['session', 'run', '--workflow', 'plan', '--task', 'Write a plan', '--skip-preflight'], undefined, workspace);
   expect(run.code).toBe(0);
   const sessions = path.join(workspace, '.migent', 'sessions');
   const directory = path.join(sessions, readdirSync(sessions)[0]!);
-  const metrics = JSON.parse(readFileSync(path.join(directory, 'metrics.json'), 'utf8')) as unknown;
+  const metrics = JSON.parse(readFileSync(path.join(directory, 'plugins', 'metrics', 'metrics.json'), 'utf8')) as unknown;
   expect(validationIssues(SealedMetricsCurrent, metrics)).toEqual([]);
   expect(validationIssues(SealedMetricsHistorical, metrics)).toEqual([]);
   expect(isValid(SealedMetrics, metrics)).toBe(true);

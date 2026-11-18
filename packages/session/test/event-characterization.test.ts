@@ -34,7 +34,7 @@ const { EVENT_VERSION } = await import('../src/session-events.ts');
 const { SessionLock } = await import('../src/session-lock.ts');
 const { createWorkflowSession } = await import('../src/session-records.ts');
 const { SessionStore } = await import('../src/session-store.ts');
-const { defaultClients, SESSION_CONFIG } = await import('./support.ts');
+const { SESSION_CONFIG } = await import('./support.ts');
 
 const roots: string[] = [];
 beforeEach(() => {
@@ -208,7 +208,7 @@ test('saving a finished execution appends its events, then folds status.json onc
   } finally {
     lock.release();
   }
-  // An event-log manifest has no status to rewrite, and no metrics clients or downstream are configured.
+  // An event-log manifest has no status to rewrite, and no downstream is configured.
   const order = relative(directory).filter((entry) => !entry.includes('executions/'));
   expect(order).toEqual(['append:events.jsonl', 'append:events.jsonl', 'append:events.jsonl', 'json:status.json']);
   const names = lines(path.join(directory, 'events.jsonl')).map((event) => event.event);
@@ -217,7 +217,7 @@ test('saving a finished execution appends its events, then folds status.json onc
   expect(status.status).toBe('completed');
 });
 
-test('saving the completing execution of a legacy manifest writes events, manifest status, status.json, metrics, then next suggestions', () => {
+test('saving the completing execution of a legacy manifest writes events, manifest status, status.json, then next suggestions', () => {
   const root = mkdtempSync(path.join(tmpdir(), 'migent-event-char-'));
   roots.push(root);
   mkdirSync(path.join(root, '.migent', 'workflows'), { recursive: true });
@@ -245,7 +245,7 @@ downstream:
   writeFileSync(manifest, readFileSync(manifest, 'utf8').replace('schema_version: 2', 'schema_version: 1\nstatus: running'));
   const lock = SessionLock.acquire(directory);
   try {
-    const store = new SessionStore(root, undefined, defaultClients());
+    const store = new SessionStore(root);
     const [record, , context] = store.loadOrCreate({
       client: 'fake', model: 'model', options: {}, workspace: root, sessionId: id, stageId: 'draft',
       stageAttempt: null, executionOrder: null, prompt: 'go',
@@ -264,7 +264,6 @@ downstream:
     'append:events.jsonl',
     'file:manifest.yaml',
     'json:status.json',
-    'json:metrics.json',
     'json:next.json',
   ]);
 });

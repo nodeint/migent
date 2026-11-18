@@ -13,7 +13,7 @@ import { createAgentSession, createPreparedSession, createWorkflowSession } from
 import { repairSession } from '../src/session-repair.ts';
 import { SessionStore } from '../src/session-store.ts';
 import { freezeSessionTask } from '../src/task-file.ts';
-import { defaultClients, tempDir, writeSessionConfig } from './support.ts';
+import { tempDir, writeSessionConfig } from './support.ts';
 
 const PLAN = `schema_version: 7
 id: plan
@@ -85,10 +85,10 @@ function started(): { workspace: string; store: SessionStore; sessionId: string 
   const workspace = workspaceWithPlan();
   const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
   withLock(workspace, sessionId, () => freezeSessionTask(workspace, sessionId));
-  return { workspace, store: new SessionStore(workspace, undefined, defaultClients()), sessionId };
+  return { workspace, store: new SessionStore(workspace), sessionId };
 }
 
-test('completing a stopped schema 7 session publishes artifacts, seals metrics, writes next.json, and survives repair', () => {
+test('completing a stopped schema 7 session publishes artifacts, writes next.json, and survives repair', () => {
   const { workspace, store, sessionId } = started();
   stageRun(workspace, store, sessionId, 'draft', 'completed', new StageOutcome('complete'), { 'plan.md': '# Plan\n' });
   expect(statusOf(workspace, sessionId).status).toBe('active');
@@ -104,7 +104,8 @@ test('completing a stopped schema 7 session publishes artifacts, seals metrics, 
   const event = readParsedEvents(path.join(directory, 'events.jsonl')).find((item) => item.event === 'session.completed');
   expect(event?.data).toMatchObject({ manual: true, from: 'active', missing_outputs: ['notes'] });
   expect(typeof event?.data.reason).toBe('string');
-  expect(JSON.parse(readFileSync(path.join(directory, 'metrics.json'), 'utf8')).status).toBe('completed');
+  // The core no longer seals metrics; the metrics plugin writes them under a plugin scope.
+  expect(existsSync(path.join(directory, 'metrics.json'))).toBe(false);
   expect(JSON.parse(readFileSync(path.join(directory, 'next.json'), 'utf8')).next[0]).toMatchObject({ workflow: 'implement' });
   expect(result.next.path).toBe(path.join(directory, 'next.json'));
   expect(existsSync(path.join(directory, 'session.lock'))).toBe(false);
@@ -210,7 +211,7 @@ test('schema 2-6 outputs and version 1 completion.outputs publish from completed
     writeSessionConfig(workspace);
     const sessionId = createWorkflowSession(workspace, id, { task: 'Write a plan' });
     withLock(workspace, sessionId, () => freezeSessionTask(workspace, sessionId));
-    const store = new SessionStore(workspace, undefined, defaultClients());
+    const store = new SessionStore(workspace);
     stageRun(workspace, store, sessionId, 'draft', 'completed', new StageOutcome('complete'), { 'plan.md': '# Plan\n' });
     expect(statusOf(workspace, sessionId).status).toBe('active');
     const result = store.completeManually(sessionId);
@@ -277,7 +278,7 @@ test('a pending decision on a target with no execution folds to expired, is list
     { stage_id: 'extra', source_execution_id: '0001-draft--attempt-01', raised_at: expect.any(String), policy: null, estimate: { idle_seconds: null, threshold_seconds: null, cache_ttl_seconds: null, margin_seconds: null, context_tokens: null } },
   ]);
   // Re-reading after a crash shows the same decision, and repair rebuilds the same status.
-  expect(new SessionStore(workspace, undefined, defaultClients()).pendingResumes(sessionId)).toHaveLength(1);
+  expect(new SessionStore(workspace).pendingResumes(sessionId)).toHaveLength(1);
   expect(repairSession(workspace, sessionId).status).toBe('expired');
   const lock = SessionLock.acquire(directory);
   try {

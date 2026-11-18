@@ -9,9 +9,11 @@ migent session metrics --json
 migent session metrics --json --workflow <id> --status completed --limit 10
 ```
 
-`session metrics` prints `metrics.json`, written when a workflow session
-becomes `completed`. The command reads that file. It does not take the session lock
-and does not change files. One session is one JSON object. A list is
+`session metrics` prints `plugins/metrics/metrics.json`, written by the
+first-party metrics plugin when a workflow session becomes `completed`. Sessions
+completed before the plugin existed have the legacy root `metrics.json`; the
+command reads the plugin file first and falls back to that. It does not take the
+session lock and does not change files. One session is one JSON object. A list is
 one object per line, newest first, and includes only sessions that have the
 file. `--workflow`, `--status`, and `--limit` filter those rows. `--json` is
 required. A session with no `metrics.json` exits 2 with
@@ -138,15 +140,36 @@ skipped is still listed.
 `workflow_hash` is the bare hex hash on `session.created`, or the start-time `handoff.bound` event for a prepared
 session. It is null for an
 agent session. `task_sha256` and `prior_session_id` come from `status.json`.
-`role` is the stage role in the frozen workflow, otherwise the live workflow.
-An agent session uses the manifest role. `stage_attempt` counts every execution
+`role` is the stage role in the frozen workflow, otherwise the live workflow. An agent session gets no metrics
+file, so it has no role row here.
+`stage_attempt` counts every execution
 of a stage, including a route back. It is not a retry count.
+
+## The metrics plugin
+
+The producer is the first-party `metrics` plugin, the first consumer of the plugin host. It runs by default, on
+`session.completed`, both when a run finishes and when `session complete` completes a stopped session by hand.
+
+- The file is written once (`create_only`). An existing file is rejected as `exists` and keeps its bytes, so a
+  second completion never rewrites it.
+- Disable it with `plugins:` / `metrics:` / `enabled: false` in `.migent/config.yaml`. `session metrics` then
+  reports `No metrics for session`.
+- Its default failure policy is `on_error: ignore`. A timeout, cancellation, stale read or write failure is recorded
+  as `plugin.failed` (visible in `session show`), the session stays `completed`, and nothing holds it.
+- A session with no `workflow.frozen.yaml` gets no metrics and no plugin events.
+- If plugin selection fails during `session complete` (for example a frozen plugin whose version changed), the
+  session still completes without plugins and the command prints `warning: plugins not run: <cause>` on stderr,
+  with the same payload on stdout.
+- The freeze pins the plugin version. Bumping the `metrics` version stops continuing a session frozen at the old
+  version (exit 2) until `session continue --refresh-workflow`, so a bump is a deliberate change.
 
 The adapter capture and normalization contract is documented in
 [Adapters](adpaters.md#failures-and-usage).
 
-Usage is stored raw on the runner's turn event. When a workflow session
-becomes `completed`, Migent normalizes those captures and writes `metrics.json`. A
+Usage is stored raw on the runner's turn event. Core normalizes those captures into the session snapshot
+(`execution_clients` and the per-turn usage). When a workflow session becomes `completed`, the metrics plugin
+aggregates that snapshot and writes `plugins/metrics/metrics.json`. A session without a frozen workflow, or whose
+plugins cannot be selected, gets no metrics. A
 later change to a client does not change that file. The previous capture is
 the latest earlier one in the same session with the same client and the same
 client agent id. A cumulative client

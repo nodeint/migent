@@ -28,7 +28,7 @@ export async function runVerifyOnlyStage(input: {
   executionId?: string | null;
   onExecution?: (executionId: string) => void;
 }): Promise<RunResult> {
-  const store = new SessionStore(input.workspace, undefined, input.clients);
+  const store = new SessionStore(input.workspace);
   const context = openContext(store, input);
   input.onExecution?.(context.executionId);
   if ((input.executionId === null || input.executionId === undefined)) {

@@ -19,6 +19,12 @@
   session frozen before it was registered. No default plugin is registered, so no session changes.
   ([#166](https://github.com/nodeint/migent/issues/166))
 
+- Session metrics are written by the first-party metrics plugin to `plugins/metrics/metrics.json` instead of by core
+  to the root `metrics.json`, on both normal completion and `session complete`. Sessions without a frozen workflow no
+  longer get metrics. `session metrics` reads the new path first and falls back to the legacy root file. If plugin
+  selection fails, `session complete` completes the session without plugins and warns on stderr.
+  ([#168](https://github.com/nodeint/migent/issues/168))
+
 ### Added
 
 - Durable plugin artifacts and audit. A plugin can observe a new `session.completed` event, and artifact writes

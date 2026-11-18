@@ -1,5 +1,7 @@
 export type { RunRequest, RunResult } from './agent-runner.js';
 export { AgentToolRunner } from './agent-runner.js';
+export type { ManualCompletionOutcome } from './complete-manually.js';
+export { completeSessionManually } from './complete-manually.js';
 export type { StageDispatchRequest } from './dispatch.js';
 export {
   assertStageDispatchable,

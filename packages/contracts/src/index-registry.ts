@@ -3,7 +3,7 @@ import type { TSchema } from 'typebox';
 import * as O from './cli-output.js';
 import { LegacyLifecycleEvent, LifecycleEventV2, ProviderStreamRecord, ResumeDecidedData, ResumeExpiredData, SealedMetricsCurrent, SealedMetricsHistorical } from './known-shapes.js';
 import { SESSION_EVENT_SCHEMAS, SessionEvent } from './session-events.js';
-import { ExecutionInput, ExecutionQuestions, SessionDiagnostics, SessionExecution, SessionLockFile, SessionManifest, SessionNext, SessionQuestions, SessionStatusFile } from './session-files.js';
+import { ExecutionInput, ExecutionQuestions, SessionDiagnostics, SessionExecution, SessionLockFile, SessionManifest, SessionMetrics, SessionMetricsLegacy, SessionNext, SessionQuestions, SessionStatusFile } from './session-files.js';
 
 export type Framing = 'document' | 'json-lines';
 export type ContractClass = 'produced' | 'passthrough';
@@ -117,6 +117,8 @@ export const SESSION_FILES: readonly SessionFileEntry[] = [
   f('execution-input', 'executions/<id>/input.json', { schema: ExecutionInput, class: 'guaranteed', framing: 'document' }),
   f('next', 'next.json', { schema: SessionNext, class: 'guaranteed', framing: 'document' }),
   f('diagnostics', 'executions/<id>/diagnostics.json', { schema: SessionDiagnostics, class: 'known', framing: 'document' }),
+  f('metrics', 'plugins/metrics/metrics.json', { schema: SessionMetrics, class: 'known', framing: 'document' }),
+  f('metrics-legacy', 'metrics.json', { schema: SessionMetricsLegacy, class: 'known', framing: 'document' }),
   f('events', 'events.jsonl', { schema: SessionEvent, class: 'guaranteed', framing: 'json-lines' }),
 ];
 
@@ -158,7 +160,7 @@ export const SESSION_FILE_EXCLUSIONS: readonly { name: string; reason: string }[
   { name: 'outcome.json', reason: 'Non-goal: per-turn outcome copy.' },
   { name: 'question-request.json', reason: 'Non-goal: question request inside an execution.' },
   { name: 'session.json', reason: 'Non-goal: not a session file.' },
-  { name: 'metrics.json', reason: 'Described by KNOWN_SHAPES (sealed metrics).' },
+  { name: 'metrics.json', reason: 'Described by KNOWN_SHAPES (sealed metrics) and the `metrics-legacy` session file; the plugin file is `metrics`.' },
   { name: 'handoff.json', reason: 'Described by `handoff/document`.' },
   { name: 'stream.jsonl', reason: 'Non-goal: opaque provider stream.' },
   { name: '.last-id.lock', reason: 'Non-goal: internal id allocation lock.' },

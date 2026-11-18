@@ -42,8 +42,8 @@ function recordRunWhenSkip(
   stageId: string,
   skip: SkipDetails,
 ): Record<string, unknown> {
-  const { workspace, sessionId, runner } = run;
-  const store = new SessionStore(workspace, undefined, runner.registry);
+  const { workspace, sessionId } = run;
+  const store = new SessionStore(workspace);
   const context = store.recordSkippedExecution(sessionId, stageId, skip);
   const attempt = parseExecutionId(context.executionId)?.attempt ?? null;
   log(`stage ${stageId} · attempt ${attempt ?? 1} · skipped (no changed path matches run_when).`);

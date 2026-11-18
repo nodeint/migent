@@ -36,10 +36,12 @@ state directly.
 
 ## Seams
 
-Internal seams attach to the core mechanisms. They have no production consumer that extends
-Migent: `invokeOnce` has one caller, the plugin host's `agents.invoke` call member
+Internal seams attach to the core mechanisms. The first-party `metrics` plugin is their one production consumer:
+it runs by default on `session.completed`, from an automatic completion and from `session complete`, which runs
+`completeSessionManually` (`engine` `src/complete-manually.ts`) inside a plugin scope. No third-party plugin
+extends Migent. `invokeOnce` has one caller, the plugin host's `agents.invoke` call member
 (`src/plugin-host/agent-call.ts`). The plugin host in `engine` `src/plugin-host/` is the one subscriber, and
-the `plugins` section is the one registered config section. Both act only when a plugin is registered.
+the `plugins` section is the one registered config section.
 
 | Seam | Location | Rule |
 | --- | --- | --- |

@@ -714,7 +714,9 @@ it. Calling it on a `completed` session exits 0, reports that it is already
 completed, and changes nothing.
 
 It publishes the outputs a normal completion would, from the current completed
-executions, seals `metrics.json`, and writes `next.json`. A required artifact
+executions, runs the metrics plugin, and writes `next.json`. If plugin selection fails
+the session still completes without plugins and the command warns
+(`warning: plugins not run: <reason>`). A required artifact
 that cannot be resolved or is empty does not stop the completion: the command
 completes the session and warns. Human output goes to stderr:
 
@@ -739,8 +741,9 @@ select rows before `--limit`. `--status` is `active`, `prepared`, `completed`,
 `blocked`, or `cancelled`. `--latest` prints the newest match. `--latest`
 cannot be combined with `--limit`. An empty list exits 0.
 
-`session metrics` prints `metrics.json`, written when a workflow session
-becomes `completed`. Pass a session id for one JSON object. Omit it for one object per
+`session metrics` prints `plugins/metrics/metrics.json`, written by the metrics
+plugin when a workflow session becomes `completed` (legacy root `metrics.json`
+is read as a fallback). Pass a session id for one JSON object. Omit it for one object per
 line, newest first. Only sessions with that file appear. `--workflow`,
 `--status`, and `--limit` filter those rows. `--json` is required: without it
 the command exits 2 with `session metrics requires --json.` A session with no

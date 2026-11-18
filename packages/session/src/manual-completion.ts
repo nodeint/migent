@@ -1,7 +1,6 @@
 import { statSync } from 'node:fs';
 import path from 'node:path';
 
-import type { ClientRegistry } from '@nodeint/migent-kernel';
 import {
   type ExecutionSnapshot,
   isArtifactSchema,
@@ -16,7 +15,6 @@ import { ConfigurationError, isManuallyCompletable, utcNow } from '@nodeint/mige
 import { isRecord, isWorkflowV2, type WorkflowDocument } from '@nodeint/migent-workflow';
 
 import { sessionEventLog } from './event-log.js';
-import { sealSessionMetrics } from './metrics.js';
 import { publishNextSuggestions } from './next-handoff.js';
 import { readStatusFileState } from './query.js';
 import { readPendingResumes } from './resume-pending.js';
@@ -108,7 +106,6 @@ export function publishManualCompletion(
 /** The store operations the locked manual completion needs. */
 export interface ManualCompletionOps {
   readonly workspace: string;
-  readonly metricsClients: ClientRegistry | null;
   loadWorkflow(previousStatus: Record<string, unknown>): WorkflowDocument | null;
   snapshotList(sessionId: string): ExecutionSnapshot[];
   rewriteManifestStatus(sessionDirectory: string, status: string): void;
@@ -167,7 +164,7 @@ function appendManualCompletionEvents(sessionDirectory: string, from: string, pl
   sessionEventLog.record(sessionDirectory, { event: 'session.completed', timestamp, data });
 }
 
-/** The locked part of `completeManually`: validates the status, publishes outputs, seals, and writes next.json. */
+/** The locked part of `completeManually`: validates the status, publishes outputs, and writes next.json. */
 export function completeManuallyLocked(
   ops: ManualCompletionOps,
   sessionId: string,
@@ -191,7 +188,6 @@ export function completeManuallyLocked(
     appendManualCompletionEvents(sessionDirectory, from, plan);
     ops.rewriteManifestStatus(sessionDirectory, 'completed');
     const folded = sessionEventLog.commit(ops.workspace, sessionDirectory);
-    if (ops.metricsClients !== null) sealSessionMetrics(ops.workspace, sessionId, ops.metricsClients);
     const next = publishNextSuggestions(ops.workspace, sessionId);
     return {
       alreadyCompleted: false,

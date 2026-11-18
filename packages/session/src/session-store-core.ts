@@ -1,7 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
-import type { ClientRegistry } from '@nodeint/migent-kernel';
 import type { } from '@nodeint/migent-kernel';
 import { writeFileAtomic, writeJsonAtomic } from '@nodeint/migent-kernel';
 import { ConfigurationError } from '@nodeint/migent-kernel';
@@ -37,17 +36,14 @@ export class SessionStoreCore {
   public readonly workspace: string;
   public readonly sessionsDirectory: string;
   public readonly processInspector: ProcessInspector;
-  public readonly metricsClients: ClientRegistry | null;
 
   constructor(
     workspace: string,
     processInspector: ProcessInspector = new SystemProcessInspector(),
-    metricsClients: ClientRegistry | null = null,
   ) {
     this.workspace = workspace;
     this.sessionsDirectory = path.join(workspace, MIGENT_DIRNAME, SESSIONS_DIRNAME);
     this.processInspector = processInspector;
-    this.metricsClients = metricsClients;
   }
 
   public executionContext(sessionId: string, executionId: string): ExecutionContext | null {

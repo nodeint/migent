@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { eventKindTraits } from '@nodeint/migent-contracts';
 import { type FailureClassification } from '@nodeint/migent-kernel';
-import { sessionMetrics, SessionStore, watchSnapshot } from '@nodeint/migent-session';
+import { SessionStore, watchSnapshot } from '@nodeint/migent-session';
 import { expect, test, vi } from 'vitest';
 
 import { ClaudeCodeClient } from '../../adapters/src/clients/claude-code-client.ts';
@@ -181,7 +181,7 @@ test('--once on quota exits 8 and a non-continue --once on the failure does not 
   expect(continued.code).toBe(0);
 });
 
-test('provider.quota names the execution and a zero capture is not uncaptured', async () => {
+test('provider.quota names the execution and reaches the log and stderr', async () => {
   expect(eventKindTraits('provider.quota').folds).toBe(true);
   const workspace = workspaceFor(SOLO);
   const lines: string[] = [];
@@ -201,9 +201,6 @@ test('provider.quota names the execution and a zero capture is not uncaptured', 
     expect(events).toContain('provider.quota');
     expect(events).toContain(FUTURE);
     expect(lines.join('')).toContain(FUTURE);
-    const metrics = sessionMetrics(workspace, result.sessionId, registryOf({ alpha: provider }));
-    const executions = metrics.executions as { uncaptured_turns: number }[];
-    expect(executions[0]?.uncaptured_turns).toBe(0);
   } finally {
     process.stderr.write = write;
   }

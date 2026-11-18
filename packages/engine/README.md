@@ -38,6 +38,7 @@ and session. Internal; no stable public API.
 | `HostInterceptorChain` | `src/plugin-host/interception.ts` | Adapt registered interceptors into the runtime's `InterceptorChain`, in frozen chain order; failures follow `on_error` |
 | `readsStale`, `freshEvidence` | `src/plugin-host/evidence.ts` | Core-captured read evidence for `call.session` and its freshness check |
 | `PluginHost` | `src/plugin-host/dispatch.ts` | Run plugin hooks for one run: triggers, deadline, activation, proposal application, failure policy |
+| `completeSessionManually` | `src/complete-manually.ts` | `session complete`: take the lock, select plugins (none, with a warning, when selection fails), complete inside a plugin scope |
 | `withPluginScope` | `src/plugin-host/scope.ts` | Start, run an action that holds the session lock, then drain and close the host before the caller releases the lock |
 | `classifyProviderError`, `ProviderEventReporter` | `src/provider-events.ts` | Provider events |
 | `getWorkflowView`, `getConfigView` | `src/views.ts` | Read-only views |

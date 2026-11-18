@@ -1,9 +1,11 @@
 import { isSupportedPluginApiVersion, type Plugin, PLUGIN_API_VERSION, type PluginRegistry } from '@nodeint/migent-contracts';
 
+import { metricsPlugin } from './metrics/index.js';
+
 export type { PluginRegistry };
 
-/** First-party plugins. Empty in this step: features add themselves here (#131, #141, #142). */
-const FIRST_PARTY: readonly Plugin[] = [];
+/** First-party plugins. Features add themselves here (#131, #141, #142). */
+const FIRST_PARTY: readonly Plugin[] = [metricsPlugin];
 
 /** Builds a registry. The default is the first-party list; tests inject their own plugins. */
 export function createPluginRegistry(plugins: readonly Plugin[] = FIRST_PARTY): PluginRegistry {

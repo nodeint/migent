@@ -4,9 +4,9 @@ import path from 'node:path';
 
 import { afterEach, expect, test } from 'vitest';
 
-import { normalizeTurns, resolveExecutionClients } from '../src/metrics.ts';
-import { orderedEvents, readExecutions } from '../src/metrics-read.ts';
+import { orderedEvents, readExecutions } from '../src/session-facts.ts';
 import { readBasisSeq, readSessionSnapshot } from '../src/session-snapshot.ts';
+import { normalizeTurns, resolveExecutionClients } from '../src/usage-normalize.ts';
 import { FakeClient, registryOf } from './support.ts';
 
 const dirs: string[] = [];
@@ -80,4 +80,13 @@ test('events are the ordered parsed events, with their execution identity', () =
   })));
   expect(snapshot.events.map((event) => event.seq)).toEqual([1, 2, 3]);
   expect(snapshot.events[0]?.executionId).toBe('e1');
+});
+
+test('execution_clients equals resolveExecutionClients', () => {
+  const workspace = session([turn(1, 10)]);
+  const snapshot = readSessionSnapshot(workspace, 's1', client());
+  const directory = path.join(workspace, '.migent', 'sessions', 's1');
+  const resolved = resolveExecutionClients(orderedEvents(directory), readExecutions(directory), { status: 'active' });
+  expect(snapshot.execution_clients).toEqual(Object.fromEntries(resolved));
+  expect(snapshot.execution_clients).toEqual({ e1: 'fake' });
 });

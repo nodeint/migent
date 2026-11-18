@@ -36,6 +36,8 @@ while it is updated), and `.deleting/` (sessions being removed).
 ├── title.json                            # present after `session rename`
 ├── task.md                               # task body; written before the first stage
 ├── events.jsonl
+├── plugins/
+│   └── metrics/metrics.json              # written by the metrics plugin when a workflow session completes
 ├── session.lock                          # present only while a process is running the session
 ├── cancel.requested                      # temporary; written by `session cancel`, removed by the running process
 ├── outputs/                              # present after outputs are published
@@ -482,7 +484,7 @@ execution with a non-empty artifact. A manually published output records
 producing execution. A required artifact that cannot be resolved is listed in
 `data.missing_outputs` and warned about, and the session still completes.
 
-The command then seals `metrics.json` and writes `next.json`, as a normal
+The command then runs the metrics plugin and writes `next.json`, as a normal
 completion does. The session stays terminal: `session continue` does not
 dispatch, and no command reopens it. An execution left `running` by a crashed
 process is not reconciled by this command.
@@ -532,7 +534,7 @@ still parse each turn with that turn's own executable when known.
 
 ## Metrics
 
-`migent session metrics` prints the `metrics.json` written when a workflow
+`migent session metrics` prints the `plugins/metrics/metrics.json` written by the metrics plugin when a workflow
 session completes. See [Session metrics](session-metrics.md) for the command,
 the JSON shape, and how usage, cost, and timing are computed.
 

@@ -139,7 +139,7 @@ export class AgentToolRunner {
   /** Finish a cancelled execution that has been reopened in place. Does not create an attempt. */
   public async continueCancelled(workspace: string, sessionId: string, executionId: string): Promise<RunResult> {
     const workspacePath = resolveWorkspace(workspace);
-    const store = new SessionStore(workspacePath, undefined, this.registry);
+    const store = new SessionStore(workspacePath);
     const { context, metadata } = loadRunningExecution(store, sessionId, executionId);
     const stageId = typeof metadata.stage_id === 'string' ? metadata.stage_id : 'agent';
     const clientId = store.executionClient(sessionId, executionId);
@@ -229,7 +229,7 @@ export class AgentToolRunner {
       { client: clientId, model: request.model, options: { ...(request.options ?? {}) } },
       this.registry,
     );
-    const store = new SessionStore(workspacePath, undefined, this.registry);
+    const store = new SessionStore(workspacePath);
     try {
       return this.startRun(
         request,
