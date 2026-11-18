@@ -231,9 +231,10 @@ agents:
 - A policy applies to an agent in this order: the agent's `resume_policy` name, the one policy whose `match`
   (`client`, and a `model` glob) fits, then `default`. Two matching policies, or an unknown name, is a
   configuration error. `migent doctor` reports it.
-- A resume counts as expired when the time since the source execution finished is at least
-  `cache_ttl − margin`, and the context is not below `min_context_tokens`. A client that reports no usage has an
-  unknown context size, which counts as expired. Use `on_expired: resume` for such clients.
+- A resume counts as expired when the time since the source execution's last provider activity (its last completed
+  item; the execution's end when it recorded none) is at least `cache_ttl − margin`, and the context is not below
+  `min_context_tokens`. A client that reports no usage has an unknown context size, which counts as expired. Use
+  `on_expired: resume` for such clients.
 - `on_expired` is `ask` (stop with status `expired`, exit 10), `fresh` (start a new conversation that carries the
   prompt and the saved reply), or `resume` (continue anyway). A workflow stage can override it with
   `session.on_expired`; see [workflows](workflows.md).

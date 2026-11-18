@@ -91,8 +91,8 @@ describe('config merge', () => {
 
 describe('evaluateResume', () => {
   const policy = selectResumePolicy({ p: { cache_ttl: '5m', margin: '30s', min_context_tokens: 1000 } }, { agentPolicy: 'p', client: 'c', model: 'm' })!;
-  const at = (seconds: number, contextTokens: number | null = 5000, completedAt: string | null = '2026-01-01T00:00:00Z') => evaluateResume(policy, {
-    completedAt,
+  const at = (seconds: number, contextTokens: number | null = 5000, lastActivityAt: string | null = '2026-01-01T00:00:00Z') => evaluateResume(policy, {
+    lastActivityAt,
     now: new Date(Date.parse('2026-01-01T00:00:00Z') + seconds * 1000),
     contextTokens,
   });

@@ -195,6 +195,8 @@ export interface PluginSessionSnapshot {
 /** What the resume gate knows about one execution. Unknown values are null. */
 export interface PluginResumeFacts {
   readonly completedAt: string | null;
+  /** Last provider activity, from which the resume gate measures cache age; falls back to `completedAt`. */
+  readonly lastActivityAt: string | null;
   readonly contextTokens: number | null;
 }
 

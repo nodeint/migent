@@ -8,7 +8,7 @@ import { afterEach, describe, expect, test } from 'vitest';
 
 import { AgentToolRunner, executeNamedWorkflow } from '../src/index.ts';
 import { assertEventsValid } from './event-validation.ts';
-import { registryOf, ScriptedClient, tempDir as makeTempDir } from './support.ts';
+import { ageProviderEvents,registryOf, ScriptedClient, tempDir as makeTempDir } from './support.ts';
 
 const roots: string[] = [];
 
@@ -91,6 +91,7 @@ async function cancelled(onExpired: string) {
   const metadata = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
   const completedAt = '2026-01-01T00:00:00.000+00:00';
   writeFileSync(file, JSON.stringify({ ...metadata, completed_at: completedAt }));
+  ageProviderEvents(file);
   const metadataNow = () => JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
   const events = () => readFileSync(path.join(sessionDirectory, 'events.jsonl'), 'utf8');
   const resume = () => executeNamedWorkflow(workspace, { workflowId: 'wf', sessionId, resetRevisions: true }, runner);
@@ -181,6 +182,7 @@ describe('a decision for one stage leaves an unrelated cancelled stage alone (R1
       const source = store.latestExecution(sessionId)!;
       const sourceFile = path.join(source.directory, 'execution.json');
       writeFileSync(sourceFile, JSON.stringify({ ...JSON.parse(readFileSync(sourceFile, 'utf8')), completed_at: '2026-01-01T00:00:00Z' }));
+      ageProviderEvents(sourceFile);
       // B asks (its source has expired) while C runs and is cancelled.
       const stop = await executeNamedWorkflow(workspace, { sessionId }, runner);
       const sessionDirectory = path.join(workspace, '.migent', 'sessions', sessionId);

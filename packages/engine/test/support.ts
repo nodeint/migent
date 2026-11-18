@@ -460,3 +460,13 @@ export function lockedAgentSession(workspace: string, role = 'reviewer', task = 
   holdSessionLock(workspace, sessionId);
   return sessionId;
 }
+
+/** Backdates the provider activity events beside an `execution.json`, so a test can age the prompt cache. */
+export function ageProviderEvents(executionFile: string, at = '2026-01-01T00:00:00.000+00:00'): void {
+  const events = path.join(path.dirname(executionFile), '..', '..', 'events.jsonl');
+  const lines = readFileSync(events, 'utf8').split('\n').map((line) => {
+    if (!/"event":"provider\.(item|turn)_completed"/.test(line)) return line;
+    return JSON.stringify({ ...(JSON.parse(line) as Record<string, unknown>), timestamp: at });
+  });
+  writeFileSync(events, lines.join('\n'));
+}

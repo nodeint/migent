@@ -186,8 +186,8 @@ export function selectResumePolicy(
 }
 
 export interface ResumeFacts {
-  /** ISO timestamp the source execution ended; null when unknown. */
-  completedAt: string | null;
+  /** ISO timestamp of the source's last provider activity (its end when none was recorded); null if unknown. */
+  lastActivityAt: string | null;
   now: Date;
   /** Tokens in the last captured context; null when the client reported none. */
   contextTokens: number | null;
@@ -207,12 +207,12 @@ export interface ResumeEvaluation {
 
 /**
  * Whether the prompt cache is treated as expired. Idle time is clamped at zero. A source with no
- * `completed_at` is never expired. A context under `min_context_tokens` is not worth guarding; an
+ * known activity time is never expired. A context under `min_context_tokens` is not worth guarding; an
  * unknown context is guarded.
  */
 export function evaluateResume(policy: ResolvedResumePolicy, facts: ResumeFacts): ResumeEvaluation {
   const thresholdSec = policy.cacheTtlSec - policy.marginSec;
-  const completed = facts.completedAt === null ? Number.NaN : Date.parse(facts.completedAt);
+  const completed = facts.lastActivityAt === null ? Number.NaN : Date.parse(facts.lastActivityAt);
   const idleMs = facts.now.getTime() - completed;
   const idleSec = Number.isNaN(completed) ? null : Math.max(0, Math.floor(idleMs / MS_PER_SECOND));
   const estimate: ResumeEstimate = { idleSec, contextTokens: facts.contextTokens, thresholdSec };
