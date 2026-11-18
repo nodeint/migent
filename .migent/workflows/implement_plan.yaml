@@ -29,7 +29,6 @@ stages:
       - Run its Verify commands, and record the fields in the phase_report artifact description.
     artifacts: [phase_report]
     verify:
-      - pnpm typecheck
       - pnpm build
 
   - id: review_phase

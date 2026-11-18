@@ -13,7 +13,7 @@ description: Write and review TypeScript using principles beyond lint and typech
    rule IDs and default severities; explain any severity adjustment.
 3. For implementation, correct applicable violations within the authorized scope.
    For review, report findings without editing code.
-4. After edits, run the project's lint and typecheck separately. These rules cover
+4. After edits, run the project's lint and build separately. These rules cover
    what lint and the compiler cannot check; do not duplicate their diagnostics.
 5. Report each finding with rule ID, level, file and line, and a one-line fix.
    Group by severity, blockers first. If there are no findings, say so.

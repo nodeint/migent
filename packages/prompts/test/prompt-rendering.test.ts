@@ -180,3 +180,18 @@ test('every JSON example in the protocol 3 contract is a valid handoff document'
   expect(['single', 'multiple']).toContain(question.selection);
   expect((question.options as unknown[]).length).toBeGreaterThanOrEqual(2);
 });
+
+test('a stage without declared artifacts still names the artifact directory for supporting files', () => {
+  const full = renderProviderPrompt('body', {
+    contract: true, turn: 'start', handoffFile: '/s/e1/handoff.json', artifactDirectory: '/s/e1/artifacts',
+  });
+  expect(full).toContain('- Handoff file: `/s/e1/handoff.json`\n- Artifacts: `/s/e1/artifacts` (put any supporting files');
+  expect(full).toContain('none are required, and they are not stage outputs');
+  expect(full).not.toContain('Write the artifact');
+  const reminder = renderProviderPrompt('## Human answers', {
+    contract: 'reminder', turn: 'answers', handoffFile: '/h.json', artifactDirectory: '/e2/artifacts', previousArtifactDirectory: '/e1/artifacts',
+  });
+  expect(reminder).toContain('- Artifacts: `/e2/artifacts` (put any supporting files');
+  expect(reminder).not.toContain('Previous artifacts');
+  expect(renderProviderPrompt('body', { contract: true, handoffFile: '/h.json' })).not.toContain('Artifacts:');
+});

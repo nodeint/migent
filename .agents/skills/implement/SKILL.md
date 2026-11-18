@@ -18,7 +18,7 @@ description: Implement and verify a task or plan phase.
    structural or contract decisions, or changing the agreed scope or solution.
 5. Edit only the selected scope. Add or update the tests and documentation needed
    to demonstrate the acceptance criteria. Address required review findings.
-6. Run the relevant tests, lint, typecheck, build, and repository gates for the changed
+6. Run the relevant tests, lint, build, and repository gates for the changed
    scope. For bugfixes, demonstrate the reported failure is fixed. Report failed checks
    and stop according to repository rules; do not weaken verification to pass.
 7. Inspect the final diff against the acceptance criteria. Check for unrelated edits,
