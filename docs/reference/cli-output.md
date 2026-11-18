@@ -802,6 +802,7 @@ Type: object
 | `plugins.active[].version` | string \| null | yes | | |
 | `plugins.active[].enabled` | boolean | yes | | |
 | `plugins.active[].advisory` | boolean | yes | | |
+| `plugins.active[].source` | `"implicit"` | no | | A default plugin the freeze never recorded. It runs enabled at the current version until a refresh pins it. |
 | `plugins.invocations` | object[] | yes | | |
 | `plugins.invocations[].invocation_id` | string \| null | yes | | |
 | `plugins.invocations[].plugin` | string | yes | | |
@@ -915,6 +916,7 @@ Type: object
 | `plugins.active[].version` | string \| null | yes | | |
 | `plugins.active[].enabled` | boolean | yes | | |
 | `plugins.active[].advisory` | boolean | yes | | |
+| `plugins.active[].source` | `"implicit"` | no | | A default plugin the freeze never recorded. It runs enabled at the current version until a refresh pins it. |
 | `plugins.invocations` | object[] | yes | | |
 | `plugins.invocations[].invocation_id` | string \| null | yes | | |
 | `plugins.invocations[].plugin` | string | yes | | |

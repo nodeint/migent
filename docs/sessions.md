@@ -92,6 +92,13 @@ The session-level files have distinct purposes:
   freeze hash and the entry versions and pinned agent targets. A freeze file
   that no longer matches the last event, or a missing or upgraded plugin, stops
   the resume with exit code 2.
+- Plugins run in chain order: first the registered `defaultEnabled` plugins that `plugins:` does not name, in
+  registry order, with empty options; then the configured entries in declaration order. A default plugin listed
+  under `plugins:` takes its declared position, and `enabled: false` turns it off. New freezes and
+  `--refresh-workflow` pin the default entries like configured ones. A session frozen before a default plugin was
+  registered runs it implicitly at the current version, first in the chain, and `session show` marks it
+  `implicit`; `--refresh-workflow` pins it. `plugins.frozen` and `session show` list plugins in chain order, not
+  id order.
 - A plugin is `{ manifest, activate }`. The manifest declares `apiVersion`, and the registry refuses a plugin whose
   major differs from the core's or whose minor is greater. `uses` declares what the plugin may do: operations,
   events, session reads, artifacts, `agents` and core config keys. The host calls `activate(options, migent)` once

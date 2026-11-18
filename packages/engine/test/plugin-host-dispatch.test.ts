@@ -549,3 +549,19 @@ test('output names must be one safe path segment', () => {
   expect(['a.md', 'a_b-1.txt'].every(isSafeOutputName)).toBe(true);
   expect(['../a', 'a/b', '.hidden', '', 'a..b', 'a\\b'].some(isSafeOutputName)).toBe(false);
 });
+
+test('a default plugin that the config does not name records hook_invoked then decision or failed, in chain order', async () => {
+  const order: string[] = [];
+  const first = plugin('first', { 'session.started': () => { order.push('first'); return Promise.resolve([{ kind: 'none' as const }]); } }, { defaultEnabled: true });
+  const second = plugin('second', { 'session.started': () => { order.push('second'); return Promise.reject(new Error('boom')); } }, { defaultEnabled: true });
+  const user = plugin('user', { 'session.started': () => { order.push('user'); return Promise.resolve([{ kind: 'none' as const }]); } });
+  const { workspace, result } = await run([user, first, second], entries({ user: '' }));
+  expect(result.code).toBe(0);
+  expect(order).toEqual(['first', 'second', 'user']);
+  const events = eventsOf(workspace, result.sessionId).filter((event) => event.event.startsWith('plugin.'));
+  expect(events.map((event) => `${event.event}:${String(event.data.plugin)}`)).toEqual([
+    'plugin.hook_invoked:first', 'plugin.decision:first',
+    'plugin.hook_invoked:second', 'plugin.failed:second',
+    'plugin.hook_invoked:user', 'plugin.decision:user',
+  ]);
+});

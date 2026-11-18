@@ -15,6 +15,8 @@ export interface InspectedPlugin {
   readonly version: string | null;
   readonly enabled: boolean;
   readonly advisory: boolean;
+  /** `implicit`: a default entry the freeze never recorded, run at the current version. Absent otherwise. */
+  readonly source?: 'implicit';
 }
 
 /** One applied or rejected intent of a `plugin.decision`. */

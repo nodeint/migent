@@ -228,3 +228,78 @@ test('an unrelated malformed workflow freeze adds no plugins section to a sessio
     expect(text.stdout).not.toMatch(/^plugin/m);
   } finally { cliHooks.runner = null; removeWorkspace(root); }
 }, 30_000);
+
+test('session show lists plugins in chain order and marks an implicit default', async () => {
+  const demo = plugin('demo', {});
+  const core = { ...plugin('core', {}), manifest: { ...plugin('core', {}).manifest, defaultEnabled: true } };
+  const run = setup([demo]);
+  try {
+    await cli(run, 'session', 'run', '--workflow', 'wf', '--task', 'Task');
+    const id = path.basename(sessionDir(run.root));
+    run.runner.pluginRegistry = registryOfPlugins(demo, core);
+    const rows = async () => ((await showJson(run)).plugins?.active as { id: string; source?: string }[]).map((row) => `${row.id}:${row.source ?? ''}`);
+    expect(await rows()).toEqual(['core:implicit', 'demo:']);
+    expect((await cli(run, 'session', 'show', id)).stdout).toContain('core@1.2.3 (implicit)');
+  } finally { cliHooks.runner = null; removeWorkspace(run.root); }
+}, 30_000);
+
+test('an old session with no plugin data shows an implicit default, and still none without one', async () => {
+  const root = writeFakeWorkflowWorkspace({ wf: WORKFLOW });
+  const run = { root, runner: new AgentToolRunner(registryOf({ fake: new ScriptedClient([OK]) }), 10) };
+  const core = { ...plugin('core', {}), manifest: { ...plugin('core', {}).manifest, defaultEnabled: true } };
+  try {
+    await cli(run, 'session', 'run', '--workflow', 'wf', '--task', 'Task');
+    expect(await showJson(run)).not.toHaveProperty('plugins');
+    run.runner.pluginRegistry = registryOfPlugins(core);
+    expect((await showJson(run)).plugins).toMatchObject({ active: [{ id: 'core', enabled: true, source: 'implicit' }], invocations: [] });
+    expect((await cli(run, 'session', 'show', path.basename(sessionDir(root)))).stdout).toContain('core@1.2.3 (implicit)');
+  } finally { cliHooks.runner = null; removeWorkspace(root); }
+}, 30_000);
+
+const TWO_STAGES = 'schema_version: 7\nid: wf\nstages:\n  - { id: one, role: planner }\n  - { id: two, role: planner, depends_on: [one] }\n  - { id: three, role: planner, depends_on: [two] }\n  - { id: four, role: planner, depends_on: [three] }\n';
+const LIMIT = 5;
+const defaultDemo = (version: string): Plugin => ({
+  ...plugin('core', {}), manifest: { ...plugin('core', {}).manifest, version, defaultEnabled: true },
+});
+
+test('continuing an old session runs an implicit default; --refresh-workflow pins it; a version change exits 2', async () => {
+  const root = writeFakeWorkflowWorkspace({ wf: TWO_STAGES });
+  const run = { root, runner: new AgentToolRunner(registryOf({ fake: new ScriptedClient([OK, OK, OK, OK]) }), 10) };
+  const hooked: string[] = [];
+  const core = (version: string): Plugin => {
+    const base = plugin('core', { 'execution.finished': () => { hooked.push(version); return Promise.resolve([]); } });
+    return { ...base, manifest: { ...base.manifest, version, defaultEnabled: true } };
+  };
+  type Row = { id: string; source?: string };
+  const rows = async (): Promise<string[]> => ((await showJson(run)).plugins?.active as Row[])
+    .map((row) => `${row.id}:${row.source ?? 'frozen'}`);
+  try {
+    expect((await cli(run, 'session', 'run', '--workflow', 'wf', '--task', 'Task', '--max-dispatches', '1')).value).toBe(LIMIT);
+    const id = path.basename(sessionDir(root));
+    run.runner.pluginRegistry = registryOfPlugins(core('1.0.0'));
+    expect(await rows()).toEqual(['core:implicit']);
+    expect((await cli(run, 'session', 'continue', id, '--max-dispatches', '1')).value).toBe(LIMIT);
+    expect(hooked).toEqual(['1.0.0']);
+    expect(await rows()).toEqual(['core:implicit']);
+    expect((await cli(run, 'session', 'continue', id, '--max-dispatches', '1', '--refresh-workflow')).value).toBe(LIMIT);
+    expect(await rows()).toEqual(['core:frozen']);
+    run.runner.pluginRegistry = registryOfPlugins(core('2.0.0'));
+    const stopped = await cli(run, 'session', 'continue', id, '--max-dispatches', '1');
+    expect(stopped.value).toBe(2);
+    expect(stopped.stderr).toMatch(/core.*version/s);
+  } finally { cliHooks.runner = null; removeWorkspace(root); }
+}, 60_000);
+
+test('an unreadable live config still shows the implicit default, with the cause in live_unavailable', async () => {
+  const root = writeFakeWorkflowWorkspace({ wf: WORKFLOW });
+  const run = { root, runner: new AgentToolRunner(registryOf({ fake: new ScriptedClient([OK]) }), 10) };
+  try {
+    await cli(run, 'session', 'run', '--workflow', 'wf', '--task', 'Task');
+    run.runner.pluginRegistry = registryOfPlugins(defaultDemo('1.0.0'));
+    appendFileSync(path.join(root, '.migent', 'config.yaml'), 'invalid: [\n');
+    const { plugins } = await showJson(run);
+    expect(plugins).toMatchObject({ active: [{ id: 'core', source: 'implicit' }] });
+    expect(String(plugins?.live_unavailable)).not.toBe('null');
+    expect((await cli(run, 'session', 'show', path.basename(sessionDir(root)))).stdout).toContain('core@1.0.0 (implicit)');
+  } finally { cliHooks.runner = null; removeWorkspace(root); }
+}, 30_000);

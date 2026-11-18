@@ -12,6 +12,11 @@ export type PluginsFrozenEntries = SessionEventRecord<'plugins.frozen'>['data'][
  */
 export interface PluginFreezeInput {
   readonly classify: EntryClassifier;
+  /**
+   * Adds the entries the config does not name but that run by default (design D1, D4), so the freeze pins them.
+   * Returns the config unchanged when there are none.
+   */
+  readonly withDefaults?: (config: Record<string, unknown>) => Record<string, unknown>;
   /** Validates the merged config's plugin entries and returns the snapshot. Throws a `ConfigurationError`. */
   readonly snapshot: (config: Record<string, unknown>) => PluginsFrozenEntries;
 }

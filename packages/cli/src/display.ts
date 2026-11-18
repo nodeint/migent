@@ -243,7 +243,7 @@ function pluginResultText(result: Record<string, unknown>): string {
 }
 
 function pluginActiveText(row: Record<string, unknown>): string {
-  const flags = [row.enabled === false ? 'disabled' : '', row.advisory === true ? 'advisory' : ''].filter(Boolean);
+  const flags = [row.enabled === false ? 'disabled' : '', row.advisory === true ? 'advisory' : '', row.source === 'implicit' ? 'implicit' : ''].filter(Boolean);
   return `${String(row.id)}@${nonEmptyString(row.version) ? row.version : '?'}${flags.length > 0 ? ` (${flags.join(', ')})` : ''}`;
 }
 

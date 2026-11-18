@@ -7,6 +7,9 @@ const Status = Type.Union([Type.Literal('succeeded'), Type.Literal('failed'), Ty
 });
 const ActivePlugin = Type.Object({
   id: Type.String(), version: nullable(Type.String()), enabled: Type.Boolean(), advisory: Type.Boolean(),
+  source: Type.Optional(Type.Literal('implicit', {
+    description: 'A default plugin the freeze never recorded. It runs enabled at the current version until a refresh pins it.',
+  })),
 });
 const IntentResult = Type.Object({
   kind: Type.String(), status: Type.String(), reason: nullable(Type.String()), path: nullable(Type.String()),

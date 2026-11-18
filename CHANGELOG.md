@@ -11,6 +11,14 @@
   `stale` reason, and `plugin.decision` and `plugin.failed` gain `notes`. No plugin is registered, so no session
   changes. ([#166](https://github.com/nodeint/migent/issues/166))
 
+### Changed
+
+- Plugins run in configuration order instead of id order, and `plugins.frozen` and `session show` list them in chain
+  order. A registered `defaultEnabled` plugin that `plugins:` does not name runs first with empty options, is
+  pinned by new freezes and `--refresh-workflow`, and runs implicitly (`source: implicit` in `session show`) in a
+  session frozen before it was registered. No default plugin is registered, so no session changes.
+  ([#166](https://github.com/nodeint/migent/issues/166))
+
 ### Added
 
 - Plugin host core. The `plugins` config section is registered: sessions freeze it per entry, record a

@@ -544,6 +544,11 @@
               },
               "advisory": {
                 "type": "boolean"
+              },
+              "source": {
+                "type": "string",
+                "const": "implicit",
+                "description": "A default plugin the freeze never recorded. It runs enabled at the current version until a refresh pins it."
               }
             }
           }
