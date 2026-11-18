@@ -10,9 +10,9 @@ export function isEnabledEntry(entry: unknown): boolean {
 
 export const EMPTY_PLUGIN_REGISTRY: PluginRegistry = { ids: () => [], get: () => undefined };
 
-/** Whether the manifest offers `invokeAgent`, so the entry needs an agent target. */
+/** Whether the manifest declares `uses.agents`, so the entry needs an agent target. */
 export function declaresAgent(manifest: PluginManifest | undefined): boolean {
-  return manifest?.capabilities.includes('invokeAgent') === true;
+  return manifest?.uses.agents === true;
 }
 
 /**
@@ -25,6 +25,23 @@ export function pluginClassifier(registry: PluginRegistry, liveEntries: readonly
   return (id) => (kept.has(id) || registry.get(id)?.manifest.advisory === true ? 'live' : 'frozen');
 }
 
+/** The ids of registered `defaultEnabled` plugins, in registry order. */
+export function defaultEnabledIds(registry: PluginRegistry): string[] {
+  return registry.ids().filter((id) => registry.get(id)?.manifest.defaultEnabled === true);
+}
+
+/**
+ * The config with every default plugin the `plugins` section does not name added first with empty options, so the
+ * chain order is unlisted defaults, then the configured entries (design D5). A listed default keeps its position.
+ */
+export function withDefaultEntries(config: Record<string, unknown>, registry: PluginRegistry): Record<string, unknown> {
+  const configured = config.plugins === undefined ? {} : config.plugins;
+  if (typeof configured !== 'object' || configured === null || Array.isArray(configured)) return config;
+  const unlisted = defaultEnabledIds(registry).filter((id) => !Object.hasOwn(configured, id));
+  if (unlisted.length === 0) return config;
+  return { ...config, plugins: { ...Object.fromEntries(unlisted.map((id) => [id, {}])), ...configured } };
+}
+
 /** Validates the merged `plugins` section and throws the first issue, so a freeze write fails with exit 2. */
 export function assertPluginsValid(config: Record<string, unknown>, registry: PluginRegistry): void {
   const [first] = pluginEntryIssues({ plugins: config.plugins, manifests: registryManifests(registry) });
@@ -35,6 +52,7 @@ export function assertPluginsValid(config: Record<string, unknown>, registry: Pl
 export function pluginFreezeInput(registry: PluginRegistry, clients: ClientRegistry): PluginFreezeInput {
   return {
     classify: pluginClassifier(registry),
+    withDefaults: (config) => withDefaultEntries(config, registry),
     snapshot: (config) => {
       assertPluginsValid(config, registry);
       const plugins = config.plugins as Record<string, unknown>;

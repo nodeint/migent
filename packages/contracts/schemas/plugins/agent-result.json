@@ -29,5 +29,5 @@
     }
   },
   "title": "Plugin agent call result",
-  "description": "All a plugin sees of an `invokeAgent` call."
+  "description": "All a plugin sees of an agent call."
 }

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { ConfigurationError } from '@nodeint/migent-kernel';
@@ -15,6 +15,8 @@ export interface InspectedPlugin {
   readonly version: string | null;
   readonly enabled: boolean;
   readonly advisory: boolean;
+  /** `implicit`: a default entry the freeze never recorded, run at the current version. Absent otherwise. */
+  readonly source?: 'implicit';
 }
 
 /** One applied or rejected intent of a `plugin.decision`. */
@@ -46,6 +48,14 @@ export interface InspectedHold {
   readonly error: string | null;
 }
 
+/** A file under `plugins/<id>/` that the latest applied `plugin.decision` does not account for. */
+export interface UnrecordedFile {
+  readonly path: string;
+  readonly reason: 'no_decision' | 'content_mismatch';
+  readonly recorded_sha256?: string;
+  readonly actual_sha256?: string;
+}
+
 export interface PluginsInspection {
   readonly active: readonly InspectedPlugin[];
   readonly invocations: readonly InspectedInvocation[];
@@ -55,6 +65,8 @@ export interface PluginsInspection {
   readonly live_unavailable: string | null;
   readonly holds: readonly InspectedHold[];
   readonly freeze_mismatch: string | null;
+  /** Plugin files with no applied decision, or whose content differs from it (the accepted crash window). */
+  readonly unrecorded: readonly UnrecordedFile[];
 }
 
 const text = (value: unknown): string | null => (typeof value === 'string' ? value : null);
@@ -133,6 +145,54 @@ function invocationsOf(events: readonly ParsedEvent[]): InspectedInvocation[] {
   return rows;
 }
 
+const CALLS_DIRECTORY = 'calls';
+
+/** Every file under `plugins/<id>/`, as session-relative posix paths. `calls/` is audited through `agent_calls`. */
+function pluginFiles(sessionDirectory: string): string[] {
+  const root = path.join(sessionDirectory, 'plugins');
+  if (!existsSync(root)) return [];
+  const files: string[] = [];
+  for (const plugin of readdirSync(root, { withFileTypes: true })) {
+    if (!plugin.isDirectory()) continue;
+    for (const entry of readdirSync(path.join(root, plugin.name), { withFileTypes: true })) {
+      if (entry.name === CALLS_DIRECTORY || !entry.isFile()) continue;
+      files.push(path.posix.join('plugins', plugin.name, entry.name));
+    }
+  }
+  return files.sort();
+}
+
+/** The sha256 of the latest applied artifact result per path. */
+function recordedHashes(events: readonly ParsedEvent[]): Map<string, string> {
+  const hashes = new Map<string, string>();
+  for (const event of events) {
+    if (event.event !== 'plugin.decision') continue;
+    for (const row of records(event.data.results)) {
+      if (row.kind === 'artifact' && row.status === 'applied' && typeof row.path === 'string' && typeof row.sha256 === 'string') {
+        hashes.set(row.path, row.sha256);
+      }
+    }
+  }
+  return hashes;
+}
+
+function unrecordedOf(sessionDirectory: string, events: readonly ParsedEvent[]): UnrecordedFile[] {
+  const recorded = recordedHashes(events);
+  const rows: UnrecordedFile[] = [];
+  for (const file of pluginFiles(sessionDirectory)) {
+    const expected = recorded.get(file);
+    if (expected === undefined) {
+      rows.push({ path: file, reason: 'no_decision' });
+      continue;
+    }
+    const actual = createHash('sha256').update(readFileSync(path.join(sessionDirectory, file))).digest('hex');
+    if (actual !== expected) {
+      rows.push({ path: file, reason: 'content_mismatch', recorded_sha256: expected, actual_sha256: actual });
+    }
+  }
+  return rows;
+}
+
 const MISSING_RECORD = `${WORKFLOW_FREEZE_FILE} has a plugins section but the session recorded no plugins.frozen event.`;
 
 /** Whether the freeze file carries a `plugins` section; a freeze that cannot be read counts as a finding. */
@@ -170,7 +230,8 @@ export function readPluginsInspection(sessionDirectory: string): PluginsInspecti
   const pluginEvents = events.filter((event) => event.event.startsWith('plugin'));
   const section = freezePlugins(sessionDirectory);
   // Evidence of plugin data is a plugin record or a plugins-bearing freeze. An unreadable freeze alone is not.
-  if (pluginEvents.length === 0 && !section.present) return null;
+  const unrecorded = unrecordedOf(sessionDirectory, pluginEvents);
+  if (pluginEvents.length === 0 && !section.present && unrecorded.length === 0) return null;
   const frozen = pluginEvents.filter((event) => event.event === 'plugins.frozen').at(-1);
   return {
     active: activeOf(frozen),
@@ -181,5 +242,6 @@ export function readPluginsInspection(sessionDirectory: string): PluginsInspecti
       plugin, hook, on_error: onError, error,
     })),
     freeze_mismatch: mismatchOf(sessionDirectory, frozen, section),
+    unrecorded,
   };
 }

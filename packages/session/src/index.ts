@@ -21,7 +21,7 @@ export {
 } from './metrics.js';
 export { formatNextCommand,publishNextSuggestions, resolveNextSuggestions } from './next-handoff.js';
 export { resolveHandoff } from './next-handoff.js';
-export type { InspectedHold, InspectedInvocation, InspectedPlugin, InspectedResult, PluginsInspection } from './plugin-inspection.js';
+export type { InspectedHold, InspectedInvocation, InspectedPlugin, InspectedResult, PluginsInspection, UnrecordedFile } from './plugin-inspection.js';
 export { readPluginsInspection } from './plugin-inspection.js';
 export type { StatusFileState } from './query.js';
 export {
@@ -98,6 +98,7 @@ export {
   selectRunWorkflow,
   selectSessionWorkflow,
 } from './session-selection.js';
+export { lastBasisSeq, readBasisSeq, readSessionSnapshot } from './session-snapshot.js';
 export type { CancelledReplyOrigin, ExecutionSaveInput, HumanInput, LoadOrCreateInput, ManualCompletionResult, QuestionAnswerRecord, SessionRecordFallback, SessionRecordInit, SkipDetails } from './session-store.js';
 export {
   AgentSessionRecord,

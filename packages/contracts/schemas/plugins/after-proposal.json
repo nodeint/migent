@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/plugins/after-proposal.json",
+  "anyOf": [
+    {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "continue"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "kind",
+        "fields"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "patch"
+        },
+        "fields": {
+          "type": "object",
+          "patternProperties": {
+            "^.*$": {}
+          }
+        }
+      }
+    }
+  ],
+  "title": "Plugin after-interceptor proposal"
+}

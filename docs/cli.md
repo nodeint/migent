@@ -761,13 +761,16 @@ session-relative `diagnostics.json` of that execution, or `null` when absent. Se
 When the session recorded plugin events, the snapshot adds a plugins section, derived on read from
 `plugins.frozen` and `plugin.*`: a `plugins  <id>@<version>, …` line for the active set, one
 `plugin  <id> <hook> · succeeded|failed|interrupted · …` line per invocation, and
-`plugin_added_after_freeze`, `plugin_hold` and `plugin_freeze_mismatch` lines when they apply. An invocation that
+`plugin_added_after_freeze`, `plugin_hold`, `plugin_freeze_mismatch` and `plugin_unrecorded` lines when they apply.
+`plugin_unrecorded <path> · no_decision|content_mismatch` marks a file under `plugins/<id>/` (not `calls/`) that
+the latest applied `plugin.decision` does not account for, which happens when the process stopped between the
+write and the record. An invocation that
 recorded `plugin.hook_invoked` and no result shows `interrupted`: the process stopped in between, so an external
 effect of the plugin is unknown. Advisory entries are shown as the live config and registry resolve them, because
 they run live; every other entry is shown as frozen. `plugin_freeze_mismatch` also reports a freeze that has a
 `plugins` section but no `plugins.frozen` event. When the live config cannot be read, `plugin_live_unavailable`
 gives the cause and the advisory rows stay as frozen. The JSON snapshot has the same data as a `plugins` object
-(`active`, `invocations`, `added_after_freeze`, `live_unavailable`, `holds`, `freeze_mismatch`), omitted without
+(`active`, `invocations`, `added_after_freeze`, `live_unavailable`, `holds`, `freeze_mismatch`, `unrecorded`), omitted without
 plugin data. `added_after_freeze` is `null` when `live_unavailable` is set. `session follow`
 streams `plugin.*` records like any other event.
 For a schema 2 session it also prints, on stderr, any drift

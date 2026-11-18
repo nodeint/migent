@@ -7,7 +7,8 @@
     "invalid_intent",
     "unavailable",
     "version_changed",
-    "cancelled"
+    "cancelled",
+    "stale"
   ],
   "title": "Plugin failure reason"
 }

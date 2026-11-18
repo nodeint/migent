@@ -1,27 +1,23 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/plugins/intent.json",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/plugins/event-proposal.json",
   "anyOf": [
     {
       "type": "object",
       "required": [
         "kind",
         "name",
-        "content",
-        "media_type"
+        "content"
       ],
       "properties": {
         "kind": {
           "type": "string",
-          "const": "output"
+          "const": "artifact"
         },
         "name": {
           "type": "string"
         },
         "content": {
-          "type": "string"
-        },
-        "media_type": {
           "type": "string"
         }
       }
@@ -55,6 +51,6 @@
       }
     }
   ],
-  "title": "Plugin intent",
-  "description": "A closed union. The core decides and records every effect."
+  "title": "Plugin event proposal",
+  "description": "A closed union. The core decides and records every effect. At most one `artifact` per invocation."
 }

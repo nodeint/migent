@@ -35,5 +35,5 @@
     }
   },
   "title": "LLM plugin config",
-  "description": "Shared fields of a plugin that declares `invokeAgent`."
+  "description": "Shared fields of a plugin that declares `uses.agents`."
 }

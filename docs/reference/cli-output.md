@@ -802,6 +802,7 @@ Type: object
 | `plugins.active[].version` | string \| null | yes | | |
 | `plugins.active[].enabled` | boolean | yes | | |
 | `plugins.active[].advisory` | boolean | yes | | |
+| `plugins.active[].source` | `"implicit"` | no | | A default plugin the freeze never recorded. It runs enabled at the current version until a refresh pins it. |
 | `plugins.invocations` | object[] | yes | | |
 | `plugins.invocations[].invocation_id` | string \| null | yes | | |
 | `plugins.invocations[].plugin` | string | yes | | |
@@ -825,6 +826,11 @@ Type: object
 | `plugins.holds[].on_error` | `"stop"` \| `"fail"` | yes | | |
 | `plugins.holds[].error` | string \| null | yes | | |
 | `plugins.freeze_mismatch` | string \| null | yes | | |
+| `plugins.unrecorded` | object[] | yes | | |
+| `plugins.unrecorded[].path` | string | yes | | |
+| `plugins.unrecorded[].reason` | `"no_decision"` \| `"content_mismatch"` | yes | | |
+| `plugins.unrecorded[].recorded_sha256` | string | no | | |
+| `plugins.unrecorded[].actual_sha256` | string | no | | |
 | `diagnostics` | string | no | | |
 | `exit_anomalies` | object[] | no | | |
 | `exit_anomalies[].stage_id` | string | yes | | |
@@ -915,6 +921,7 @@ Type: object
 | `plugins.active[].version` | string \| null | yes | | |
 | `plugins.active[].enabled` | boolean | yes | | |
 | `plugins.active[].advisory` | boolean | yes | | |
+| `plugins.active[].source` | `"implicit"` | no | | A default plugin the freeze never recorded. It runs enabled at the current version until a refresh pins it. |
 | `plugins.invocations` | object[] | yes | | |
 | `plugins.invocations[].invocation_id` | string \| null | yes | | |
 | `plugins.invocations[].plugin` | string | yes | | |
@@ -938,6 +945,11 @@ Type: object
 | `plugins.holds[].on_error` | `"stop"` \| `"fail"` | yes | | |
 | `plugins.holds[].error` | string \| null | yes | | |
 | `plugins.freeze_mismatch` | string \| null | yes | | |
+| `plugins.unrecorded` | object[] | yes | | |
+| `plugins.unrecorded[].path` | string | yes | | |
+| `plugins.unrecorded[].reason` | `"no_decision"` \| `"content_mismatch"` | yes | | |
+| `plugins.unrecorded[].recorded_sha256` | string | no | | |
+| `plugins.unrecorded[].actual_sha256` | string | no | | |
 | `diagnostics` | string | no | | |
 | `exit_anomalies` | object[] | no | | |
 | `exit_anomalies[].stage_id` | string | yes | | |
@@ -1556,13 +1568,27 @@ Type: object
 | `policy` | string \| null | yes | | |
 | `estimate` | map of any | yes | | |
 
+<a id="plugins-after-proposal-json"></a>
+
+## Plugin after-interceptor proposal
+
+Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/plugins/after-proposal.json`
+
+Type: object \| object
+
+| Field | Type | Required | Notes | Description |
+| --- | --- | --- | --- | --- |
+| `kind` | `"continue"` | yes | | |
+| `kind` | `"patch"` | yes | | |
+| `fields` | map of any | yes | | |
+
 <a id="plugins-agent-result-json"></a>
 
 ## Plugin agent call result
 
 Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/plugins/agent-result.json`
 
-All a plugin sees of an `invokeAgent` call.
+All a plugin sees of an agent call.
 
 Type: object
 
@@ -1571,13 +1597,50 @@ Type: object
 | `text` | string \| null | yes | | |
 | `error` | string \| null | yes | | |
 
+<a id="plugins-before-proposal-json"></a>
+
+## Plugin before-interceptor proposal
+
+Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/plugins/before-proposal.json`
+
+Type: object \| object \| object
+
+| Field | Type | Required | Notes | Description |
+| --- | --- | --- | --- | --- |
+| `kind` | `"continue"` | yes | | |
+| `kind` | `"patch"` | yes | | |
+| `fields` | map of any | yes | | |
+| `kind` | `"short_circuit"` | yes | | |
+| `output` | any | yes | | |
+
+<a id="plugins-event-proposal-json"></a>
+
+## Plugin event proposal
+
+Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/plugins/event-proposal.json`
+
+A closed union.
+The core decides and records every effect.
+At most one `artifact` per invocation.
+
+Type: object \| object \| object
+
+| Field | Type | Required | Notes | Description |
+| --- | --- | --- | --- | --- |
+| `kind` | `"artifact"` | yes | | |
+| `name` | string | yes | | |
+| `content` | string | yes | | |
+| `kind` | `"note"` | yes | | |
+| `text` | string | yes | | |
+| `kind` | `"none"` | yes | | |
+
 <a id="plugins-failure-reason-json"></a>
 
 ## Plugin failure reason
 
 Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/plugins/failure-reason.json`
 
-Type: `"error"` \| `"timeout"` \| `"invalid_intent"` \| `"unavailable"` \| `"version_changed"` \| `"cancelled"`
+Type: `"error"` \| `"timeout"` \| `"invalid_intent"` \| `"unavailable"` \| `"version_changed"` \| `"cancelled"` \| `"stale"`
 
 <a id="plugins-hook-input-json"></a>
 
@@ -1591,7 +1654,7 @@ Type: object
 
 | Field | Type | Required | Notes | Description |
 | --- | --- | --- | --- | --- |
-| `hook` | `"session.started"` \| `"execution.finished"` \| `"session.stopped"` | yes | | |
+| `hook` | `"session.started"` \| `"execution.finished"` \| `"session.stopped"` \| `"session.completed"` | yes | | |
 | `plugin` | object | yes | | |
 | `plugin.id` | string | yes | | |
 | `plugin.version` | string | yes | | |
@@ -1608,34 +1671,13 @@ Type: object
 | `execution.outcome` | map of any \| null | yes | | |
 | `execution.artifacts` | string[] | yes | | |
 
-<a id="plugins-intent-json"></a>
-
-## Plugin intent
-
-Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/plugins/intent.json`
-
-A closed union.
-The core decides and records every effect.
-
-Type: object \| object \| object
-
-| Field | Type | Required | Notes | Description |
-| --- | --- | --- | --- | --- |
-| `kind` | `"output"` | yes | | |
-| `name` | string | yes | | |
-| `content` | string | yes | | |
-| `media_type` | string | yes | | |
-| `kind` | `"note"` | yes | | |
-| `text` | string | yes | | |
-| `kind` | `"none"` | yes | | |
-
 <a id="plugins-llm-config-json"></a>
 
 ## LLM plugin config
 
 Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/plugins/llm-config.json`
 
-Shared fields of a plugin that declares `invokeAgent`.
+Shared fields of a plugin that declares `uses.agents`.
 
 Type: object
 
@@ -1663,9 +1705,24 @@ Type: object
 | --- | --- | --- | --- | --- |
 | `id` | string | yes | pattern: `"^[a-z][a-z0-9_]*$"` | |
 | `version` | string | yes | pattern: `"^(0\|[1-9]\\d*)\\.(0\|[1-9]\\d*)\\.(0\|[1-9]\\d*)(?:-((?:0\|[1-9]\\d*\|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0\|[1-9]\\d*\|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$"` | Semver 2.0.0. |
+| `apiVersion` | object | yes | | |
+| `apiVersion.major` | integer | yes | minimum: `0` | |
+| `apiVersion.minor` | integer | yes | minimum: `0` | |
 | `advisory` | boolean | yes | | |
-| `hooks` | (`"session.started"` \| `"execution.finished"` \| `"session.stopped"`)[] | yes | | |
-| `capabilities` | `"invokeAgent"`[] | yes | | |
+| `defaultEnabled` | boolean | no | | |
+| `uses` | object | yes | | Static declarations read without activating the plugin. Every context member checks them. |
+| `uses.operations` | object[] | yes | | |
+| `uses.operations[].target` | string | yes | | An operation id, or a `prefix.*` pattern. |
+| `uses.operations[].phases` | (`"before"` \| `"after"`)[] | yes | | |
+| `uses.events` | (`"session.started"` \| `"execution.finished"` \| `"session.stopped"` \| `"session.completed"`)[] | yes | | |
+| `uses.session` | (`"snapshot"` \| `"resume_facts"`)[] | yes | | |
+| `uses.artifacts` | object[] | yes | | |
+| `uses.artifacts[].name` | string | yes | | |
+| `uses.artifacts[].mode` | `"create_only"` \| `"replace"` | yes | | |
+| `uses.artifacts[].media_type` | string | yes | | |
+| `uses.artifacts[].fresh` | boolean | no | | |
+| `uses.agents` | boolean | yes | | The plugin calls an agent. Its config entry then needs an `agent`. |
+| `uses.config` | string[] | yes | | Core config keys the plugin reads. |
 | `configSchema` | object | yes | | |
 | `defaults` | object | no | | |
 | `defaults.on_error` | [Plugin failure policy](#plugins-on-error-json) | no | | `ignore` records the failure and continues; `stop` blocks the session; `fail` ends the run with exit 1. |

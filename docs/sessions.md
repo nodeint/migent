@@ -92,21 +92,54 @@ The session-level files have distinct purposes:
   freeze hash and the entry versions and pinned agent targets. A freeze file
   that no longer matches the last event, or a missing or upgraded plugin, stops
   the resume with exit code 2.
+- Plugins run in chain order: first the registered `defaultEnabled` plugins that `plugins:` does not name, in
+  registry order, with empty options; then the configured entries in declaration order. A default plugin listed
+  under `plugins:` takes its declared position, and `enabled: false` turns it off. New freezes and
+  `--refresh-workflow` pin the default entries like configured ones. A session frozen before a default plugin was
+  registered runs it implicitly at the current version, first in the chain, and `session show` marks it
+  `implicit`; `--refresh-workflow` pins it. `plugins.frozen` and `session show` list plugins in chain order, not
+  id order.
+- A plugin is `{ manifest, activate }`. The manifest declares `apiVersion`, and the registry refuses a plugin whose
+  major differs from the core's or whose minor is greater. `uses` declares what the plugin may do: operations,
+  events, session reads, artifacts, `agents` and core config keys. The host calls `activate(options, migent)` once
+  per run under the plugin's deadline. `migent` registers event handlers and interceptors until `activate` settles;
+  a registration after that throws `PluginContextClosed`. A registration that `uses` does not declare fails the
+  activation, which records `plugin.failed` with `hook: activate`, and the plugin takes part in nothing for that run.
 - Plugin hooks run during a run and are recorded in `events.jsonl`. `session.started` fires when the run
   creates or activates the session, `execution.finished` for each finished execution, and `session.stopped` once
-  scheduling ends, only when the run dispatched work. Each invocation records `plugin.hook_invoked`, then
-  `plugin.decision` (the applied intents) or `plugin.failed`. An `output` intent is written to
-  `plugins/<id>/<name>`, where `<name>` is one safe file name. `on_error` decides a failure: `ignore` records it,
-  `stop` and `fail` set a plugin hold. An advisory plugin always uses `ignore`. Hooks are not replayed on resume,
-  and every invocation settles before the session lock is released.
-- A plugin that declares `invokeAgent`, and whose config has an `agent`, can ask for one provider turn with no
-  conversation or resume. Each call runs as the `plugin.invoke_agent` operation on the operation runtime. The raw
-  response is stored in `plugins/<id>/calls/<invocation>-<n>.txt`, and the invocation's `plugin.decision` or
-  `plugin.failed` lists the call under `agent_calls`. The plugin receives only `{ text, error }`. A non-advisory
-  plugin uses the agent target pinned in `plugins.frozen`; an advisory plugin resolves the live agent at the call.
-  When the invocation deadline passes or the run is cancelled, the provider process is stopped before the failure
-  is recorded, and a later call starts no process.
+  scheduling ends, only when the run dispatched work, and `session.completed` for each completion event.
+  Each invocation records `plugin.hook_invoked`, then
+  `plugin.decision` (the applied proposals) or `plugin.failed`. A handler returns proposals and receives a
+  per-invocation `call` context. An invocation may propose at most one `artifact`; a second is `invalid_intent`.
+  The artifact must match a `uses.artifacts` claim and is written to `plugins/<id>/<name>`, where `<name>` is one
+  safe file name. Notes from `call.log` are recorded under `notes` while the invocation is open.
+  `on_error` decides a failure: `ignore` records it, `stop` and `fail` set a plugin hold. An advisory plugin
+  always uses `ignore`.
+  Hooks are not replayed on resume, and every invocation settles before the session lock is released. The core
+  writes the artifact atomically and then records `plugin.decision`; a crash between the two leaves a file with no
+  record. `session show` reports such files, and files whose content no longer matches the latest applied record,
+  as `unrecorded`. A `create_only` artifact that already exists is `rejected` with reason `exists`.
+- A plugin that declares `uses.agents`, and whose config has an `agent`, can ask for one provider turn with
+  `call.agents.invoke`, with no conversation or resume. Each call runs as the `plugin.invoke_agent` operation on the
+  operation runtime. The raw response is stored in `plugins/<id>/calls/<invocation>-<n>.txt`, and the
+  invocation's `plugin.decision` or `plugin.failed` lists the call under `agent_calls`.
+  The plugin receives only `{ text, error }`. A non-advisory plugin uses the agent target pinned in
+  `plugins.frozen`; an advisory plugin resolves the live agent at the call. When the invocation deadline passes or
+  the run is cancelled, the provider process is stopped before the failure is recorded, a later call starts no
+  process, and it rejects with `PluginContextClosed`.
   `session show` reports the plugin facts from these events; see [CLI](cli.md#inspect-sessions).
+- A plugin that declares `uses.session` can read `call.session.snapshot()` and
+  `call.session.resumeFacts(executionId)` during an invocation. The core records the read: a `resumeFacts` hash, and
+  the snapshot's `basis_seq`, the last event seq that is not a `plugin.*` event. An invocation that proposes a `fresh`
+  artifact is also checked against the session as it was when the invocation started. If a read changed by the time
+  the result is applied, the result is discarded and the pass or handler runs once more; a second change records
+  `plugin.failed` with reason `stale` (tied to the invocation, keeping its agent calls and notes), and the value
+  continues unmodified. An interceptor proposal from a discarded pass is recorded as `rejected` with reason
+  `stale`, never `applied`. A handler's agent calls from a discarded attempt stay recorded, and its retry continues
+  the call numbering. Whole-invocation validation runs before the freshness check, so an invalid result is
+  `invalid_intent`, not `stale`. The snapshot's `events` are the ordered parsed events (`executionId`, `stageId`,
+  `summary`, `data`, `raw`). A read after the invocation
+  settles rejects with `PluginContextClosed`.
 - `task.md` is the task body. A one-line `session run --workflow --task` writes
   that sentence here. A prepared session creates an empty file for you to write, along with any
   other files that belong next to it. Stage prompts name this path and the

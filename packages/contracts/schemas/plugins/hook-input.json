@@ -12,7 +12,8 @@
       "enum": [
         "session.started",
         "execution.finished",
-        "session.stopped"
+        "session.stopped",
+        "session.completed"
       ]
     },
     "plugin": {

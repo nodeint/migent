@@ -72,7 +72,8 @@
             "invalid_intent",
             "unavailable",
             "version_changed",
-            "cancelled"
+            "cancelled",
+            "stale"
           ]
         },
         "error": {
@@ -175,6 +176,33 @@
                     "type": "null"
                   }
                 ]
+              }
+            }
+          }
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "level",
+              "text"
+            ],
+            "properties": {
+              "level": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "info"
+                  },
+                  {
+                    "type": "string",
+                    "const": "warn"
+                  }
+                ]
+              },
+              "text": {
+                "type": "string"
               }
             }
           }

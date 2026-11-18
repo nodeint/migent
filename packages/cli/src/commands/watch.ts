@@ -206,11 +206,11 @@ function printSnapshot(
 /** Adds the live plugin facts, which need the live config and the registry, so the session package cannot. */
 function withLiveFacts(snapshot: Record<string, unknown>, sessionDirectory: string): Record<string, unknown> {
   const { plugins } = snapshot;
-  if (!isRecord(plugins)) return snapshot;
   const workspace = path.resolve(sessionDirectory, '..', '..', '..');
   const registry = cliHooks.runner?.pluginRegistry ?? pluginRegistry();
-  const inspection = plugins as unknown as PluginsInspection;
-  return { ...snapshot, plugins: withLivePlugins(inspection, { workspace, sessionDirectory, registry }) };
+  const inspection = isRecord(plugins) ? plugins as unknown as PluginsInspection : null;
+  const live = withLivePlugins(inspection, { workspace, sessionDirectory, registry });
+  return live === null ? snapshot : { ...snapshot, plugins: live };
 }
 
 function snapshotJson(snapshot: Record<string, unknown>): Static<typeof SessionSnapshot> {

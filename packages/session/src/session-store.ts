@@ -25,14 +25,14 @@ import { VERIFY_ARTIFACT, type WorkflowDocument } from '@nodeint/migent-workflow
 
 import { TURN_PAD_WIDTH } from './constants.js';
 import { sessionEventLog } from './event-log.js';
-import { completeManuallyLocked, type ManualCompletionOps } from './manual-completion.js';
+import { completeManuallyLocked, requireSessionDirectory } from './manual-completion.js';
 import { sealSessionMetrics } from './metrics.js';
 import { publishNextSuggestions } from './next-handoff.js';
 import { readPendingResumes } from './resume-pending.js';
 import { writeFailureReport } from './session-failure-report.js';
 import { readSessionManifest } from './session-fold-read.js';
 import { planExecutionSave } from './session-ledger.js';
-import { assertSessionLockHeld, SessionLock, SessionLockHeldError } from './session-lock.js';
+import { assertSessionLockHeld, SessionLock, SessionLockHeldError, sessionLockHeldLocally } from './session-lock.js';
 import { assertSessionId } from './session-selection.js';
 import {
   appendExecutionSaveEvents,
@@ -461,27 +461,34 @@ export class SessionStore extends SessionStoreResume {
    * Publishes what a normal completion would, seals metrics, and writes next.json. Terminal and idempotent.
    */
   public completeManually(sessionId: string): ManualCompletionResult {
-    assertSessionId(sessionId);
-    const sessionDirectory = path.join(this.sessionsDirectory, sessionId);
-    if (!isDirectory(sessionDirectory)) throw new ConfigurationError(`Session ${sessionId} does not exist.`);
-    const lock = SessionLock.tryAcquire(sessionDirectory);
+    const directory = requireSessionDirectory(this.sessionsDirectory, sessionId);
+    const lock = SessionLock.tryAcquire(directory);
     if (lock === null) {
       throw new SessionLockHeldError(
         `Session ${sessionId} is being run by another process. Stop it first with: migent session cancel ${sessionId}`,
       );
     }
-    const ops: ManualCompletionOps = {
+    try {
+      return this.completeManuallyHeld(sessionId);
+    } finally {
+      lock.release();
+    }
+  }
+
+  /** `completeManually` for a caller that holds the lock (a plugin scope); it neither acquires nor releases. */
+  public completeManuallyHeld(sessionId: string): ManualCompletionResult {
+    const directory = requireSessionDirectory(this.sessionsDirectory, sessionId);
+    if (!sessionLockHeldLocally(directory)) {
+      throw new ConfigurationError(`Session ${sessionId} is not locked by this process.`);
+    }
+    assertSessionLockHeld(directory);
+    return completeManuallyLocked({
       workspace: this.workspace,
       metricsClients: this.metricsClients,
       loadWorkflow: (status) => this.loadWorkflow(status),
       snapshotList: (id) => this.snapshotList(id),
-      rewriteManifestStatus: (directory, status) => this.rewriteManifestStatus(directory, status),
-    };
-    try {
-      return completeManuallyLocked(ops, sessionId, sessionDirectory);
-    } finally {
-      lock.release();
-    }
+      rewriteManifestStatus: (dir, status) => this.rewriteManifestStatus(dir, status),
+    }, sessionId, directory);
   }
 
   private reapExecution(context: ExecutionContext, onLiveOwner: string): void {

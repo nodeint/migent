@@ -2,8 +2,47 @@
 
 ## Unreleased
 
+### Breaking
+
+- The plugin contract changes shape, in the first step of the shared `MigentContext` API. A plugin is
+  `{ manifest, activate }` instead of `{ manifest, handlers }`. The manifest gains `apiVersion` and `uses`, and
+  `uses.agents` replaces `capabilities: ['invokeAgent']`. The `output` intent becomes the `artifact` proposal, which
+  an invocation may propose at most once and which must match a `uses.artifacts` claim. `plugin.failed` gains the
+  `stale` reason, and `plugin.decision` and `plugin.failed` gain `notes`. No plugin is registered, so no session
+  changes. ([#166](https://github.com/nodeint/migent/issues/166))
+
+### Changed
+
+- Plugins run in configuration order instead of id order, and `plugins.frozen` and `session show` list them in chain
+  order. A registered `defaultEnabled` plugin that `plugins:` does not name runs first with empty options, is
+  pinned by new freezes and `--refresh-workflow`, and runs implicitly (`source: implicit` in `session show`) in a
+  session frozen before it was registered. No default plugin is registered, so no session changes.
+  ([#166](https://github.com/nodeint/migent/issues/166))
+
 ### Added
 
+- Durable plugin artifacts and audit. A plugin can observe a new `session.completed` event, and artifact writes
+  check that the session lock is still held. `session show` lists files under `plugins/<id>/` (not `calls/`) that
+  have no applied `plugin.decision`, or whose content differs from it, as `unrecorded`. The engine exposes
+  `withPluginScope`, which settles every invocation before the caller releases the lock, and `session` exposes
+  `completeManuallyHeld` for a caller that already holds it. Manual completion is unchanged. No plugin is
+  registered, so no session changes. ([#166](https://github.com/nodeint/migent/issues/166))
+- Session reads and freshness. A plugin that declares `uses.session` reads `call.session.snapshot()` (basis seq,
+  status, executions, events, workflow, normalized turns, exit anomalies) and `call.session.resumeFacts(executionId)`;
+  a read after the invocation settles rejects without reading. The core records what each invocation read, and an
+  operation may declare an `evidence` fingerprint (`agent.turn` declares none). When a read changed, or a `fresh`
+  artifact's session moved, the result is discarded and the pass or invocation re-runs once per operation cycle or
+  trigger; a second change records `plugin.failed` with reason `stale` and the value continues unmodified. A
+  discarded interceptor proposal is recorded as `rejected` (`stale`), and a retried handler keeps its first attempt's
+  agent calls. Plugin
+  events never make evidence stale. No plugin is registered, so no session changes.
+  ([#166](https://github.com/nodeint/migent/issues/166))
+- Operation interception. A plugin registers `operations.intercept('agent.turn', { before, after })`, and the
+  runtime runs the interceptors of an operation in chain order around its handler. `agent.turn` lets a `before`
+  interceptor patch `prompt`; an undeclared field, an invalid patch, or a failing, timed-out or cancelled
+  interceptor leaves the value unchanged and records `plugin.decision` (`rejected`) or `plugin.failed`, and
+  `on_error: stop` and `fail` create the existing plugin hold. No plugin is registered, so no session changes.
+  ([#166](https://github.com/nodeint/migent/issues/166))
 - Plugin host core. The `plugins` config section is registered: sessions freeze it per entry, record a
   `plugins.frozen` event at every freeze, and check the frozen plugins on resume, and `migent doctor` validates the
   entries against the plugin registry. Registered plugins run at `session.started`, `execution.finished` and

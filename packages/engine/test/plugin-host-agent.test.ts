@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-import type { Plugin, PluginHandler, PluginHook, PluginRegistry, TSchema } from '@nodeint/migent-contracts';
+import type { Plugin, PluginHandler, PluginHook, PluginRegistry, PluginUses, TSchema } from '@nodeint/migent-contracts';
 import type { BuildCommandInput, CommandSpec } from '@nodeint/migent-kernel';
 import { raiseCancellation, resetCancellation } from '@nodeint/migent-kernel';
 import { readParsedEvents, SessionLock, subscribeSessionEvents } from '@nodeint/migent-session';
@@ -21,9 +21,19 @@ const BASE = 'agents:\n  fake:\n    client: { type: fake }\n    model: m1\n  oth
 
 const llm = (id: string, handlers: Partial<Record<PluginHook, PluginHandler>>, extra: Partial<Plugin['manifest']> = {}): Plugin => ({
   manifest: {
-    id, version: '1.0.0', advisory: false, hooks: Object.keys(handlers) as PluginHook[], capabilities: ['invokeAgent'], configSchema: schema, ...extra,
+    id, version: '1.0.0', apiVersion: { major: 1, minor: 0 }, advisory: false, configSchema: schema,
+    uses: {
+      operations: [], events: Object.keys(handlers) as PluginHook[], session: [],
+      artifacts: [{ name: 'report.md', mode: 'replace', media_type: 'text/markdown' }], agents: true, config: [],
+    } satisfies PluginUses,
+    ...extra,
   },
-  handlers,
+  activate: (_options, migent) => {
+    for (const [hook, handler] of Object.entries(handlers)) migent.events.on(hook as PluginHook, handler);
+  },
+});
+const withoutAgents = (plugin: Plugin): Plugin => ({
+  ...plugin, manifest: { ...plugin.manifest, uses: { ...plugin.manifest.uses, agents: false } },
 });
 const registryOfPlugins = (...plugins: Plugin[]): PluginRegistry => ({
   ids: () => plugins.map((entry) => entry.manifest.id),
@@ -129,8 +139,8 @@ test('a call runs one turn through the runtime: agent_calls, stored raw output, 
   const client = new HangingClient('', 'ok');
   let seen: unknown;
   const demo = llm('demo', {
-    'session.started': async (_input, caps) => {
-      seen = await caps.invokeAgent?.('PLUGIN hello');
+    'session.started': async (_input, call) => {
+      seen = await call.agents.invoke('PLUGIN hello');
       return [];
     },
   });
@@ -166,11 +176,11 @@ test('a denying policy gives a denied outcome and starts no provider', async () 
 test('invokeAgent is offered only when declared and the config has an agent', async () => {
   const client = new HangingClient('', 'ok');
   const offered: Record<string, boolean> = {};
-  const probe: PluginHandler = (_input, caps) => {
-    offered.invoke = caps.invokeAgent !== undefined;
-    return Promise.resolve([]);
+  const probe: PluginHandler = async (_input, call) => {
+    offered.invoke = await call.agents.invoke('PLUGIN probe').then(() => true, () => false);
+    return [];
   };
-  await run(llm('demo', { 'session.started': probe }, { capabilities: [] }), entry(), client);
+  await run(withoutAgents(llm('demo', { 'session.started': probe })), entry(), client);
   expect(offered.invoke).toBe(false);
   await run(llm('demo', { 'session.started': probe }), entry(), client);
   expect(offered.invoke).toBe(true);
@@ -181,8 +191,8 @@ test('a frozen target survives a live agents edit', async () => {
   const workspace = workspaceWith(entry('', 'fake'));
   const runner = new AgentToolRunner(registryOf({ fake: client }), 10);
   const demo = llm('demo', {
-    'execution.finished': async (_input, caps) => {
-      await caps.invokeAgent?.('PLUGIN again');
+    'execution.finished': async (_input, call) => {
+      await call.agents.invoke('PLUGIN again');
       return [];
     },
   });
@@ -197,8 +207,8 @@ test('a frozen target survives a live agents edit', async () => {
 test('an advisory plugin resolves the live target at the call; failure is unavailable', async () => {
   const client = new HangingClient('', 'ok');
   const demo = llm('demo', {
-    'session.started': async (_input, caps) => {
-      await caps.invokeAgent?.('PLUGIN x');
+    'session.started': async (_input, call) => {
+      await call.agents.invoke('PLUGIN x');
       return [];
     },
   }, { advisory: true });
@@ -208,8 +218,8 @@ test('an advisory plugin resolves the live target at the call; failure is unavai
 
   const broken = new HangingClient('', 'ok');
   const bad = llm('demo', {
-    'session.started': async (_input, caps) => {
-      await caps.invokeAgent?.('PLUGIN x');
+    'session.started': async (_input, call) => {
+      await call.agents.invoke('PLUGIN x');
       return [];
     },
     'execution.finished': () => Promise.resolve([]),
@@ -230,11 +240,11 @@ test('a timeout stops the provider before plugin.failed, and a later call starts
   let finished: () => void = () => undefined;
   const done = new Promise<void>((resolve) => { finished = resolve; });
   const demo = llm('demo', {
-    'session.started': async (_input, caps) => {
-      const first = caps.invokeAgent?.('PLUGIN hang');
+    'session.started': async (_input, call) => {
+      const first = call.agents.invoke('PLUGIN hang');
       await new Promise((resolve) => setTimeout(resolve, 3000));
       try {
-        late = await caps.invokeAgent?.('PLUGIN late');
+        late = await call.agents.invoke('PLUGIN late').catch((error: unknown) => error);
         await first;
       } finally {
         finished();
@@ -253,15 +263,15 @@ test('a timeout stops the provider before plugin.failed, and a later call starts
   expect(alive(Number(readFileSync(pidFile, 'utf8')))).toBe(false);
   expect(client.calls.filter((item) => item.prompt.startsWith('PLUGIN'))).toHaveLength(1);
   await done;
-  expect(late).toMatchObject({ text: null, error: expect.stringContaining('not started') });
+  expect(late).toMatchObject({ name: 'PluginContextClosed' });
 }, 30_000);
 
 test('cancellation during a provider call stops the process and records cancelled', async () => {
   const pidFile = path.join(tempDir('migent-agent-cancel-'), 'pid');
   const client = new HangingClient(pidFile, 'hang');
   const demo = llm('demo', {
-    'session.started': async (_input, caps) => {
-      await caps.invokeAgent?.('PLUGIN hang');
+    'session.started': async (_input, call) => {
+      await call.agents.invoke('PLUGIN hang');
       return [];
     },
   });
@@ -299,12 +309,12 @@ test.each([
   client.captureUsage = () => ({ total: 7 });
   const before: { prefix: string; files: Record<string, string> }[] = [];
   const demo = llm('demo', {
-    'execution.finished': async (input, caps) => {
+    'execution.finished': async (input, call) => {
       // Only the first invocation fails the call; later ones (under ignore) are not compared.
       if (before.length > 0) return [];
       const prefix = `${input.execution?.id ?? ''}/`;
       before.push({ prefix, files: filesUnder(workspaceRef.path, input.session.id, prefix) });
-      const answer = await caps.invokeAgent?.('PLUGIN fail');
+      const answer = await call.agents.invoke('PLUGIN fail');
       if (typeof answer?.error === 'string') throw new Error(answer.error);
       return [];
     },
@@ -329,8 +339,8 @@ test.each([
 test('overlapping calls get distinct indexes, files and responses', async () => {
   const client = new HangingClient('', 'echo');
   const demo = llm('demo', {
-    'session.started': async (_input, caps) => {
-      await Promise.all([caps.invokeAgent?.('PLUGIN a'), caps.invokeAgent?.('PLUGIN b')]);
+    'session.started': async (_input, call) => {
+      await Promise.all([call.agents.invoke('PLUGIN a'), call.agents.invoke('PLUGIN b')]);
       return [];
     },
   });
@@ -347,8 +357,8 @@ test('a handler that returns with a call still running stays under the deadline 
   const pidFile = path.join(tempDir('migent-agent-orphan-'), 'pid');
   const client = new HangingClient(pidFile, 'hang');
   const demo = llm('demo', {
-    'session.started': (_input, caps) => {
-      void caps.invokeAgent?.('PLUGIN hang');
+    'session.started': (_input, call) => {
+      void call.agents.invoke('PLUGIN hang');
       return Promise.resolve([]);
     },
   });
@@ -362,8 +372,8 @@ test('a handler that throws with a call still running stops the provider', async
   const pidFile = path.join(tempDir('migent-agent-throw-'), 'pid');
   const client = new HangingClient(pidFile, 'hang');
   const demo = llm('demo', {
-    'session.started': async (_input, caps) => {
-      void caps.invokeAgent?.('PLUGIN hang');
+    'session.started': async (_input, call) => {
+      void call.agents.invoke('PLUGIN hang');
       await new Promise((resolve) => setTimeout(resolve, 500));
       throw new Error('boom');
     },
@@ -379,8 +389,8 @@ test('an advisory plugin records the live client and model of each call', async 
   const workspace = workspaceWith(entry());
   const runner = new AgentToolRunner(registryOf({ fake: client }), 10);
   const demo = llm('demo', {
-    'execution.finished': async (_input, caps) => {
-      await caps.invokeAgent?.('PLUGIN again');
+    'execution.finished': async (_input, call) => {
+      await call.agents.invoke('PLUGIN again');
       return [];
     },
   }, { advisory: true });
@@ -403,9 +413,9 @@ test('no capability is offered when the host plugin config has no agent', async 
   const created = await executeNamedWorkflow(workspace, { workflowId: 'chain', task: 'go' }, runner);
   let offered: boolean | null = null;
   const demo = llm('demo', {
-    'session.started': (_input, caps) => {
-      offered = caps.invokeAgent !== undefined;
-      return Promise.resolve([]);
+    'session.started': async (_input, call) => {
+      offered = await call.agents.invoke('PLUGIN probe').then(() => true, () => false);
+      return [];
     },
   });
   const selection = {
@@ -434,8 +444,8 @@ test('a handler that returns with a call pending, then cancellation, settles as 
   const pidFile = path.join(tempDir('migent-agent-pending-cancel-'), 'pid');
   const client = new HangingClient(pidFile, 'hang');
   const demo = llm('demo', {
-    'session.started': (_input, caps) => {
-      void caps.invokeAgent?.('PLUGIN hang');
+    'session.started': (_input, call) => {
+      void call.agents.invoke('PLUGIN hang');
       return Promise.resolve([]);
     },
   });
@@ -463,8 +473,8 @@ test('a handler that returns with a call pending, then cancellation, settles as 
 test('a call that fails at runtime after the handler returned fails the invocation', async () => {
   const client = new HangingClient('', 'throw');
   const demo = llm('demo', {
-    'session.started': async (_input, caps) => {
-      void caps.invokeAgent?.('PLUGIN boom');
+    'session.started': async (_input, call) => {
+      void call.agents.invoke('PLUGIN boom');
       await new Promise((resolve) => setTimeout(resolve, 100));
       return [];
     },
@@ -478,10 +488,10 @@ test('an advisory plugin follows a live model edit between two calls of one invo
   const client = new HangingClient('', 'ok');
   const workspace = workspaceWith(entry());
   const demo = llm('demo', {
-    'session.started': async (_input, caps) => {
-      await caps.invokeAgent?.('PLUGIN one');
+    'session.started': async (_input, call) => {
+      await call.agents.invoke('PLUGIN one');
       writeFileSync(path.join(workspace, '.migent', 'config.yaml'), BASE.replace('model: m1', 'model: changed') + entry(), 'utf8');
-      await caps.invokeAgent?.('PLUGIN two');
+      await call.agents.invoke('PLUGIN two');
       return [];
     },
   }, { advisory: true });
@@ -494,10 +504,10 @@ test('an advisory plugin whose agent is invalidated between two calls fails as u
   const client = new HangingClient('', 'ok');
   const workspace = workspaceWith(entry());
   const demo = llm('demo', {
-    'session.started': async (_input, caps) => {
-      await caps.invokeAgent?.('PLUGIN one');
+    'session.started': async (_input, call) => {
+      await call.agents.invoke('PLUGIN one');
       writeFileSync(path.join(workspace, '.migent', 'config.yaml'), BASE.replace('client: { type: fake }\n    model: m1', 'client: { type: nope }\n    model: m1') + entry(), 'utf8');
-      await caps.invokeAgent?.('PLUGIN two');
+      await call.agents.invoke('PLUGIN two');
       return [];
     },
   }, { advisory: true });
@@ -511,15 +521,15 @@ test('an advisory target invalidated before an unawaited call fails the invocati
   const client = new HangingClient('', 'ok');
   const workspace = workspaceWith(entry());
   const demo = llm('demo', {
-    'session.started': async (_input, caps) => {
+    'session.started': async (_input, call) => {
       writeFileSync(
         path.join(workspace, '.migent', 'config.yaml'),
         BASE.replace('client: { type: fake }\n    model: m1', 'client: { type: nope }\n    model: m1') + entry(),
         'utf8',
       );
-      void caps.invokeAgent?.('PLUGIN never-awaited');
+      void call.agents.invoke('PLUGIN never-awaited');
       await new Promise((resolve) => setTimeout(resolve, 100));
-      return [{ kind: 'output', name: 'report.md', content: 'applied', media_type: 'text/markdown' }] as never;
+      return [{ kind: 'artifact', name: 'report.md', content: 'applied' }];
     },
   }, { advisory: true });
   const { result } = await run(demo, '', client, workspace);

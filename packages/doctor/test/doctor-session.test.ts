@@ -464,7 +464,7 @@ const EMPTY_SCHEMA: TSchema = { type: 'object' } as unknown as TSchema;
 const pluginRegistryOf = (...ids: string[]): NonNullable<DiagnoseOptions['plugins']> => ({
   ids: () => ids,
   get: (id) => (ids.includes(id)
-    ? { manifest: { id, version: '1.0.0', advisory: false, hooks: [], capabilities: [], configSchema: EMPTY_SCHEMA }, handlers: {} }
+    ? { manifest: { id, version: '1.0.0', apiVersion: { major: 1, minor: 0 }, advisory: false, uses: { operations: [], events: [], session: [], artifacts: [], agents: false, config: [] }, configSchema: EMPTY_SCHEMA }, activate: () => undefined }
     : undefined),
 });
 
@@ -504,8 +504,8 @@ const agentRegistry = (id: string, advisory = false): NonNullable<DiagnoseOption
   ids: () => [id],
   get: (name) => (name === id
     ? {
-      manifest: { id, version: '1.0.0', advisory, hooks: [], capabilities: ['invokeAgent'], configSchema: EMPTY_SCHEMA },
-      handlers: {},
+      manifest: { id, version: '1.0.0', apiVersion: { major: 1, minor: 0 }, advisory, uses: { operations: [], events: [], session: [], artifacts: [], agents: true, config: [] }, configSchema: EMPTY_SCHEMA },
+      activate: () => undefined,
     }
     : undefined),
 });

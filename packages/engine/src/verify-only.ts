@@ -11,6 +11,7 @@ import { debugTrace } from './execution/run-role.js';
 import { VERIFY_RUN,type VerifyInput } from './execution/types.js';
 import { verifyOnlyDefinition } from './execution/verify-only-definition.js';
 import { ProviderEventReporter } from './provider-events.js';
+import type { InterceptorChain } from './runtime/interception.js';
 import { OperationRuntime } from './runtime/operation-runtime.js';
 
 const VERIFY_TURN = 1;
@@ -21,6 +22,8 @@ export async function runVerifyOnlyStage(input: {
   stage: VerifyOnlyStageSpec;
   verifyRunner: VerifyRunner;
   clients?: ClientRegistry;
+  /** The active plugin chain. A verify-only stage runs the same interception as a role execution. */
+  interceptors?: InterceptorChain;
   /** Reuse a cancelled execution that has already been reopened. */
   executionId?: string | null;
   onExecution?: (executionId: string) => void;
@@ -36,6 +39,7 @@ export async function runVerifyOnlyStage(input: {
   const applier = new ExecutionApplier({ record, store, context, eventReporter });
   const runtime = new OperationRuntime({
     applier,
+    ...(input.interceptors === undefined ? {} : { interceptors: input.interceptors }),
     trace: debugTrace(store, context),
     operations: [createVerifyRunOperation({
       store, context, eventReporter, verifyRunner: input.verifyRunner, workspace: input.workspace, applier,

@@ -118,6 +118,8 @@ export interface AgentCallerOptions {
   readonly sessionDirectory: string;
   readonly pluginId: string;
   readonly invocationId: string;
+  /** Calls an earlier attempt of this invocation already issued, so a retry never reuses an index or file. */
+  readonly firstIndex?: number;
   readonly stageId: string;
   /** Binds the agent target. Called for every call, so an advisory plugin resolves its live target at the call. */
   readonly bind: () => ResolvedInvocation;
@@ -144,9 +146,16 @@ export class AgentCaller {
   private readonly inflight = new Set<Promise<unknown>>();
   private closed = false;
   private rejection: { readonly error: unknown } | null = null;
-  private reserved = 0;
+  private reserved: number;
 
-  constructor(private readonly options: AgentCallerOptions) {}
+  constructor(private readonly options: AgentCallerOptions) {
+    this.reserved = options.firstIndex ?? 0;
+  }
+
+  /** The highest call index issued so far, counting earlier attempts. */
+  public get issued(): number {
+    return this.reserved;
+  }
 
   /** The capability handed to the plugin. It only ever returns `{ text, error }`. */
   public readonly invokeAgent = (prompt: string): Promise<PluginAgentResult> => {

@@ -7,6 +7,9 @@ const Status = Type.Union([Type.Literal('succeeded'), Type.Literal('failed'), Ty
 });
 const ActivePlugin = Type.Object({
   id: Type.String(), version: nullable(Type.String()), enabled: Type.Boolean(), advisory: Type.Boolean(),
+  source: Type.Optional(Type.Literal('implicit', {
+    description: 'A default plugin the freeze never recorded. It runs enabled at the current version until a refresh pins it.',
+  })),
 });
 const IntentResult = Type.Object({
   kind: Type.String(), status: Type.String(), reason: nullable(Type.String()), path: nullable(Type.String()),
@@ -28,6 +31,13 @@ const Hold = Type.Object({
   error: nullable(Type.String()),
 });
 
+const Unrecorded = Type.Object({
+  path: Type.String(),
+  reason: Type.Union([Type.Literal('no_decision'), Type.Literal('content_mismatch')]),
+  recorded_sha256: Type.Optional(Type.String()),
+  actual_sha256: Type.Optional(Type.String()),
+}, { description: 'A file under `plugins/<id>/` the latest applied `plugin.decision` does not account for.' });
+
 /** The `plugins` field of `session show --json`. */
 export const PluginsSection = Type.Object({
   active: Type.Array(ActivePlugin),
@@ -36,4 +46,5 @@ export const PluginsSection = Type.Object({
   live_unavailable: nullable(Type.String()),
   holds: Type.Array(Hold),
   freeze_mismatch: nullable(Type.String()),
+  unrecorded: Type.Array(Unrecorded),
 }, { description: 'Derived on read from `plugins.frozen` and `plugin.*`. Absent when the session recorded no plugin data.' });

@@ -35,7 +35,10 @@ and session. Internal; no stable public API.
 | `OperationRuntime` | `src/runtime/operation-runtime.ts` | Generic operation cycle |
 | `runRoleExecution`, `roleDefinition`, `verifyOnlyDefinition`, `ExecutionApplier` | `src/execution/` | Role and verify-only executions on the runtime; the applier is the single writer |
 | `targetFromAgent`, `bindTarget`, `invokeOnce` | `src/agent-invocation.ts` | Resolve a live agent, bind a target to its client, run one provider turn with no stage (no production caller yet) |
-| `PluginHost` | `src/plugin-host/dispatch.ts` | Run plugin hooks for one run: triggers, deadline, intent application, failure policy |
+| `HostInterceptorChain` | `src/plugin-host/interception.ts` | Adapt registered interceptors into the runtime's `InterceptorChain`, in frozen chain order; failures follow `on_error` |
+| `readsStale`, `freshEvidence` | `src/plugin-host/evidence.ts` | Core-captured read evidence for `call.session` and its freshness check |
+| `PluginHost` | `src/plugin-host/dispatch.ts` | Run plugin hooks for one run: triggers, deadline, activation, proposal application, failure policy |
+| `withPluginScope` | `src/plugin-host/scope.ts` | Start, run an action that holds the session lock, then drain and close the host before the caller releases the lock |
 | `classifyProviderError`, `ProviderEventReporter` | `src/provider-events.ts` | Provider events |
 | `getWorkflowView`, `getConfigView` | `src/views.ts` | Read-only views |
 | `evaluateRunWhen`, `runVerifyOnlyStage` | `src/run-when.ts`, `src/verify-only.ts` | `run_when` conditions, verify-only stages |

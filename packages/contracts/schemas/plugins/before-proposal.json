@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/plugins/before-proposal.json",
+  "anyOf": [
+    {
+      "type": "object",
+      "required": [
+        "kind"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "continue"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "kind",
+        "fields"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "patch"
+        },
+        "fields": {
+          "type": "object",
+          "patternProperties": {
+            "^.*$": {}
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "required": [
+        "kind",
+        "output"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "short_circuit"
+        },
+        "output": {}
+      }
+    }
+  ],
+  "title": "Plugin before-interceptor proposal"
+}

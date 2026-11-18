@@ -1146,6 +1146,9 @@ Type: object
 | `data.agent_calls[].classification` | string \| null | no | | |
 | `data.agent_calls[].outcome` | `"succeeded"` \| `"failed"` \| `"denied"` | yes | | |
 | `data.agent_calls[].output_path` | string \| null | no | | |
+| `data.notes` | object[] | no | | |
+| `data.notes[].level` | `"info"` \| `"warn"` | yes | | |
+| `data.notes[].text` | string | yes | | |
 
 <a id="session-event-plugin-failed-json"></a>
 
@@ -1171,7 +1174,7 @@ Type: object
 | `data.plugin` | string | yes | | |
 | `data.invocation_id` | string \| null | yes | | |
 | `data.hook` | string | no | | |
-| `data.reason` | `"error"` \| `"timeout"` \| `"invalid_intent"` \| `"unavailable"` \| `"version_changed"` \| `"cancelled"` | yes | | |
+| `data.reason` | `"error"` \| `"timeout"` \| `"invalid_intent"` \| `"unavailable"` \| `"version_changed"` \| `"cancelled"` \| `"stale"` | yes | | |
 | `data.error` | string \| null | yes | | |
 | `data.on_error` | `"ignore"` \| `"stop"` \| `"fail"` | yes | | |
 | `data.agent_calls` | object[] | no | | |
@@ -1184,6 +1187,9 @@ Type: object
 | `data.agent_calls[].classification` | string \| null | no | | |
 | `data.agent_calls[].outcome` | `"succeeded"` \| `"failed"` \| `"denied"` | yes | | |
 | `data.agent_calls[].output_path` | string \| null | no | | |
+| `data.notes` | object[] | no | | |
+| `data.notes[].level` | `"info"` \| `"warn"` | yes | | |
+| `data.notes[].text` | string | yes | | |
 
 <a id="session-event-plugins-frozen-json"></a>
 

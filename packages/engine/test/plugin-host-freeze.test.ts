@@ -5,9 +5,10 @@ import type { Plugin, PluginRegistry, TSchema } from '@nodeint/migent-contracts'
 import { createWorkflowSession, readWorkflowFreeze } from '@nodeint/migent-session';
 import { afterEach, expect, test } from 'vitest';
 
+import { AgentToolRunner, executeNamedWorkflow } from '../src/index.ts';
 import { pluginFreezeInput } from '../src/plugin-host/freeze.ts';
-import { selectPlugins } from '../src/plugin-host/selection.ts';
-import { FakeClient, registryOf, tempDir } from './support.ts';
+import { selectPlugins, withLivePlugins } from '../src/plugin-host/selection.ts';
+import { FakeClient, registryOf, ScriptedClient, tempDir } from './support.ts';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -17,8 +18,11 @@ afterEach(() => {
 const clients = registryOf({ fake: new FakeClient('fake', 'fake') });
 const schema = { type: 'object' } as unknown as TSchema;
 const plugin = (id: string, extra: Partial<Plugin['manifest']> = {}): Plugin => ({
-  manifest: { id, version: '1.0.0', advisory: false, hooks: [], capabilities: [], configSchema: schema, ...extra },
-  handlers: {},
+  manifest: {
+    id, version: '1.0.0', apiVersion: { major: 1, minor: 0 }, advisory: false, configSchema: schema,
+    uses: { operations: [], events: [], session: [], artifacts: [], agents: false, config: [] }, ...extra,
+  },
+  activate: () => undefined,
 });
 const registryOfPlugins = (...plugins: Plugin[]): PluginRegistry => ({
   ids: () => plugins.map((entry) => entry.manifest.id),
@@ -130,8 +134,117 @@ test('an entry added after the freeze is reported and not run when non-advisory'
 });
 
 test('an invokeAgent plugin pins its agent target in plugins.frozen', () => {
-  const registry = registryOfPlugins(plugin('agentic', { capabilities: ['invokeAgent'] }));
+  const registry = registryOfPlugins(plugin('agentic', { uses: { operations: [], events: [], session: [], artifacts: [], agents: true, config: [] } }));
   const { directory } = setup('plugins:\n  agentic:\n    enabled: true\n    agent: fake\n', registry);
   const [entry] = frozenEvents(directory)[0]?.plugins ?? [];
   expect(entry?.target).toMatchObject({ client: 'fake', model: 'm1' });
+});
+
+const defaultPlugin = (id: string): Plugin => plugin(id, { defaultEnabled: true });
+const chain = (workspace: string, directory: string, registry: PluginRegistry): string[] =>
+  selectPlugins(workspace, directory, { registry, clients }).selected.map((entry) => `${entry.id}:${entry.source}`);
+const frozenIds = (directory: string): unknown[] => frozenEvents(directory).at(-1)?.plugins.map((row) => row.id) ?? [];
+
+test('selection and plugins.frozen keep configuration order, not id order', () => {
+  const registry = registryOfPlugins(plugin('alpha'), plugin('beta'), plugin('gamma'));
+  const { workspace, directory } = setup('plugins:\n  gamma: {}\n  alpha: {}\n  beta: {}\n', registry);
+  expect(frozenIds(directory)).toEqual(['gamma', 'alpha', 'beta']);
+  expect(chain(workspace, directory, registry)).toEqual(['gamma:frozen', 'alpha:frozen', 'beta:frozen']);
+});
+
+test('a default plugin is frozen with no plugins key, first, with empty options and its version', () => {
+  const registry = registryOfPlugins(defaultPlugin('core'));
+  const { workspace, directory } = setup('', registry);
+  expect(frozenEvents(directory)[0]?.plugins).toEqual([
+    { id: 'core', enabled: true, advisory: false, version: '1.0.0', target: null },
+  ]);
+  expect(chain(workspace, directory, registry)).toEqual(['core:frozen']);
+});
+
+test('enabled: false turns a default plugin off', () => {
+  const registry = registryOfPlugins(defaultPlugin('core'));
+  const { workspace, directory } = setup('plugins:\n  core:\n    enabled: false\n', registry);
+  expect(chain(workspace, directory, registry)).toEqual([]);
+});
+
+test('unlisted defaults run first in registry order; a listed default keeps its position', () => {
+  const registry = registryOfPlugins(defaultPlugin('d1'), defaultPlugin('d2'), plugin('user'));
+  const unlisted = setup('plugins:\n  user: {}\n', registry);
+  expect(chain(unlisted.workspace, unlisted.directory, registry)).toEqual(['d1:frozen', 'd2:frozen', 'user:frozen']);
+  const listed = setup('plugins:\n  user: {}\n  d1: {}\n', registry);
+  expect(chain(listed.workspace, listed.directory, registry)).toEqual(['d2:frozen', 'user:frozen', 'd1:frozen']);
+});
+
+test('an old freeze runs an unrecorded default implicitly first; a new freeze pins it', () => {
+  const before = registryOfPlugins(plugin('user'));
+  const { workspace, directory } = setup('plugins:\n  user: {}\n', before);
+  const after = registryOfPlugins(defaultPlugin('core'), plugin('user'));
+  expect(chain(workspace, directory, after)).toEqual(['core:implicit', 'user:frozen']);
+  const inspected = withLivePlugins(
+    { active: [], invocations: [], added_after_freeze: null, live_unavailable: null, holds: [], freeze_mismatch: null },
+    { workspace, sessionDirectory: directory, registry: after },
+  );
+  expect(inspected.active.map((row) => [row.id, row.source])).toEqual([['core', 'implicit']]);
+  const refreshed = setup('plugins:\n  user: {}\n', after);
+  expect(chain(refreshed.workspace, refreshed.directory, after)).toEqual(['core:frozen', 'user:frozen']);
+});
+
+test('a default plugin that changes version stops the resume', () => {
+  const { workspace, directory } = setup('', registryOfPlugins(defaultPlugin('core')));
+  const upgraded = registryOfPlugins(plugin('core', { defaultEnabled: true, version: '2.0.0' }));
+  expect(() => selectPlugins(workspace, directory, { registry: upgraded, clients })).toThrow(/core.*version/s);
+});
+
+test('an advisory entry keeps its declared place in the chain, in selection and inspection', () => {
+  const registry = registryOfPlugins(plugin('adv', { advisory: true }), plugin('normal'));
+  const { workspace, directory } = setup('plugins:\n  adv: {}\n  normal: {}\n', registry);
+  expect(chain(workspace, directory, registry)).toEqual(['adv:live', 'normal:frozen']);
+  const inspected = withLivePlugins(
+    { ...EMPTY, active: [{ id: 'adv', version: '1.0.0', enabled: true, advisory: true }, { id: 'normal', version: '1.0.0', enabled: true, advisory: false }] },
+    { workspace, sessionDirectory: directory, registry },
+  );
+  expect(inspected?.active.map((row) => row.id)).toEqual(['adv', 'normal']);
+});
+
+test('an unlisted advisory default runs live, and enabled: false or an explicit entry still applies', () => {
+  const registry = registryOfPlugins(plugin('adv', { advisory: true, defaultEnabled: true }));
+  const unlisted = setup('', registry);
+  expect(chain(unlisted.workspace, unlisted.directory, registry)).toEqual(['adv:live']);
+  const old = setup('', registryOfPlugins());
+  expect(chain(old.workspace, old.directory, registry)).toEqual(['adv:implicit']);
+  const off = setup('', registry);
+  writeFileSync(path.join(off.workspace, '.migent', 'config.yaml'), `${BASE}plugins:\n  adv:\n    enabled: false\n`, 'utf8');
+  expect(chain(off.workspace, off.directory, registry)).toEqual([]);
+  const listed = setup('plugins:\n  adv: {}\n', registry);
+  expect(chain(listed.workspace, listed.directory, registry)).toEqual(['adv:live']);
+  writeFileSync(path.join(listed.workspace, '.migent', 'config.yaml'), BASE, 'utf8');
+  expect(chain(listed.workspace, listed.directory, registry)).toEqual(['adv:live']);
+});
+
+const EMPTY = {
+  active: [], invocations: [], added_after_freeze: null, live_unavailable: null, holds: [], freeze_mismatch: null,
+};
+
+test('a session with no plugin data shows an implicit default, and none without defaults', () => {
+  const old = setup('', registryOfPlugins());
+  const withDefault = registryOfPlugins(defaultPlugin('core'));
+  const context = { workspace: old.workspace, sessionDirectory: old.directory };
+  expect(withLivePlugins(null, { ...context, registry: withDefault })?.active)
+    .toEqual([{ id: 'core', version: '1.0.0', enabled: true, advisory: false, source: 'implicit' }]);
+  expect(withLivePlugins(null, { ...context, registry: registryOfPlugins() })).toBeNull();
+});
+
+test('--refresh-workflow on a continued old session pins the default; a later version change rejects the resume', async () => {
+  const old = setup('plugins:\n  user: {}\n', registryOfPlugins(plugin('user')));
+  const after = registryOfPlugins(defaultPlugin('core'), plugin('user'));
+  expect(chain(old.workspace, old.directory, after)).toEqual(['core:implicit', 'user:frozen']);
+  const runner = new AgentToolRunner(registryOf({ fake: new ScriptedClient(['status: complete\n\ndone']) }), 10);
+  runner.pluginRegistry = after;
+  const sessionId = path.basename(old.directory);
+  const resumed = await executeNamedWorkflow(old.workspace, { sessionId, workflowId: 'wf', refreshWorkflow: true }, runner);
+  expect(resumed.code).toBe(0);
+  expect(frozenIds(old.directory)).toEqual(['core', 'user']);
+  expect(chain(old.workspace, old.directory, after)).toEqual(['core:frozen', 'user:frozen']);
+  const upgraded = registryOfPlugins(plugin('core', { defaultEnabled: true, version: '2.0.0' }), plugin('user'));
+  expect(() => selectPlugins(old.workspace, old.directory, { registry: upgraded, clients })).toThrow(/core.*version/s);
 });

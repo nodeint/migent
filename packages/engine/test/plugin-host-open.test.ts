@@ -19,8 +19,11 @@ afterEach(() => {
 const clients = registryOf({ fake: new FakeClient('fake', 'fake') });
 const schema = { type: 'object' } as unknown as TSchema;
 const plugin = (id: string, extra: Partial<Plugin['manifest']> = {}): Plugin => ({
-  manifest: { id, version: '1.0.0', advisory: false, hooks: [], capabilities: [], configSchema: schema, ...extra },
-  handlers: {},
+  manifest: {
+    id, version: '1.0.0', apiVersion: { major: 1, minor: 0 }, advisory: false, configSchema: schema,
+    uses: { operations: [], events: [], session: [], artifacts: [], agents: false, config: [] }, ...extra,
+  },
+  activate: () => undefined,
 });
 const registryOfPlugins = (...plugins: Plugin[]): PluginRegistry => ({
   ids: () => plugins.map((entry) => entry.manifest.id),
@@ -231,7 +234,7 @@ test('a frozen session without plugins resumes while the live config is malforme
   expect(resumed.kind).toBe('ready');
 });
 
-const AGENTIC = plugin('agentic', { capabilities: ['invokeAgent'] });
+const AGENTIC = plugin('agentic', { uses: { operations: [], events: [], session: [], artifacts: [], agents: true, config: [] } });
 
 test('a frozen session keeps the pinned agent target after the live agent changes', async () => {
   const workspace = workspaceWith('plugins:\n  agentic:\n    agent: fake\n');

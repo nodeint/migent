@@ -97,9 +97,13 @@ function pluginFreeze(
   };
 }
 
+function withPluginDefaults(config: Record<string, unknown>, source: FreezeSource): Record<string, unknown> {
+  return source.plugins?.withDefaults?.(config) ?? config;
+}
+
 export function writeWorkflowFreeze(sessionDirectory: string, source: FreezeSource): WrittenFreeze {
   const { workspace, workflow, resolveClient } = source;
-  const config = loadWorkspaceConfig(workspace);
+  const config = withPluginDefaults(loadWorkspaceConfig(workspace), source);
   const { plugins, classifiers } = pluginFreeze(config, source);
   const roles: Record<string, string[]> = {};
   for (const role of roleNames(workflow)) roles[role] = loadRoleResponsibilities(config, role);

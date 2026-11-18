@@ -56,6 +56,7 @@ const NOT_EVALUATED: Gates = {
 export function createAgentTurnOperation(services: TurnServices): AgentTurnOperation {
   return {
     id: AGENT_TURN,
+    interceptable: { before: ['prompt'] },
     acceptsInput: (input): input is TurnInput => turnInputCheck(input),
     producesOutput: (output): output is TurnOutput => turnOutputCheck(output),
     handle: async (input) => ({ kind: 'succeeded', output: await runAgentTurn(services, input), changes: [] }),
