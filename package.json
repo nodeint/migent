@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc -b && node scripts/copy-templates.mjs",
+    "typecheck": "tsc -b",
     "generate": "pnpm build && node scripts/generate.mjs",
     "test": "vitest run",
     "test:unit": "vitest run --project unit",

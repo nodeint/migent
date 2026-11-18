@@ -124,6 +124,16 @@ function doText(input: DoTextInput): string {
   return doLines.join('\n');
 }
 
+/** Stages without a declared artifact still get the directory, for supporting files only. */
+function hasSupportingDirectory(options: ProviderPromptOptions, mode: EnvelopeMode): boolean {
+  return mode !== null && !options.artifactName && Boolean(options.artifactDirectory);
+}
+
+/** Only a stage with a declared artifact continues from the previous execution's artifacts. */
+function previousDirectory(options: ProviderPromptOptions, artifactName: string | null): string | null {
+  return artifactName ? options.previousArtifactDirectory ?? null : null;
+}
+
 /** Per-execution file locations, defaulted for the template. */
 function envelopePaths(options: ProviderPromptOptions) {
   return {
@@ -140,8 +150,9 @@ function envelope(options: ProviderPromptOptions) {
   const handoff = (options.protocol ?? CURRENT_RESPONSE_PROTOCOL) >= HANDOFF_FILE_PROTOCOL;
   const canAsk = mode !== null && (options.ask !== null && options.ask !== undefined);
   const artifactName = options.artifactName ?? null;
-  const previousArtifactDirectory = artifactName ? options.previousArtifactDirectory ?? null : null;
+  const previousArtifactDirectory = previousDirectory(options, artifactName);
   const previousVerifyReport = options.previousVerifyReport ?? null;
+  const supportingDirectory = hasSupportingDirectory(options, mode);
   const taskFile = options.taskFile ?? null;
   const statusLabel = canAsk ? 'complete | question | blocked' : 'complete | blocked';
   const handoffContract = handoff && mode !== null;
@@ -157,10 +168,12 @@ function envelope(options: ProviderPromptOptions) {
     decisions,
     decisionLabel: decisions.map(({ name }) => name).join('|'),
     artifactName,
+    supportingDirectory,
     previousArtifactDirectory,
     previousVerifyReport,
     taskFile,
     hasExecution: taskFile !== null || canAsk || handoffContract || artifactName !== null
+      || supportingDirectory
       || previousVerifyReport !== null,
     doText: doText({ options, mode, handoff, statusLabel, decisions, artifactName, taskFile }),
   };
