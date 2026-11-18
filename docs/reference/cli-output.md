@@ -826,6 +826,11 @@ Type: object
 | `plugins.holds[].on_error` | `"stop"` \| `"fail"` | yes | | |
 | `plugins.holds[].error` | string \| null | yes | | |
 | `plugins.freeze_mismatch` | string \| null | yes | | |
+| `plugins.unrecorded` | object[] | yes | | |
+| `plugins.unrecorded[].path` | string | yes | | |
+| `plugins.unrecorded[].reason` | `"no_decision"` \| `"content_mismatch"` | yes | | |
+| `plugins.unrecorded[].recorded_sha256` | string | no | | |
+| `plugins.unrecorded[].actual_sha256` | string | no | | |
 | `diagnostics` | string | no | | |
 | `exit_anomalies` | object[] | no | | |
 | `exit_anomalies[].stage_id` | string | yes | | |
@@ -940,6 +945,11 @@ Type: object
 | `plugins.holds[].on_error` | `"stop"` \| `"fail"` | yes | | |
 | `plugins.holds[].error` | string \| null | yes | | |
 | `plugins.freeze_mismatch` | string \| null | yes | | |
+| `plugins.unrecorded` | object[] | yes | | |
+| `plugins.unrecorded[].path` | string | yes | | |
+| `plugins.unrecorded[].reason` | `"no_decision"` \| `"content_mismatch"` | yes | | |
+| `plugins.unrecorded[].recorded_sha256` | string | no | | |
+| `plugins.unrecorded[].actual_sha256` | string | no | | |
 | `diagnostics` | string | no | | |
 | `exit_anomalies` | object[] | no | | |
 | `exit_anomalies[].stage_id` | string | yes | | |
@@ -1644,7 +1654,7 @@ Type: object
 
 | Field | Type | Required | Notes | Description |
 | --- | --- | --- | --- | --- |
-| `hook` | `"session.started"` \| `"execution.finished"` \| `"session.stopped"` | yes | | |
+| `hook` | `"session.started"` \| `"execution.finished"` \| `"session.stopped"` \| `"session.completed"` | yes | | |
 | `plugin` | object | yes | | |
 | `plugin.id` | string | yes | | |
 | `plugin.version` | string | yes | | |
@@ -1704,7 +1714,7 @@ Type: object
 | `uses.operations` | object[] | yes | | |
 | `uses.operations[].target` | string | yes | | An operation id, or a `prefix.*` pattern. |
 | `uses.operations[].phases` | (`"before"` \| `"after"`)[] | yes | | |
-| `uses.events` | (`"session.started"` \| `"execution.finished"` \| `"session.stopped"`)[] | yes | | |
+| `uses.events` | (`"session.started"` \| `"execution.finished"` \| `"session.stopped"` \| `"session.completed"`)[] | yes | | |
 | `uses.session` | (`"snapshot"` \| `"resume_facts"`)[] | yes | | |
 | `uses.artifacts` | object[] | yes | | |
 | `uses.artifacts[].name` | string | yes | | |

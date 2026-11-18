@@ -23,8 +23,9 @@ import { runExecuteLoop, runExecuteOnce, startTracked, trackDispatch } from './e
 import { verifyOnlyExecution } from './execute-reply.js';
 import { type ExecuteRequest, HeldSession, openExecuteSession } from './execute-session.js';
 import { PLUGIN_HOLD_STOP } from './execute-state.js';
-import { logHostProblem, PluginHost } from './plugin-host/dispatch.js';
+import { logHostProblem, type PluginHost } from './plugin-host/dispatch.js';
 import { holdsPending } from './plugin-host/holds.js';
+import { withPluginScope } from './plugin-host/scope.js';
 import { judgeCancelled } from './resume-reopen.js';
 import { runVerifyOnlyStage } from './verify-only.js';
 
@@ -80,25 +81,28 @@ async function executeLocked(
   );
   if (opened.kind === 'final') return opened.result;
   const { sessionId, workflow, workflowId, stageReply, resumeCancelled, reopenLatestCancelled } = opened;
-  const host = new PluginHost(
-    { workspace, sessionId },
-    opened.plugins,
-    { plugins: activeRunner.pluginRegistry, clients: activeRunner.registry },
-  );
   const removeSignalHandlers = installSignalHandlers(held);
   const tasks = new Map<string, Promise<unknown>>();
   const run: ExecuteRun = {
     workspace, store, workflow, workflowId, sessionId, runner: activeRunner, tasks, reply: stageReply,
   };
+  const opts = { limits, resumeCancelled, reopenLatestCancelled, scoped: request.resumeTarget === true };
+  const runHosted = async (host: PluginHost): Promise<ExecuteResult> => {
+    try {
+      return heldResult(store, await runWithHooks(
+        { host, runner: activeRunner }, opened.started, () => runOpened(run, opts),
+      ));
+    } catch (error) {
+      return await settleFailedRun(host, error, { store, sessionId, tasks });
+    }
+  };
   try {
-    const opts = { limits, resumeCancelled, reopenLatestCancelled, scoped: request.resumeTarget === true };
-    return heldResult(store, await runWithHooks(
-      { host, runner: activeRunner }, opened.started, () => runOpened(run, opts),
-    ));
-  } catch (error) {
-    return await settleFailedRun(host, error, { store, sessionId, tasks });
+    return await withPluginScope(
+      { workspace, sessionId },
+      { selection: opened.plugins, plugins: activeRunner.pluginRegistry, clients: activeRunner.registry },
+      runHosted,
+    );
   } finally {
-    await host.close().catch(logHostProblem);
     removeSignalHandlers();
   }
 }
@@ -124,8 +128,6 @@ async function runWithHooks(
   schedule: () => Promise<ExecuteResult>,
 ): Promise<ExecuteResult> {
   const { host, runner } = scope;
-  host.start();
-  await host.ready();
   if (started) host.fireSessionStarted();
   const previous = runner.interceptors;
   runner.interceptors = host.interceptors();

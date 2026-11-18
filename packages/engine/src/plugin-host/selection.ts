@@ -305,4 +305,5 @@ export function withLivePlugins(
 
 const EMPTY_INSPECTION: PluginsInspection = {
   active: [], invocations: [], added_after_freeze: null, live_unavailable: null, holds: [], freeze_mismatch: null,
+  unrecorded: [],
 };

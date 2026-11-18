@@ -11,7 +11,8 @@ First-party Migent plugins and their static registry. Internal; no stable public
   handles or execution state. See [docs/architecture.md](../../docs/architecture.md).
 - A plugin is `{ manifest, activate }`. `activate` registers handlers and interceptors through the activation
   context; each handler gets its own per-invocation `call` context. Keep per-invocation state out of module
-  scope: two stages can run one handler concurrently.
+  scope: two stages can run one handler concurrently. The core writes an artifact and then records it, so a
+  handler must not assume a written file has a `plugin.decision`; `session show` reports the ones that lack it.
 - Register a plugin in `src/registry.ts`. The registry is empty until a feature plugin lands.
 
 ## Key symbols

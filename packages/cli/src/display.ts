@@ -276,6 +276,9 @@ function pluginLines(snapshot: Record<string, unknown>): Line[] {
     lines.push(['plugin_hold', `${where} · on_error ${String(hold.on_error)}${nonEmptyString(hold.error) ? ` · ${hold.error}` : ''}`]);
   }
   if (nonEmptyString(plugins.freeze_mismatch)) lines.push(['plugin_freeze_mismatch', plugins.freeze_mismatch]);
+  for (const file of recordList(plugins.unrecorded)) {
+    lines.push(['plugin_unrecorded', `${String(file.path)} · ${String(file.reason)}`]);
+  }
   return lines;
 }
 

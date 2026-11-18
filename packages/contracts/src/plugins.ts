@@ -10,7 +10,7 @@ import { CONFIG_SECTION_KEY_PATTERN,type ConfigSection } from './config-sections
  */
 
 /** The event kinds a plugin handler can observe. */
-export const PLUGIN_HOOKS = ['session.started', 'execution.finished', 'session.stopped'] as const;
+export const PLUGIN_HOOKS = ['session.started', 'execution.finished', 'session.stopped', 'session.completed'] as const;
 export const PLUGIN_OPERATION_PHASES = ['before', 'after'] as const;
 export const PLUGIN_SESSION_READS = ['snapshot', 'resume_facts'] as const;
 export const PLUGIN_ARTIFACT_MODES = ['create_only', 'replace'] as const;

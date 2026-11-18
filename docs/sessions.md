@@ -107,14 +107,18 @@ The session-level files have distinct purposes:
   activation, which records `plugin.failed` with `hook: activate`, and the plugin takes part in nothing for that run.
 - Plugin hooks run during a run and are recorded in `events.jsonl`. `session.started` fires when the run
   creates or activates the session, `execution.finished` for each finished execution, and `session.stopped` once
-  scheduling ends, only when the run dispatched work. Each invocation records `plugin.hook_invoked`, then
+  scheduling ends, only when the run dispatched work, and `session.completed` for each completion event.
+  Each invocation records `plugin.hook_invoked`, then
   `plugin.decision` (the applied proposals) or `plugin.failed`. A handler returns proposals and receives a
   per-invocation `call` context. An invocation may propose at most one `artifact`; a second is `invalid_intent`.
   The artifact must match a `uses.artifacts` claim and is written to `plugins/<id>/<name>`, where `<name>` is one
   safe file name. Notes from `call.log` are recorded under `notes` while the invocation is open.
   `on_error` decides a failure: `ignore` records it, `stop` and `fail` set a plugin hold. An advisory plugin
   always uses `ignore`.
-  Hooks are not replayed on resume, and every invocation settles before the session lock is released.
+  Hooks are not replayed on resume, and every invocation settles before the session lock is released. The core
+  writes the artifact atomically and then records `plugin.decision`; a crash between the two leaves a file with no
+  record. `session show` reports such files, and files whose content no longer matches the latest applied record,
+  as `unrecorded`. A `create_only` artifact that already exists is `rejected` with reason `exists`.
 - A plugin that declares `uses.agents`, and whose config has an `agent`, can ask for one provider turn with
   `call.agents.invoke`, with no conversation or resume. Each call runs as the `plugin.invoke_agent` operation on the
   operation runtime. The raw response is stored in `plugins/<id>/calls/<invocation>-<n>.txt`, and the

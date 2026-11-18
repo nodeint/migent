@@ -1,3 +1,4 @@
+import { statSync } from 'node:fs';
 import path from 'node:path';
 
 import type { ClientRegistry } from '@nodeint/migent-kernel';
@@ -21,11 +22,22 @@ import { readStatusFileState } from './query.js';
 import { readPendingResumes } from './resume-pending.js';
 import { readSessionManifest } from './session-fold-read.js';
 import type { LedgerOutput } from './session-ledger.js';
+import { assertSessionId } from './session-selection.js';
 import type { ManualCompletionResult } from './session-store-types.js';
 import { existingNext } from './session-store-util.js';
 
 /** `published_by_execution_id` for outputs published by `migent session complete`. */
 export const MANUAL_PUBLISHER = 'manual';
+
+/** The directory of an existing session, or a `ConfigurationError`. */
+export function requireSessionDirectory(sessionsDirectory: string, sessionId: string): string {
+  assertSessionId(sessionId);
+  const directory = path.join(sessionsDirectory, sessionId);
+  if (!statSync(directory, { throwIfNoEntry: false })?.isDirectory()) {
+    throw new ConfigurationError(`Session ${sessionId} does not exist.`);
+  }
+  return directory;
+}
 
 export interface ManualCompletionPlan {
   outputs: LedgerOutput[];

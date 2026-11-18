@@ -17,7 +17,7 @@ import {
 } from '@nodeint/migent-contracts';
 import type { ClientRegistry, StageTarget } from '@nodeint/migent-kernel';
 import { CancellationRequested, cancellationSignal, loadWorkspaceConfig, logProgress, resolvePluginTarget, utcNow, writeFileAtomic } from '@nodeint/migent-kernel';
-import { readParsedEvents, sessionEventLog, SessionStore, subscribeSessionEvents } from '@nodeint/migent-session';
+import { assertSessionLockHeld, readParsedEvents, sessionEventLog, SessionStore, subscribeSessionEvents } from '@nodeint/migent-session';
 
 import { bindTarget } from '../agent-invocation.js';
 import type { InterceptorChain } from '../runtime/interception.js';
@@ -29,7 +29,7 @@ import { HostInterceptorChain, type InterceptorInvocation, recordHookInvoked, se
 import { InvocationState } from './invocation.js';
 import type { PluginSelection, SelectedPlugin } from './selection.js';
 
-const [HOOK_STARTED, HOOK_FINISHED, HOOK_STOPPED] = PLUGIN_HOOKS;
+const [HOOK_STARTED, HOOK_FINISHED, HOOK_STOPPED, HOOK_COMPLETED] = PLUGIN_HOOKS;
 
 /** One event the host maps to a hook. */
 interface Trigger {
@@ -212,6 +212,11 @@ export class PluginHost {
   private onRecord(record: Readonly<Record<string, unknown>>): void {
     const name = typeof record.event === 'string' ? record.event : '';
     if (name === 'execution.started') this.didWork = true;
+    if (name === 'session.completed') {
+      const completedSeq = typeof record.seq === 'number' ? record.seq : null;
+      this.enqueue({ hook: HOOK_COMPLETED, seq: completedSeq, record });
+      return;
+    }
     if (!TERMINAL_EXECUTION_EVENTS.has(name)) return;
     this.didWork = true;
     const seq = typeof record.seq === 'number' ? record.seq : null;
@@ -510,6 +515,7 @@ export class PluginHost {
     proposal: Extract<PluginEventProposal, { kind: 'artifact' }>,
     mode: 'create_only' | 'replace',
   ): { readonly result: Record<string, unknown> } | { readonly error: string } {
+    assertSessionLockHeld(this.directory);
     const relative = path.posix.join('plugins', plugin.id, proposal.name);
     const target = path.join(this.directory, relative);
     if (mode === 'create_only' && existsSync(target)) {

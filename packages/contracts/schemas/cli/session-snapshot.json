@@ -512,7 +512,8 @@
         "added_after_freeze",
         "live_unavailable",
         "holds",
-        "freeze_mismatch"
+        "freeze_mismatch",
+        "unrecorded"
       ],
       "properties": {
         "active": {
@@ -767,6 +768,40 @@
               "type": "null"
             }
           ]
+        },
+        "unrecorded": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "path",
+              "reason"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "reason": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "const": "no_decision"
+                  },
+                  {
+                    "type": "string",
+                    "const": "content_mismatch"
+                  }
+                ]
+              },
+              "recorded_sha256": {
+                "type": "string"
+              },
+              "actual_sha256": {
+                "type": "string"
+              }
+            },
+            "description": "A file under `plugins/<id>/` the latest applied `plugin.decision` does not account for."
+          }
         }
       },
       "description": "Derived on read from `plugins.frozen` and `plugin.*`. Absent when the session recorded no plugin data."

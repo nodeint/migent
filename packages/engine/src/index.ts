@@ -9,6 +9,7 @@ export {
 } from './dispatch.js';
 export type { ExecuteRequest, ExecuteResult } from './execute.js';
 export { DEFAULT_MAX_DISPATCHES, EXECUTE_EXIT_CODES, executeNamedWorkflow } from './execute.js';
+export { withPluginScope } from './plugin-host/scope.js';
 export { withLivePlugins } from './plugin-host/selection.js';
 export {
   classifyProviderError,
