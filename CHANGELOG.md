@@ -67,6 +67,8 @@
   ([#162](https://github.com/nodeint/migent/issues/162))
 - Agent stage prompts now always list the execution artifact directory, even when the stage declares no artifact,
   and point supporting files there. ([#172](https://github.com/nodeint/migent/pull/172))
+- The resume gate now measures cache age from the source execution's last provider activity instead of its end time.
+  ([#178](https://github.com/nodeint/migent/pull/178))
 
 ## 0.8.0
 
