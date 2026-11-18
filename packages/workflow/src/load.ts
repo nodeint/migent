@@ -29,12 +29,17 @@ export function loadNamedWorkflow(
     if (filePath === null) fail(`Workflow not found: ${workflowId}`);
     return requireStages(loadWorkflowDocument(filePath, options));
   }
-  const matches = readWorkflowDirectory(workspace, options).loaded.filter((entry) => entry.document.id === workflowId);
+  const { loaded, problems } = readWorkflowDirectory(workspace, options);
+  const matches = loaded.filter((entry) => entry.document.id === workflowId);
   if (matches.length > 1) {
     const names = matches.map((entry) => path.basename(entry.path)).join(', ');
     fail(`${workflowId}: id is declared by ${names}.`);
   }
-  if (matches.length === 0) fail(`Workflow not found: ${workflowId}`);
+  if (matches.length === 0) {
+    const invalid = problems.find((problem) => unreadableWorkflowIds([problem]).has(workflowId));
+    if (invalid !== undefined) fail(`Workflow ${workflowId} is invalid. ${invalid}`);
+    fail(`Workflow not found: ${workflowId}`);
+  }
   return requireStages(loadWorkflowDocument(matches[0].path, options));
 }
 

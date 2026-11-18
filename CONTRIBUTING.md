@@ -1,6 +1,6 @@
 # Contributing to Migent
 
-Repository: `nodeint/migent`. Reply in the user's language.
+Repository: `nodeint/migent`.
 
 ## Setup
 
@@ -34,30 +34,79 @@ Use `@nodeint`; unscoped `migent` was rejected and `@migent` is reserved against
 - Read each affected package's `README.md`; import cross-package code by package name.
 - Never hand-edit `dist/` or `docs/reference/`.
 
-## Test
+## Testing
 
-```bash
-pnpm test:unit        # no build needed
-pnpm test:integration # real processes with fake clients; build first
-pnpm test             # both; focused: pnpm vitest run <file> [-t "<name>"]
-```
+Tests use Vitest with explicit imports (`import { expect, test } from 'vitest'`; no globals).
+Package tests live in `packages/<package>/test/`, cross-package suites in `integration/`.
 
-- Tests must never call real client CLIs: inject fake `which`/`runCommand` into
-  command entry points; integration fixtures: `integration/fixtures/bin`.
-- Each test gets a fresh temp directory, removed in `finally`.
+### Unit and integration tests
+
+| Kind | File | Run | Use for |
+| --- | --- | --- | --- |
+| Unit | `*.test.ts`, `scripts/**/*.test.mjs` | `pnpm test:unit`; no build | Behavior inside the test process: functions, and command entry points run through `main()` with injected fakes |
+| Integration | `*.integration.test.ts` | `pnpm test:integration`; build first; files run one at a time | Behavior that needs real child processes, sockets, cross-process locks, signals, or the built CLI (`packages/cli/dist`) |
+
+- Name a test `*.integration.test.ts` when it needs another process or built output; otherwise it is a unit test,
+  even under `integration/`.
+
+### Writing tests
+
+- Name each test as a behavior sentence: `test('a command that is not on PATH warns too', ...)`.
+- Test one behavior per test and assert what a user or caller observes: exit code, stdout and stderr, files, JSON.
+- Never call real client CLIs. Inject fake `which`/`runCommand` into command entry points.
+  End-to-end tests put `integration/fixtures/bin` first on `PATH`.
+- Give each test a fresh temp directory (`mkdtempSync` or `tempWorkspace`) and remove it in `finally` or `afterEach`.
+- Put helpers in `test/support.ts` and fixtures in `test/fixtures` of the same package.
+- Use snapshots only to pin serialized output such as `--json` payloads, rendered prompts, and file bytes.
+- Tests must pass on Ubuntu, macOS, and Windows. Guard POSIX-only behavior with
+  `test.skipIf(process.platform === 'win32')`.
+
+## Verify changes
+
+Run these checks after implementing or changing code, tests, scripts, or build configuration.
+Read-only work, planning, review, and issue triage do not require them.
+Run from the repository root and scope each check to the change.
+Full-repository test and lint runs are very slow: avoid them unless a rule below requires one.
+
+| Check | Scoped command |
+| --- | --- |
+| Lint | `pnpm lint -- <paths>` |
+| Unit tests | `pnpm test:unit <paths>`; add `-t "<name>"` to select tests |
+| Integration tests | `node scripts/wrappers/run-integration.mjs --file <suite> [--case <name>]` |
+| Typecheck and build | `pnpm build` |
+
+- Pass unit test paths without `--`: `pnpm test:unit -- <paths>` ignores the paths and runs every test.
+- `--file` matches test file paths by substring and repeats; `--case` takes one name and requires `--file`.
+  Run `run-integration.mjs` with `node` when `--case` contains spaces:
+  `pnpm` fails on Windows when its install path contains a space.
+- A scoped check must run at least one file or test. Ignored files and empty selections do not count;
+  `run-integration.mjs` exits 1 when the selection runs no tests.
+- Documentation-only changes need only `pnpm lint:md -- <paths>`,
+  `pnpm lint:md:links -- --path <directory>` when links changed, and `git diff --check`.
+  See the `markdownlint` skill.
 - Before pushing, run changed-package checks, `pnpm gate` if available, and the
   full suite without client CLIs: `PATH=/usr/bin:/bin:$(dirname "$(which node)") pnpm test`.
 - Required CI: Ubuntu, macOS, Windows on the current head/base; all must pass.
   Report check failures and stop.
+- Report each command with its result, and name any check not run with the reason.
 
-## Lint
+## CLI conventions
 
-```bash
-pnpm lint:fix    # automatic fixes; fails on remaining warnings
-pnpm lint        # inspect; fails on any warning
-```
+Apply these when adding or changing a command. Command syntax and behavior live in [CLI](docs/cli.md);
+exit codes, `--json` fields, and environment variables are generated in [Reference](docs/reference/cli-output.md).
 
-Append `-- <paths>` for scoped checks. See `scripts/wrappers/run-eslint.mjs`.
+| Topic | Convention |
+| --- | --- |
+| Machine output | `--json` prints exactly one JSON object on stdout, typed by a schema in `@nodeint/migent-contracts`; serialize it only with `writeJson`. `get` also accepts `-o json`, `-o yaml`, and `-o name`. |
+| Streams | Results go to stdout. Errors, notices, and next-step hints go to stderr. |
+| Messages | Errors use `printError` (prefix `migent:`); notices use `printNotice` (prefix `[migent]`). Color only when stderr is a TTY. |
+| Next step | A command that stops before finishing prints the command that continues it, as `Resume with:` or `Reply with:`. |
+| Prompts | Prompt only when stdin is a TTY and neither `--no-input` nor `MIGENT_NO_INPUT=1` is set. `-y, --yes` pre-answers confirmations. |
+| Preview | Commands that change state or the network offer `--dry-run` or `--check` when a preview is meaningful. |
+| Exit codes | Use the names in `@nodeint/migent-contracts` through `packages/cli/src/exits.ts`; do not add ad hoc codes. |
+| Help | List the exit codes with `exitText(...)` and add examples for commands with several modes. |
+
+Update [CLI](docs/cli.md) with any change to a command, flag, output, or exit behavior.
 
 ## Work types
 

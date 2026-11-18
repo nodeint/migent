@@ -26,6 +26,12 @@ description: Implement and verify a task or plan phase.
    affected checks.
 8. Report using the Output template.
 
+## Verification selection
+
+- Follow [CONTRIBUTING.md](../../../CONTRIBUTING.md#verify-changes) for scoped commands and required gates.
+- Verify selected files and tests actually ran; ignored files and empty selections
+  do not count. Report exact commands, coverage, results, and reasons for checks not run.
+
 ## Output
 
 - Use the template below; report in the conversation unless another location is requested.

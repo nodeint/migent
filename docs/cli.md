@@ -50,6 +50,10 @@ migent session run --role reviewer --session <session-id> --prompt "Summarize th
 
 `<workflow>` is the workflow id. A path to a workflow file is also accepted.
 The id comes from the file's `id` field, or from the file name when `id` is omitted.
+A workflow file that exists but fails validation is reported as
+`Workflow <id> is invalid. <file>: <validation error>`, not as not found. A
+`downstream` entry that names such a file reports `downstream workflow <id> failed to load.`
+Only an id with no matching file reports `Workflow not found`.
 `session run` uses the workflow engine when `--workflow` is present. It runs
 one role when `--workflow` is omitted. Passing `--workflow` together with
 `--role`, a prompt, `--client`, `--model`, `--option`, or `--json` is an error.

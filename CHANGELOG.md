@@ -54,6 +54,12 @@
   Without a `plugins` section, behavior is unchanged.
   ([#150](https://github.com/nodeint/migent/issues/150))
 
+### Fixed
+
+- A workflow file that exists but fails validation is now reported as `Workflow <id> is invalid` with the validation
+  error, instead of `Workflow not found`. A `downstream` entry naming such a file reports that it failed to load.
+  ([#162](https://github.com/nodeint/migent/issues/162))
+
 ## 0.8.0
 
 ### Breaking
