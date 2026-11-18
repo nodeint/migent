@@ -2,7 +2,7 @@
 import { appendFileSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-import type { Plugin, PluginHandler, PluginHook, PluginRegistry, TSchema } from '@nodeint/migent-contracts';
+import type { Plugin, PluginHandler, PluginHook, PluginRegistry, PluginUses, TSchema } from '@nodeint/migent-contracts';
 import { AgentToolRunner } from '@nodeint/migent-engine';
 import { expect, test } from 'vitest';
 
@@ -14,9 +14,16 @@ const WORKFLOW = 'schema_version: 7\nid: wf\nstages:\n  - { id: one, role: plann
 const OK = 'status: complete\n\nDone';
 const schema = { type: 'object' } as unknown as TSchema;
 
+const NO_USES: PluginUses = { operations: [], events: [], session: [], artifacts: [], agents: false, config: [] };
+
 const plugin = (id: string, handlers: Partial<Record<PluginHook, PluginHandler>>): Plugin => ({
-  manifest: { id, version: '1.2.3', advisory: false, hooks: Object.keys(handlers) as PluginHook[], capabilities: [], configSchema: schema },
-  handlers,
+  manifest: {
+    id, version: '1.2.3', apiVersion: { major: 1, minor: 0 }, advisory: false, configSchema: schema,
+    uses: { ...NO_USES, events: Object.keys(handlers) as PluginHook[], artifacts: [{ name: 'report.md', mode: 'replace', media_type: 'text/markdown' }] },
+  },
+  activate: (_options, migent) => {
+    for (const [hook, handler] of Object.entries(handlers)) migent.events.on(hook as PluginHook, handler);
+  },
 });
 const registryOfPlugins = (...plugins: Plugin[]): PluginRegistry => ({
   ids: () => plugins.map((entry) => entry.manifest.id),
@@ -42,7 +49,7 @@ const showJson = async (run: { root: string; runner: AgentToolRunner }) => {
 };
 
 const reporter = plugin('demo', {
-  'execution.finished': () => [{ kind: 'output', name: 'report.md', content: 'hi', media_type: 'text/markdown' }],
+  'execution.finished': () => Promise.resolve([{ kind: 'artifact' as const, name: 'report.md', content: 'hi' }]),
 });
 
 test('a successful invocation lists the active set, the output and the result', async () => {
@@ -52,17 +59,17 @@ test('a successful invocation lists the active set, the output and the result', 
     const { plugins } = await showJson(run);
     expect(plugins).toMatchObject({
       active: [{ id: 'demo', version: '1.2.3', enabled: true, advisory: false }],
-      invocations: [{ plugin: 'demo', hook: 'execution.finished', status: 'succeeded', results: [{ kind: 'output', status: 'applied', path: 'plugins/demo/report.md' }] }],
+      invocations: [{ plugin: 'demo', hook: 'execution.finished', status: 'succeeded', results: [{ kind: 'artifact', status: 'applied', path: 'plugins/demo/report.md' }] }],
       added_after_freeze: [], holds: [], freeze_mismatch: null,
     });
     const text = await cli(run, 'session', 'show', path.basename(sessionDir(run.root)));
     expect(text.stdout).toContain('plugins  demo@1.2.3');
-    expect(text.stdout).toContain('plugin  demo execution.finished · succeeded · output applied plugins/demo/report.md');
+    expect(text.stdout).toContain('plugin  demo execution.finished · succeeded · artifact applied plugins/demo/report.md');
   } finally { cliHooks.runner = null; removeWorkspace(run.root); }
 }, 30_000);
 
 test('a failed invocation under on_error stop shows the failure and the unresolved hold', async () => {
-  const failing = plugin('demo', { 'execution.finished': () => { throw new Error('boom'); } });
+  const failing = plugin('demo', { 'execution.finished': () => Promise.reject(new Error('boom')) });
   const run = setup([failing], '    on_error: stop\n');
   try {
     await cli(run, 'session', 'run', '--workflow', 'wf', '--task', 'Task');
@@ -133,8 +140,8 @@ test('a session without plugin data has no plugins section', async () => {
 
 
 const advisory = (id: string, version: string): Plugin => ({
-  manifest: { id, version, advisory: true, hooks: ['execution.finished'], capabilities: [], configSchema: schema },
-  handlers: { 'execution.finished': () => [] },
+  manifest: { id, version, apiVersion: { major: 1, minor: 0 }, advisory: true, uses: { ...NO_USES, events: ['execution.finished'] }, configSchema: schema },
+  activate: (_options, migent) => { migent.events.on('execution.finished', () => Promise.resolve([])); },
 });
 const configPath = (root: string): string => path.join(root, '.migent', 'config.yaml');
 

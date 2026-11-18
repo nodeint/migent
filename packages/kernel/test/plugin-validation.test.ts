@@ -4,7 +4,8 @@ import { describe, expect, test } from 'vitest';
 import { pluginEntryIssues } from '../src/index.ts';
 
 const manifest = (over: Partial<PluginManifest> = {}): PluginManifest => ({
-  id: 'demo', version: '1.0.0', advisory: false, hooks: ['session.started'], capabilities: [],
+  id: 'demo', version: '1.0.0', apiVersion: { major: 1, minor: 0 }, advisory: false,
+  uses: { operations: [], events: ['session.started'], session: [], artifacts: [], agents: false, config: [] },
   configSchema: { type: 'object', properties: { mode: { type: 'string' } } } as unknown as TSchema, ...over,
 });
 const manifests = (...items: PluginManifest[]) => new Map<string, unknown>(items.map((item) => [item.id, item]));
@@ -31,15 +32,17 @@ describe('pluginEntryIssues', () => {
     expect(codes({ demo: { mode: 5 } })).not.toEqual([]);
   });
 
-  test('an invokeAgent plugin requires the shared LLM fields', () => {
-    const llm = manifest({ capabilities: ['invokeAgent'] });
+  test('a uses.agents plugin requires the shared LLM fields', () => {
+    const llm = manifest({
+      uses: { operations: [], events: [], session: [], artifacts: [], agents: true, config: [] },
+    });
     expect(codes({ demo: {} }, manifests(llm))).not.toEqual([]);
     expect(codes({ demo: { agent: 'writer' } }, manifests(llm))).toEqual([]);
   });
 
   test('invalid manifest fields are reported', () => {
     expect(codes({ demo: {} }, manifests(manifest({ version: 'one' })))).toEqual(['plugin-manifest-invalid']);
-    expect(codes({ demo: {} }, manifests(manifest({ hooks: ['nope' as never] })))).toEqual(['plugin-manifest-invalid']);
+    expect(codes({ demo: {} }, manifests(manifest({ apiVersion: 'nope' as never })))).toEqual(['plugin-manifest-invalid']);
     expect(codes({ demo: {} }, new Map([['demo', { id: 'other' }]]))).toEqual(['plugin-manifest-invalid']);
   });
 

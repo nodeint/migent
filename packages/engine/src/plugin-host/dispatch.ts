@@ -4,25 +4,27 @@ import path from 'node:path';
 
 import {
   isValid,
+  PLUGIN_ACTIVATE_HOOK,
   PLUGIN_DEFAULT_ON_ERROR,
   PLUGIN_DEFAULT_TIMEOUT_SEC,
   PLUGIN_HOOKS,
-  type PluginCapabilities,
+  PluginEventProposal,
+  type PluginHandler,
   type PluginHook,
   type PluginHookInput,
-  PluginIntent,
   type PluginOnError,
   type PluginRegistry,
 } from '@nodeint/migent-contracts';
 import type { ClientRegistry, StageTarget } from '@nodeint/migent-kernel';
 import { CancellationRequested, cancellationSignal, loadWorkspaceConfig, logProgress, resolvePluginTarget, utcNow, writeFileAtomic } from '@nodeint/migent-kernel';
 import { readParsedEvents, sessionEventLog, SessionStore, subscribeSessionEvents } from '@nodeint/migent-session';
-import { isRecord } from '@nodeint/migent-workflow';
 
 import { bindTarget } from '../agent-invocation.js';
 import { AgentCaller } from './agent-call.js';
+import { buildActivationContext, buildCallContext, emptyRegistrations, type PluginRegistrations } from './context.js';
 import { declaresAgent } from './freeze.js';
 import { type PluginFailure, recordPluginFailure } from './holds.js';
+import { InvocationState } from './invocation.js';
 import type { PluginSelection, SelectedPlugin } from './selection.js';
 
 const [HOOK_STARTED, HOOK_FINISHED, HOOK_STOPPED] = PLUGIN_HOOKS;
@@ -50,7 +52,7 @@ export function isSafeOutputName(name: string): boolean {
 }
 
 type Outcome =
-  | { readonly kind: 'ok'; readonly intents: unknown }
+  | { readonly kind: 'ok'; readonly value: unknown }
   | { readonly kind: 'fail'; readonly reason: PluginFailure['reason']; readonly error: string };
 
 /** The `on_error` applied to a plugin: config, manifest default, core default. Advisory is always `ignore`. */
@@ -117,6 +119,8 @@ export class PluginHost {
   private cancelled = false;
   private didWork = false;
   private stopQueued = false;
+  /** What each plugin registered at activation; `null` when activation failed. Frozen once set. */
+  private readonly activations = new Map<string, PluginRegistrations | null>();
 
   private readonly workspace: string;
   private readonly sessionId: string;
@@ -151,6 +155,9 @@ export class PluginHost {
     this.offCancel = cancellationSignal().onCancel(() => {
       this.cancelled = true;
       for (const abort of [...this.aborters]) abort();
+    });
+    this.chain = this.chain.then(() => this.activateAll()).catch((error: unknown) => {
+      this.errors.push(error);
     });
   }
 
@@ -216,11 +223,65 @@ export class PluginHost {
   private async runTrigger(trigger: Trigger): Promise<void> {
     this.reportUnavailable(trigger.hook);
     for (const plugin of this.plugins) {
-      if (!plugin.manifest.hooks.includes(trigger.hook)) continue;
-      const handler = this.registry.get(plugin.id)?.handlers[trigger.hook];
-      if (handler === undefined) continue;
-      await this.invoke(plugin, trigger);
+      for (const handler of this.activations.get(plugin.id)?.events.get(trigger.hook) ?? []) {
+        await this.invoke(plugin, trigger, handler);
+      }
     }
+  }
+
+  /** Activates every selected plugin once, in selection order. A failure leaves that plugin out of the scope. */
+  private async activateAll(): Promise<void> {
+    for (const plugin of this.plugins) await this.activate(plugin);
+  }
+
+  private async activate(plugin: SelectedPlugin): Promise<void> {
+    const definition = this.registry.get(plugin.id);
+    if (definition === undefined) {
+      this.activations.set(plugin.id, null);
+      return;
+    }
+    const invocationId = randomUUID();
+    const invocation = new InvocationState();
+    const registrations = emptyRegistrations();
+    const { context, violation } = buildActivationContext(this.sourcesOf(plugin), invocation, registrations);
+    const timeoutSec = resolveTimeoutSec(plugin);
+    const outcome = await this.call(
+      async () => { await definition.activate(frozenCopy(plugin.config), context); },
+      { timeoutSec, controller: new AbortController(), caller: null, invocation },
+    );
+    const refused = violation();
+    const refusal: Extract<Outcome, { kind: 'fail' }> | null =
+      refused === null ? null : { kind: 'fail', reason: 'error', error: refused };
+    const failure = outcome.kind === 'fail' ? outcome : refusal;
+    if (failure === null) {
+      this.activations.set(plugin.id, Object.freeze(registrations));
+      this.recordActivationNotes(plugin, invocationId, invocation.notes);
+      return;
+    }
+    this.activations.set(plugin.id, null);
+    recordPluginFailure(this.workspace, this.sessionId, {
+      plugin: plugin.id, hook: PLUGIN_ACTIVATE_HOOK, invocationId, reason: failure.reason, error: failure.error,
+      onError: resolveOnError(plugin), notes: invocation.notes,
+    });
+  }
+
+  /** Notes logged by a successful activation belong to that activation: one empty decision carries them. */
+  private recordActivationNotes(plugin: SelectedPlugin, invocationId: string, notes: readonly unknown[]): void {
+    if (notes.length === 0) return;
+    sessionEventLog.record(this.directory, {
+      event: 'plugin.decision',
+      timestamp: utcNow(),
+      data: { plugin: plugin.id, invocation_id: invocationId, proposed: [], results: [], notes },
+    });
+    sessionEventLog.commit(this.workspace, this.directory);
+  }
+
+  private sourcesOf(plugin: SelectedPlugin) {
+    return {
+      manifest: plugin.manifest,
+      options: plugin.config,
+      readCore: (key: string): unknown => loadWorkspaceConfig(this.workspace)[key],
+    };
   }
 
   /** An entry that cannot run records one `unavailable` failure at its first trigger. */
@@ -228,7 +289,7 @@ export class PluginHost {
     const remaining: typeof this.unavailable = [];
     for (const entry of this.unavailable) {
       const manifest = this.registry.get(entry.id)?.manifest;
-      if (manifest !== undefined && !manifest.hooks.includes(hook)) {
+      if (manifest !== undefined && !manifest.uses.events.includes(hook)) {
         remaining.push(entry);
         continue;
       }
@@ -239,10 +300,8 @@ export class PluginHost {
     this.unavailable = remaining;
   }
 
-  private async invoke(plugin: SelectedPlugin, trigger: Trigger): Promise<void> {
+  private async invoke(plugin: SelectedPlugin, trigger: Trigger, handler: PluginHandler): Promise<void> {
     const { hook } = trigger;
-    const handler = this.registry.get(plugin.id)?.handlers[hook];
-    if (handler === undefined) return;
     const invocationId = randomUUID();
     const onError = resolveOnError(plugin);
     sessionEventLog.record(this.directory, {
@@ -256,19 +315,25 @@ export class PluginHost {
     sessionEventLog.commit(this.workspace, this.directory);
     const timeoutSec = resolveTimeoutSec(plugin);
     const controller = new AbortController();
+    const invocation = new InvocationState();
     const caller = this.callerFor(plugin, { invocationId, trigger, timeoutSec, signal: controller.signal });
-    const outcome = await this.call(handler, this.inputFor(plugin, trigger), {
-      timeoutSec, controller, caller,
-    });
+    const input = this.inputFor(plugin, trigger);
+    const callContext = buildCallContext(this.sourcesOf(plugin), invocation, caller);
+    const outcome = await this.call(
+      () => handler(input, callContext),
+      { timeoutSec, controller, caller, invocation },
+    );
     const calls = caller?.calls ?? [];
+    const {notes} = invocation;
     let failure: Extract<Outcome, { kind: 'fail' }> | null;
-    if (outcome.kind === 'ok') failure = this.apply(plugin, invocationId, { raw: outcome.intents, calls });
+    if (outcome.kind === 'ok') failure = this.apply(plugin, invocationId, { raw: outcome.value, calls, notes });
     else if (caller?.unavailable !== null && caller?.unavailable !== undefined && outcome.reason === 'error') {
       failure = { kind: 'fail', reason: 'unavailable', error: caller.unavailable };
     } else failure = outcome;
     if (failure === null) return;
     recordPluginFailure(this.workspace, this.sessionId, {
-      plugin: plugin.id, hook, invocationId, reason: failure.reason, error: failure.error, onError, agentCalls: calls,
+      plugin: plugin.id, hook, invocationId, reason: failure.reason, error: failure.error, onError,
+      agentCalls: calls, notes,
     });
   }
 
@@ -307,13 +372,17 @@ export class PluginHost {
     return () => resolvePluginTarget(loadWorkspaceConfig(this.workspace), entry, clients);
   }
 
-  /** Runs the handler under its deadline. A timeout or cancellation wins the race; later intents are discarded. */
+  /**
+   * The settle-once invoker shared by activation and event handlers. Runs `run` under its deadline. A timeout or
+   * cancellation wins the race; settling closes the invocation's context, and later results are discarded.
+   */
   private call(
-    handler: (input: PluginHookInput, capabilities: PluginCapabilities) => Promise<readonly unknown[]>,
-    input: PluginHookInput,
-    context: { timeoutSec: number; controller: AbortController; caller: AgentCaller | null },
+    run: () => Promise<unknown>,
+    context: {
+      timeoutSec: number; controller: AbortController; caller: AgentCaller | null; invocation: InvocationState;
+    },
   ): Promise<Outcome> {
-    const { timeoutSec, controller, caller } = context;
+    const { timeoutSec, controller, caller, invocation } = context;
     return new Promise<Outcome>((resolve) => {
       let timer: NodeJS.Timeout | null = null;
       let settled = false;
@@ -333,6 +402,7 @@ export class PluginHost {
       const settle = (outcome: Outcome): void => {
         if (settled) return;
         settled = true;
+        invocation.close();
         if (timer !== null) clearTimeout(timer);
         this.aborters.delete(cancel);
         if (outcome.kind === 'fail') controller.abort();
@@ -361,9 +431,9 @@ export class PluginHost {
       // After a timeout or cancellation the handler promise is orphaned: settle() is a no-op for the promise, so
       // its late intents are discarded and its rejection is swallowed here.
       Promise.resolve()
-        .then(() => handler(input, Object.freeze(caller === null ? {} : { invokeAgent: caller.invokeAgent })))
+        .then(run)
         .then(
-          (intents) => handlerDone({ kind: 'ok', intents }),
+          (value) => handlerDone({ kind: 'ok', value }),
           (error: unknown) => handlerDone(error instanceof CancellationRequested
             ? { kind: 'fail', reason: 'cancelled', error: 'The run was cancelled.' }
             : { kind: 'fail', reason: 'error', error: messageOf(error) }),
@@ -399,69 +469,103 @@ export class PluginHost {
   }
 
   /**
-   * Writes the `output` intents under `plugins/<id>/`. A filesystem failure is a plugin failure, not a host failure,
-   * so it goes through the failure policy and the next plugin still runs. Only session-log errors propagate.
+   * Writes the artifact proposal under `plugins/<id>/`. A filesystem failure is a plugin failure, not a host
+   * failure, so it goes through the failure policy and the next plugin still runs. Only session-log errors propagate.
    */
-  private writeOutputs(
+  private writeArtifact(
     plugin: SelectedPlugin,
-    intents: readonly PluginIntent[],
-  ): { results: Record<string, unknown>[] } | { error: string } {
-    const results: Record<string, unknown>[] = [];
-    for (const intent of intents) {
-      if (intent.kind !== 'output') {
-        results.push({ kind: intent.kind, status: 'applied' });
-        continue;
-      }
-      const relative = path.posix.join('plugins', plugin.id, intent.name);
-      try {
-        mkdirSync(path.join(this.directory, 'plugins', plugin.id), { recursive: true });
-        writeFileAtomic(path.join(this.directory, relative), intent.content);
-      } catch (caught) {
-        return { error: `Could not write ${relative}: ${messageOf(caught)}` };
-      }
-      results.push({
-        kind: 'output', status: 'applied', path: relative,
-        sha256: createHash('sha256').update(intent.content).digest('hex'),
-      });
+    proposal: Extract<PluginEventProposal, { kind: 'artifact' }>,
+    mode: 'create_only' | 'replace',
+  ): { readonly result: Record<string, unknown> } | { readonly error: string } {
+    const relative = path.posix.join('plugins', plugin.id, proposal.name);
+    const target = path.join(this.directory, relative);
+    if (mode === 'create_only' && existsSync(target)) {
+      return { result: { kind: 'artifact', status: 'rejected', reason: 'exists', path: relative } };
     }
-    return { results };
+    try {
+      mkdirSync(path.join(this.directory, 'plugins', plugin.id), { recursive: true });
+      writeFileAtomic(target, proposal.content);
+    } catch (caught) {
+      return { error: `Could not write ${relative}: ${messageOf(caught)}` };
+    }
+    return {
+      result: {
+        kind: 'artifact', status: 'applied', path: relative,
+        sha256: createHash('sha256').update(proposal.content).digest('hex'),
+      },
+    };
   }
 
   /**
-   * Validates every intent, then applies them. Nothing is written when any intent is invalid or rejected. Returns
-   * the failure, or null once `plugin.decision` is recorded.
+   * Validates every proposal of one invocation. Any invalid entry rejects the whole invocation. At most one
+   * artifact is allowed, and it must match a `uses.artifacts` claim.
+   */
+  private validate(
+    plugin: SelectedPlugin,
+    raw: unknown,
+  ): { readonly proposals: readonly PluginEventProposal[] } | Extract<Outcome, { kind: 'fail' }> {
+    const invalid = (error: string): Extract<Outcome, { kind: 'fail' }> =>
+      ({ kind: 'fail', reason: 'invalid_intent', error });
+    if (!Array.isArray(raw)) return invalid('The hook must return an array of proposals.');
+    const proposals: PluginEventProposal[] = [];
+    for (const [index, item] of raw.entries()) {
+      if (!isValid(PluginEventProposal, item)) return invalid(`Proposal ${index} is not a valid plugin proposal.`);
+      if (item.kind === 'artifact') {
+        if (proposals.some((earlier) => earlier.kind === 'artifact')) {
+          return invalid('An invocation may propose at most one artifact.');
+        }
+        if (!isSafeOutputName(item.name)) {
+          return invalid(`Proposal ${index} has an unsafe artifact name: ${JSON.stringify(item.name)}.`);
+        }
+        if (!plugin.manifest.uses.artifacts.some((claim) => claim.name === item.name)) {
+          return invalid(`Proposal ${index} names artifact "${item.name}", which uses.artifacts does not declare.`);
+        }
+      }
+      proposals.push(item);
+    }
+    return { proposals };
+  }
+
+  /** The recorded form of a proposal: an artifact keeps its name and claimed media type, not its content. */
+  private proposedOf(plugin: SelectedPlugin, item: PluginEventProposal): Record<string, unknown> {
+    if (item.kind !== 'artifact') return { ...item };
+    const claim = plugin.manifest.uses.artifacts.find((entry) => entry.name === item.name);
+    return { kind: item.kind, name: item.name, media_type: claim?.media_type ?? '' };
+  }
+
+  /**
+   * Validates every proposal, then applies them. Nothing is written when any proposal is invalid. Returns the
+   * failure, or null once `plugin.decision` is recorded.
    */
   private apply(
     plugin: SelectedPlugin,
     invocationId: string,
-    proposal: { raw: unknown; calls: readonly unknown[] },
+    proposal: { raw: unknown; calls: readonly unknown[]; notes: readonly unknown[] },
   ): Extract<Outcome, { kind: 'fail' }> | null {
-    const invalid = (error: string): Extract<Outcome, { kind: 'fail' }> =>
-      ({ kind: 'fail', reason: 'invalid_intent', error });
-    const { raw, calls } = proposal;
-    if (!Array.isArray(raw)) return invalid('The hook must return an array of intents.');
-    const intents: PluginIntent[] = [];
-    for (const [index, item] of raw.entries()) {
-      if (!isValid(PluginIntent, item)) return invalid(`Intent ${index} is not a valid plugin intent.`);
-      if (item.kind === 'output' && !isSafeOutputName(item.name)) {
-        return invalid(`Intent ${index} has an unsafe output name: ${JSON.stringify(item.name)}.`);
+    const { raw, calls, notes } = proposal;
+    const validated = this.validate(plugin, raw);
+    if ('kind' in validated) return validated;
+    const results: Record<string, unknown>[] = [];
+    for (const item of validated.proposals) {
+      if (item.kind !== 'artifact') {
+        results.push({ kind: item.kind, status: 'applied' });
+        continue;
       }
-      intents.push(item);
+      const claim = plugin.manifest.uses.artifacts.find((entry) => entry.name === item.name);
+      const written = this.writeArtifact(plugin, item, claim?.mode ?? 'replace');
+      if ('error' in written) return { kind: 'fail', reason: 'error', error: written.error };
+      results.push(written.result);
     }
-    const written = this.writeOutputs(plugin, intents);
-    if ('error' in written) return { kind: 'fail', reason: 'error', error: written.error };
-    const { results } = written;
     sessionEventLog.record(this.directory, {
       event: 'plugin.decision',
       timestamp: utcNow(),
       data: {
         plugin: plugin.id,
         invocation_id: invocationId,
-        proposed: intents.map((intent) => (isRecord(intent) && intent.kind === 'output'
-          ? { kind: intent.kind, name: intent.name, media_type: intent.media_type }
-          : { ...intent })),
+        proposed: validated.proposals.map((item) => this.proposedOf(plugin, item)),
         results,
         ...(calls.length === 0 ? {} : { agent_calls: calls }),
+        ...(notes.length === 0 ? {} : { notes }),
       },
     });
     sessionEventLog.commit(this.workspace, this.directory);

@@ -10,7 +10,7 @@ const isMapping = (value: unknown): value is Record<string, unknown> =>
 /** Whether the entry takes part in a freeze as a pinned target: enabled, non-advisory, and calls an agent. */
 export function needsPluginTarget(registry: PluginRegistry, id: string, entry: unknown): boolean {
   const manifest = registry.get(id)?.manifest;
-  if (manifest === undefined || manifest.advisory || !manifest.capabilities.includes('invokeAgent')) return false;
+  if (manifest === undefined || manifest.advisory || !manifest.uses.agents) return false;
   return !(isMapping(entry) && entry.enabled === false);
 }
 

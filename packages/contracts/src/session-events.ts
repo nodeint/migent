@@ -151,7 +151,8 @@ const agentCall = Type.Object({
   outcome: Type.Union([Type.Literal('succeeded'), Type.Literal('failed'), Type.Literal('denied')]),
   output_path: opt(nullableStr()),
 });
-const agentCalls = { agent_calls: opt(Type.Array(agentCall)) };
+const pluginNote = Type.Object({ level: Type.Union([Type.Literal('info'), Type.Literal('warn')]), text: str() });
+const agentCalls = { agent_calls: opt(Type.Array(agentCall)), notes: opt(Type.Array(pluginNote)) };
 
 /** `plugin.*` and `plugins.frozen`. Only `plugin.failed` folds: a `stop` or `fail` failure is a plugin hold. */
 export const PLUGIN_EVENTS = {

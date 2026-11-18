@@ -10,9 +10,9 @@ export function isEnabledEntry(entry: unknown): boolean {
 
 export const EMPTY_PLUGIN_REGISTRY: PluginRegistry = { ids: () => [], get: () => undefined };
 
-/** Whether the manifest offers `invokeAgent`, so the entry needs an agent target. */
+/** Whether the manifest declares `uses.agents`, so the entry needs an agent target. */
 export function declaresAgent(manifest: PluginManifest | undefined): boolean {
-  return manifest?.capabilities.includes('invokeAgent') === true;
+  return manifest?.uses.agents === true;
 }
 
 /**

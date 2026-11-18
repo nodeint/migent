@@ -4,7 +4,7 @@ import { sectionIssues } from './config-structure.js';
 import { ConfigurationError } from './errors.js';
 
 /** The manifest facts validation needs. A caller passes registry data, so kernel never imports plugins. */
-export type PluginManifestData = Pick<PluginManifest, 'id' | 'capabilities' | 'configSchema'> & Partial<PluginManifest>;
+export type PluginManifestData = Pick<PluginManifest, 'id' | 'uses' | 'configSchema'> & Partial<PluginManifest>;
 
 export interface PluginValidationInput {
   /** The merged `plugins` section, as read from config. Any value. */
@@ -33,7 +33,7 @@ function entryIssues(id: string, entry: unknown, manifest: unknown): Configurati
   const broken = manifestIssues(id, manifest);
   if (broken.length > 0) return broken;
   const data = manifest as PluginManifestData;
-  const shared: TSchema = data.capabilities.includes('invokeAgent') ? LlmPluginConfig : PluginSharedConfig;
+  const shared: TSchema = data.uses.agents ? LlmPluginConfig : PluginSharedConfig;
   const issues = sectionIssues(field(id), shared, entry);
   if (issues.length > 0) return issues;
   return sectionIssues(field(id), data.configSchema, entry);

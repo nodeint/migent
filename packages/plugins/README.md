@@ -7,8 +7,11 @@ First-party Migent plugins and their static registry. Internal; no stable public
 ## Rules
 
 - Leaf package: import only `@nodeint/migent-contracts`. Only `cli` depends on this package.
-- Plugins propose and the core decides: a handler returns intents and never receives the session lock, store
+- Plugins propose and the core decides: a handler returns proposals and never receives the session lock, store
   handles or execution state. See [docs/architecture.md](../../docs/architecture.md).
+- A plugin is `{ manifest, activate }`. `activate` registers handlers and interceptors through the activation
+  context; each handler gets its own per-invocation `call` context. Keep per-invocation state out of module
+  scope: two stages can run one handler concurrently.
 - Register a plugin in `src/registry.ts`. The registry is empty until a feature plugin lands.
 
 ## Key symbols

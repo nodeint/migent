@@ -92,20 +92,30 @@ The session-level files have distinct purposes:
   freeze hash and the entry versions and pinned agent targets. A freeze file
   that no longer matches the last event, or a missing or upgraded plugin, stops
   the resume with exit code 2.
+- A plugin is `{ manifest, activate }`. The manifest declares `apiVersion`, and the registry refuses a plugin whose
+  major differs from the core's or whose minor is greater. `uses` declares what the plugin may do: operations,
+  events, session reads, artifacts, `agents` and core config keys. The host calls `activate(options, migent)` once
+  per run under the plugin's deadline. `migent` registers event handlers and interceptors until `activate` settles;
+  a registration after that throws `PluginContextClosed`. A registration that `uses` does not declare fails the
+  activation, which records `plugin.failed` with `hook: activate`, and the plugin takes part in nothing for that run.
 - Plugin hooks run during a run and are recorded in `events.jsonl`. `session.started` fires when the run
   creates or activates the session, `execution.finished` for each finished execution, and `session.stopped` once
   scheduling ends, only when the run dispatched work. Each invocation records `plugin.hook_invoked`, then
-  `plugin.decision` (the applied intents) or `plugin.failed`. An `output` intent is written to
-  `plugins/<id>/<name>`, where `<name>` is one safe file name. `on_error` decides a failure: `ignore` records it,
-  `stop` and `fail` set a plugin hold. An advisory plugin always uses `ignore`. Hooks are not replayed on resume,
-  and every invocation settles before the session lock is released.
-- A plugin that declares `invokeAgent`, and whose config has an `agent`, can ask for one provider turn with no
-  conversation or resume. Each call runs as the `plugin.invoke_agent` operation on the operation runtime. The raw
-  response is stored in `plugins/<id>/calls/<invocation>-<n>.txt`, and the invocation's `plugin.decision` or
-  `plugin.failed` lists the call under `agent_calls`. The plugin receives only `{ text, error }`. A non-advisory
-  plugin uses the agent target pinned in `plugins.frozen`; an advisory plugin resolves the live agent at the call.
-  When the invocation deadline passes or the run is cancelled, the provider process is stopped before the failure
-  is recorded, and a later call starts no process.
+  `plugin.decision` (the applied proposals) or `plugin.failed`. A handler returns proposals and receives a
+  per-invocation `call` context. An invocation may propose at most one `artifact`; a second is `invalid_intent`.
+  The artifact must match a `uses.artifacts` claim and is written to `plugins/<id>/<name>`, where `<name>` is one
+  safe file name. Notes from `call.log` are recorded under `notes` while the invocation is open.
+  `on_error` decides a failure: `ignore` records it, `stop` and `fail` set a plugin hold. An advisory plugin
+  always uses `ignore`.
+  Hooks are not replayed on resume, and every invocation settles before the session lock is released.
+- A plugin that declares `uses.agents`, and whose config has an `agent`, can ask for one provider turn with
+  `call.agents.invoke`, with no conversation or resume. Each call runs as the `plugin.invoke_agent` operation on the
+  operation runtime. The raw response is stored in `plugins/<id>/calls/<invocation>-<n>.txt`, and the
+  invocation's `plugin.decision` or `plugin.failed` lists the call under `agent_calls`.
+  The plugin receives only `{ text, error }`. A non-advisory plugin uses the agent target pinned in
+  `plugins.frozen`; an advisory plugin resolves the live agent at the call. When the invocation deadline passes or
+  the run is cancelled, the provider process is stopped before the failure is recorded, a later call starts no
+  process, and it rejects with `PluginContextClosed`.
   `session show` reports the plugin facts from these events; see [CLI](cli.md#inspect-sessions).
 - `task.md` is the task body. A one-line `session run --workflow --task` writes
   that sentence here. A prepared session creates an empty file for you to write, along with any

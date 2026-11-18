@@ -47,9 +47,9 @@ const agentPlugins = (advisory: boolean): NonNullable<Parameters<typeof validate
   get: (id) => (id === 'demo'
     ? {
       manifest: {
-        id, version: '1.0.0', advisory, hooks: [], capabilities: ['invokeAgent'], configSchema: schema({ type: 'object' }),
+        id, version: '1.0.0', apiVersion: { major: 1, minor: 0 }, advisory, uses: { operations: [], events: [], session: [], artifacts: [], agents: true, config: [] }, configSchema: schema({ type: 'object' }),
       },
-      handlers: {},
+      activate: () => undefined,
     }
     : undefined),
 });

@@ -5,9 +5,9 @@
   "required": [
     "id",
     "version",
+    "apiVersion",
     "advisory",
-    "hooks",
-    "capabilities",
+    "uses",
     "configSchema"
   ],
   "properties": {
@@ -20,26 +20,127 @@
       "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$",
       "description": "Semver 2.0.0."
     },
+    "apiVersion": {
+      "type": "object",
+      "required": [
+        "major",
+        "minor"
+      ],
+      "properties": {
+        "major": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "minor": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "title": "Plugin API version"
+    },
     "advisory": {
       "type": "boolean"
     },
-    "hooks": {
-      "type": "array",
-      "items": {
-        "enum": [
-          "session.started",
-          "execution.finished",
-          "session.stopped"
-        ]
-      }
+    "defaultEnabled": {
+      "type": "boolean"
     },
-    "capabilities": {
-      "type": "array",
-      "items": {
-        "enum": [
-          "invokeAgent"
-        ]
-      }
+    "uses": {
+      "type": "object",
+      "required": [
+        "operations",
+        "events",
+        "session",
+        "artifacts",
+        "agents",
+        "config"
+      ],
+      "properties": {
+        "operations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "target",
+              "phases"
+            ],
+            "properties": {
+              "target": {
+                "type": "string",
+                "description": "An operation id, or a `prefix.*` pattern."
+              },
+              "phases": {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "before",
+                    "after"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "session.started",
+              "execution.finished",
+              "session.stopped"
+            ]
+          }
+        },
+        "session": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "snapshot",
+              "resume_facts"
+            ]
+          }
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "mode",
+              "media_type"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "mode": {
+                "enum": [
+                  "create_only",
+                  "replace"
+                ]
+              },
+              "media_type": {
+                "type": "string"
+              },
+              "fresh": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "agents": {
+          "type": "boolean",
+          "description": "The plugin calls an agent. Its config entry then needs an `agent`."
+        },
+        "config": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Core config keys the plugin reads."
+        }
+      },
+      "title": "Plugin uses",
+      "description": "Static declarations read without activating the plugin. Every context member checks them."
     },
     "configSchema": {
       "type": "object",

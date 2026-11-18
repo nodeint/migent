@@ -17,8 +17,11 @@ afterEach(() => {
 const clients = registryOf({ fake: new FakeClient('fake', 'fake') });
 const schema = { type: 'object' } as unknown as TSchema;
 const plugin = (id: string, extra: Partial<Plugin['manifest']> = {}): Plugin => ({
-  manifest: { id, version: '1.0.0', advisory: false, hooks: [], capabilities: [], configSchema: schema, ...extra },
-  handlers: {},
+  manifest: {
+    id, version: '1.0.0', apiVersion: { major: 1, minor: 0 }, advisory: false, configSchema: schema,
+    uses: { operations: [], events: [], session: [], artifacts: [], agents: false, config: [] }, ...extra,
+  },
+  activate: () => undefined,
 });
 const registryOfPlugins = (...plugins: Plugin[]): PluginRegistry => ({
   ids: () => plugins.map((entry) => entry.manifest.id),
@@ -130,7 +133,7 @@ test('an entry added after the freeze is reported and not run when non-advisory'
 });
 
 test('an invokeAgent plugin pins its agent target in plugins.frozen', () => {
-  const registry = registryOfPlugins(plugin('agentic', { capabilities: ['invokeAgent'] }));
+  const registry = registryOfPlugins(plugin('agentic', { uses: { operations: [], events: [], session: [], artifacts: [], agents: true, config: [] } }));
   const { directory } = setup('plugins:\n  agentic:\n    enabled: true\n    agent: fake\n', registry);
   const [entry] = frozenEvents(directory)[0]?.plugins ?? [];
   expect(entry?.target).toMatchObject({ client: 'fake', model: 'm1' });

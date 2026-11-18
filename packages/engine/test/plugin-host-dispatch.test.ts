@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
-import type { Plugin, PluginHandler, PluginHook, PluginIntent, PluginRegistry, TSchema } from '@nodeint/migent-contracts';
+import type { Plugin, PluginEventProposal, PluginHandler, PluginHook, PluginRegistry, PluginUses, TSchema } from '@nodeint/migent-contracts';
 import { raiseCancellation, resetCancellation } from '@nodeint/migent-kernel';
 import { readParsedEvents, SessionLock, SessionStore } from '@nodeint/migent-session';
 import { expect, test } from 'vitest';
@@ -29,15 +29,24 @@ const DONE = 'status: complete\n\ndone';
 const CHAIN = 'schema_version: 2\nid: chain\nstages:\n  - id: a\n    role: developer\n  - id: b\n    role: developer\n    depends_on: [a]\n';
 const BASE = 'agents:\n  fake:\n    client: { type: fake }\n    model: m1\nroles:\n  developer:\n    agent: fake\n';
 
+const NO_USES: PluginUses = { operations: [], events: [], session: [], artifacts: [], agents: false, config: [] };
+const ARTIFACTS: PluginUses['artifacts'] = [
+  { name: 'report.md', mode: 'replace', media_type: 'text/markdown' },
+  { name: 'late.md', mode: 'replace', media_type: 'text/plain' },
+];
+
 const plugin = (
   id: string,
   handlers: Partial<Record<PluginHook, PluginHandler>>,
   extra: Partial<Plugin['manifest']> = {},
 ): Plugin => ({
   manifest: {
-    id, version: '1.0.0', advisory: false, hooks: Object.keys(handlers) as PluginHook[], capabilities: [], configSchema: schema, ...extra,
+    id, version: '1.0.0', apiVersion: { major: 1, minor: 0 }, advisory: false, configSchema: schema,
+    uses: { ...NO_USES, events: Object.keys(handlers) as PluginHook[], artifacts: ARTIFACTS }, ...extra,
   },
-  handlers,
+  activate: (_options, migent) => {
+    for (const [hook, handler] of Object.entries(handlers)) migent.events.on(hook as PluginHook, handler);
+  },
 });
 const registryOfPlugins = (...plugins: Plugin[]): PluginRegistry => ({
   ids: () => plugins.map((entry) => entry.manifest.id),
@@ -80,8 +89,8 @@ async function run(plugins: Plugin[], config: string, options: RunOptions = {}) 
 }
 
 test('happy path: events, output file with sha256, note and none', async () => {
-  const intents: PluginIntent[] = [
-    { kind: 'output', name: 'report.md', content: 'hello', media_type: 'text/markdown' },
+  const intents: PluginEventProposal[] = [
+    { kind: 'artifact', name: 'report.md', content: 'hello' },
     { kind: 'note', text: 'n' },
     { kind: 'none' },
   ];
@@ -92,7 +101,7 @@ test('happy path: events, output file with sha256, note and none', async () => {
   expect(names(workspace, id)).toEqual(['plugin.hook_invoked', 'plugin.decision']);
   expect(readFileSync(path.join(directoryOf(workspace, id), 'plugins', 'demo', 'report.md'), 'utf8')).toBe('hello');
   const decision = eventsOf(workspace, id).find((event) => event.event === 'plugin.decision');
-  expect(decision?.data.results).toMatchObject([{ kind: 'output', status: 'applied', path: 'plugins/demo/report.md' }, { kind: 'note' }, { kind: 'none' }]);
+  expect(decision?.data.results).toMatchObject([{ kind: 'artifact', status: 'applied', path: 'plugins/demo/report.md' }, { kind: 'note' }, { kind: 'none' }]);
   expect((decision?.data.results as { sha256: string }[])[0]?.sha256).toMatch(/^[0-9a-f]{64}$/);
 });
 
@@ -111,11 +120,11 @@ test('execution.finished fires per terminal execution and session.stopped once w
 const WORKSPACE = { current: '' };
 
 type Kind = 'error' | 'invalid' | 'traversal' | 'conflict';
-const FILE_INTENT: PluginIntent = { kind: 'output', name: 'report.md', content: 'x', media_type: 'text/plain' };
+const FILE_INTENT: PluginEventProposal = { kind: 'artifact', name: 'report.md', content: 'x' };
 const handlerFor = (kind: Kind): PluginHandler => {
   switch (kind) {
     case 'error': return () => Promise.reject(new Error('boom'));
-    case 'invalid': return () => Promise.resolve([{ kind: 'bogus' }] as unknown as PluginIntent[]);
+    case 'invalid': return () => Promise.resolve([{ kind: 'bogus' }] as unknown as PluginEventProposal[]);
     case 'traversal': return () => Promise.resolve([{ ...FILE_INTENT, name: '../escape.md' }]);
     case 'conflict': return (input) => {
       // The output name is already a directory, so the write fails.
@@ -164,7 +173,7 @@ function expectUntouched(workspace: string, id: string, snapshots: readonly Snap
 const failingFirst = (first: PluginHandler, snapshots: Snapshot[] = []): Plugin => {
   let failed = false;
   return plugin('demo', {
-    'execution.finished': (input, caps) => {
+    'execution.finished': (input, call) => {
       if (failed) return Promise.resolve([]);
       failed = true;
       const executionId = input.execution?.id ?? '';
@@ -173,7 +182,7 @@ const failingFirst = (first: PluginHandler, snapshots: Snapshot[] = []): Plugin 
         files: executionFiles(WORKSPACE.current, input.session.id)[executionId] ?? {},
         status: outcomesOf(WORKSPACE.current, input.session.id)[executionId],
       });
-      return first(input, caps);
+      return first(input, call);
     },
   });
 };
@@ -373,15 +382,15 @@ test('cancellation after new work still fires session.stopped, which settles as 
 });
 
 test('a timed-out handler later returning intents has them discarded', async () => {
-  let release: (intents: PluginIntent[]) => void = () => {};
-  const late = new Promise<PluginIntent[]>((resolve) => {
+  let release: (intents: PluginEventProposal[]) => void = () => {};
+  const late = new Promise<PluginEventProposal[]>((resolve) => {
     release = resolve;
   });
   const demo = plugin('demo', { 'session.started': () => late });
   const started = Date.now();
   const { workspace, result } = await run([demo], entries({ demo: '    timeout_sec: 0.05\n' }));
   expect(Date.now() - started).toBeLessThan(5000);
-  release([{ kind: 'output', name: 'late.md', content: 'x', media_type: 'text/plain' }]);
+  release([{ kind: 'artifact', name: 'late.md', content: 'x' }]);
   await new Promise((resolve) => setTimeout(resolve, 20));
   expect(() => readFileSync(path.join(directoryOf(workspace, result.sessionId), 'plugins', 'demo', 'late.md'))).toThrow();
   expect(names(workspace, result.sessionId)).toEqual(['plugin.hook_invoked', 'plugin.failed']);

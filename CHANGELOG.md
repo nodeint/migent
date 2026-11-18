@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Breaking
+
+- The plugin contract changes shape, in the first step of the shared `MigentContext` API. A plugin is
+  `{ manifest, activate }` instead of `{ manifest, handlers }`. The manifest gains `apiVersion` and `uses`, and
+  `uses.agents` replaces `capabilities: ['invokeAgent']`. The `output` intent becomes the `artifact` proposal, which
+  an invocation may propose at most once and which must match a `uses.artifacts` claim. `plugin.failed` gains the
+  `stale` reason, and `plugin.decision` and `plugin.failed` gain `notes`. No plugin is registered, so no session
+  changes. ([#166](https://github.com/nodeint/migent/issues/166))
+
 ### Added
 
 - Plugin host core. The `plugins` config section is registered: sessions freeze it per entry, record a
