@@ -67,8 +67,10 @@ the `plugins` section is the one registered config section.
 ## Freeze keys
 
 The freeze file keeps resolved core settings at the top level: `roles`, `targets`, and
-`resume_policies`. The key `config` holds only registered config sections. See
-[Sessions](sessions.md).
+`resume_policies`. The key `config` holds only registered config sections. Plugin extensions add three optional keys:
+`extensions` (the version and owned keys per level of every plugin with a catalog entry),
+`targets.<stage>.extensions`, and `role_extensions`. They are written only when non-empty. Reading a freeze never
+consults the current catalog: ownership comes from the recorded `extensions` map. See [Sessions](sessions.md).
 
 ## Related documents
 

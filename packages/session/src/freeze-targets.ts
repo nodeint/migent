@@ -1,8 +1,9 @@
-import { legacyClientOf, type StageTarget } from '@nodeint/migent-kernel';
-import { isRecord } from '@nodeint/migent-workflow';
-import { SCHEMA_V2 } from '@nodeint/migent-workflow';
+import { legacyClientOf, type ResolveSpecOptions, resolveStageSpec, type StageTarget } from '@nodeint/migent-kernel';
+import { isRecord, isRoleStage, SCHEMA_V2, type WorkflowDocument } from '@nodeint/migent-workflow';
 
 import { corrupt } from './freeze-corrupt.js';
+import { targetExtensionField } from './freeze-extensions.js';
+import { freezeStagePolicy } from './freeze-resume-policy.js';
 
 /** The `targets` mapping of a freeze: one client, model and option set per stage. */
 export function readTargets(value: unknown, filePath: string, schemaVersion: unknown): Record<string, StageTarget> {
@@ -56,4 +57,38 @@ function readOptionStrings(value: unknown, filePath: string, stageId: string): R
     options[key] = item;
   }
   return options;
+}
+
+/** The targets of a freeze write: the written mapping, the resolved target per stage, and one target per role. */
+export interface ResolvedFreezeTargets {
+  readonly written: Record<string, Record<string, unknown>>;
+  readonly resolved: Record<string, StageTarget>;
+  readonly roleTargets: Record<string, StageTarget>;
+}
+
+/** Resolves every role stage of `workflow` against `config`. `resumePolicies` is null when none is configured. */
+export function resolveFreezeTargets(
+  workflow: WorkflowDocument,
+  resolve: {
+    config: Record<string, unknown>;
+    spec: ResolveSpecOptions;
+    resumePolicies: Record<string, unknown> | null;
+  },
+): ResolvedFreezeTargets {
+  const { config, spec, resumePolicies } = resolve;
+  const out: ResolvedFreezeTargets = { written: {}, resolved: {}, roleTargets: {} };
+  for (const stage of Object.values(workflow.stages)) {
+    if (!isRoleStage(stage)) continue;
+    const target = resolveStageSpec(config, stage, spec);
+    out.resolved[stage.id] = target;
+    out.roleTargets[stage.role] = target;
+    out.written[stage.id] = {
+      client: target.client,
+      model: target.model,
+      options: { ...target.options },
+      ...targetExtensionField(target),
+      ...(resumePolicies === null ? {} : { resume_policy: freezeStagePolicy(config, stage, target) }),
+    };
+  }
+  return out;
 }

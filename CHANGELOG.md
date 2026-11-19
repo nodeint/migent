@@ -11,6 +11,8 @@
   workflows and stages. ([#174](https://github.com/nodeint/migent/issues/174))
 - Config loading, `migent doctor`, and agent and role resolution accept, validate, and carry plugin-claimed keys on
   named agents, inline agents, and roles. ([#174](https://github.com/nodeint/migent/issues/174))
+- The session freeze records plugin-claimed keys on workflows, stages, resolved agents, and roles, and reads them
+  without the current extension catalog. ([#174](https://github.com/nodeint/migent/issues/174))
 
 ## 0.9.0
 

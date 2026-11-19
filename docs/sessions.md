@@ -87,6 +87,14 @@ The session-level files have distinct purposes:
   Agent sessions do not have this file. Its `config` key holds only registered
   config sections; frozen `roles`, `targets`, and `resume_policies` stay at the
   top level.
+- Plugin extension keys are frozen too, without a `schema_version` bump. `workflow` holds the workflow and stage keys,
+  flat. `targets.<stage>.extensions` holds the keys on the resolved agent, and `role_extensions` the keys on each role,
+  both grouped by plugin id. `extensions` records, for every plugin with a catalog entry at freeze time, its
+  extension `version` and the `keys` it owned per level; the lists can be empty. Each key is written only when it is
+  non-empty, so a freeze with no extensions is unchanged. Reading a freeze uses only these records: a value that the
+  current plugin schema would reject, or a plugin that is no longer registered, still reads, so `session show` keeps
+  working. A body key that is neither core nor listed in `extensions`, or a malformed extension mapping, makes the
+  freeze corrupt. A freeze written without `extensions` reads as having none.
 - The `plugins` config section freezes per entry. Every entry except an
   advisory plugin is frozen, but only an enabled entry must be registered and
   at the frozen version when the session resumes. Each freeze (start, prepared
