@@ -13,6 +13,7 @@ import {
 } from '@nodeint/migent-kernel';
 import { ConfigurationError } from '@nodeint/migent-kernel';
 import { log } from '@nodeint/migent-kernel';
+import type { ExtensionValues } from '@nodeint/migent-workflow';
 import { isRecord } from '@nodeint/migent-workflow';
 import {
   isRoleStage,
@@ -380,7 +381,20 @@ function sameList(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((item, index) => item === right[index]);
 }
 
+/** Claimed plugin keys, written flat after the core keys in the order the model holds them (catalog order). */
+function withExtensions(
+  mapped: Record<string, unknown>,
+  extensions: ExtensionValues | undefined,
+): Record<string, unknown> {
+  for (const keys of Object.values(extensions ?? {})) Object.assign(mapped, keys);
+  return mapped;
+}
+
 function workflowMapping(workflow: WorkflowDocument): Record<string, unknown> {
+  return withExtensions(coreWorkflowMapping(workflow), workflow.extensions);
+}
+
+function coreWorkflowMapping(workflow: WorkflowDocument): Record<string, unknown> {
   if (isWorkflowV2(workflow)) return version2WorkflowMapping(workflow);
   return {
     schema_version: 1,
@@ -504,7 +518,8 @@ function stageMapping(stage: StageSpec, versions: MappingVersions = {}): Record<
   if ((stage.runWhen !== null && stage.runWhen !== undefined)) {
     mapped.run_when = { changed_paths: stage.runWhen.changedPaths };
   }
-  return Object.assign(mapped, verifyFields(stage));
+  Object.assign(mapped, verifyFields(stage));
+  return withExtensions(mapped, stage.extensions);
 }
 
 function completionMapping(completion: WorkflowCompletion): Record<string, unknown> {

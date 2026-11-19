@@ -1,9 +1,13 @@
 import path from 'node:path';
 
+import type { ExtensionCatalog } from '@nodeint/migent-contracts';
+import { PLUGIN_EXTENSIONS } from '@nodeint/migent-contracts';
+
 import { buildArtifactsV7, outputOfArtifact, parseCompletion, parseTopLevelOutputs, validateVerifyPaths } from './artifacts.js';
 import { SCHEMA_V2, SCHEMA_V3, SCHEMA_V4_DOWNSTREAM, SCHEMA_V5, SCHEMA_V7_ARTIFACTS } from './constants.js';
 import { stageErrorPath, UNKNOWN_KEYS_ERROR_SCHEMA_VERSION, unknownWorkflowKeys, workflowErrorPath, workflowRuleCode } from './diagnostics.js';
 import { ConfigurationError } from './errors.js';
+import { groupExtensions, workflowExtensionIssues,type WorkflowParseOptions } from './extensions.js';
 import { conditionalStages, validateConditionalStages, validateStageGraph } from './graph.js';
 import type { ArtifactSpec, StageSpec, WorkflowDocument, WorkflowDownstream, WorkflowOutput, WorkflowRequires } from './model.js';
 import { isPathReference,SCHEMA_VERSION, VERIFY_ARTIFACT } from './model.js';
@@ -13,9 +17,13 @@ import { legacyStageModel, normalizeStageDecision, rejectRoleOnlyKeys, requiredS
 import { DOCUMENT_FIELD_SCHEMAS, downstreamProblems, requireContainer, requireValid,stageMappingProblem } from './structure.js';
 
 /** Parse a workflow mapping. `source` is stored on the document and is not read from `data`. */
-export function parseWorkflowMapping(data: Record<string, unknown>, source: string): WorkflowDocument {
+export function parseWorkflowMapping(
+  data: Record<string, unknown>,
+  source: string,
+  options: WorkflowParseOptions = {},
+): WorkflowDocument {
   try {
-    return parseWorkflowMappingUnchecked(data, source);
+    return parseWorkflowMappingUnchecked(data, source, options.extensions ?? PLUGIN_EXTENSIONS);
   } catch (error) {
     // Give every rule a stable code and an author-coordinate path without changing its message.
     if (!(error instanceof ConfigurationError) || (error.code !== undefined && error.path !== undefined)) throw error;
@@ -29,16 +37,24 @@ export function parseWorkflowMapping(data: Record<string, unknown>, source: stri
   }
 }
 
-function parseWorkflowMappingUnchecked(data: Record<string, unknown>, source: string): WorkflowDocument {
+function parseWorkflowMappingUnchecked(
+  data: Record<string, unknown>,
+  source: string,
+  catalog: ExtensionCatalog,
+): WorkflowDocument {
   const workflowId = documentId(data, source);
   const schemaVersion = documentVersion(data);
-  const unknown = unknownWorkflowKeys(data);
+  const unknown = unknownWorkflowKeys(data, catalog);
   validateDocumentKeys(data, schemaVersion, unknown);
+  const [claimedIssue] = workflowExtensionIssues(catalog, data);
+  if (claimedIssue !== undefined) {
+    throw new ConfigurationError(claimedIssue.message, { code: claimedIssue.code, path: claimedIssue.path });
+  }
   const version2 = schemaVersion >= SCHEMA_V2;
   const version7 = schemaVersion >= SCHEMA_V7_ARTIFACTS;
   const stages = parseStages(
     data.stages,
-    { version2, version3: schemaVersion >= SCHEMA_V3, version5: schemaVersion >= SCHEMA_V5, version7 },
+    { version2, version3: schemaVersion >= SCHEMA_V3, version5: schemaVersion >= SCHEMA_V5, version7, catalog },
   );
   const completion =
     !version2 && isRecord(data.completion) && Object.keys(stages).length > 0
@@ -49,8 +65,10 @@ function parseWorkflowMappingUnchecked(data: Record<string, unknown>, source: st
     : parseLegacyOutputs(data, stages, version2);
   const concurrency = version2 ? parseConcurrency(data) : undefined;
   validateVerifyPaths(stages, completion, version2);
+  const documentExtensions = groupExtensions(catalog, 'workflow', data);
   const document: WorkflowDocument = workflowDocumentSchema.parse({
     id: workflowId,
+    ...(Object.keys(documentExtensions).length === 0 ? {} : { extensions: documentExtensions }),
     stages,
     completion,
     requires: parseRequires(data.requires, version2),
@@ -212,6 +230,7 @@ interface ParseStagesVersions {
   readonly version3?: boolean;
   readonly version5?: boolean;
   readonly version7?: boolean;
+  readonly catalog?: ExtensionCatalog;
 }
 
 interface StageCommonFields {
@@ -332,7 +351,7 @@ function parseStageItem(
   stages: Readonly<Record<string, StageSpec>>,
   versions: ParseStagesVersions,
 ): { stage: StageSpec; item: Record<string, unknown> } {
-  const { version2 = false, version3 = false, version7 = false } = versions;
+  const { version2 = false, version3 = false, version7 = false, catalog = PLUGIN_EXTENSIONS } = versions;
   if (stageMappingProblem(rawItem) || !isRecord(rawItem)) throw new ConfigurationError('Workflow stage must be a mapping.');
   const item = version3 ? normalizeStageDecision(rawItem, version7) : rawItem;
   const stageId = requiredString(item.id, 'stages.id');
@@ -348,6 +367,8 @@ function parseStageItem(
   const stage = stageHasRole(item)
     ? parseRoleStage(item, common, versions)
     : parseVerifyStage(item, common, version2);
+  const claimed = groupExtensions(catalog, 'stage', item);
+  if (Object.keys(claimed).length > 0) stage.extensions = claimed;
   return { stage, item };
 }
 

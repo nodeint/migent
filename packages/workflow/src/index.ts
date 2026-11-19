@@ -33,6 +33,8 @@ export type {
   DraftUnit,
   WorkflowDraftParse,
 } from './draft/problems.js';
+export type { ExtensionIssue, ExtensionValues, WorkflowParseOptions } from './extensions.js';
+export { extensionIssues, groupExtensions, withoutOwnedKeys } from './extensions.js';
 export { conditionalReach, conditionalStages, dependencyClosure, routeListsStage, routeTargets } from './graph.js';
 export type { LoadWorkflowOptions } from './load.js';
 export {

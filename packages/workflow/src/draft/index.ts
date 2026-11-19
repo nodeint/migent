@@ -1,4 +1,7 @@
 
+import type { ExtensionCatalog } from '@nodeint/migent-contracts';
+import { PLUGIN_EXTENSIONS } from '@nodeint/migent-contracts';
+
 import { buildArtifactsV7 } from '../artifacts.js';
 import type { WorkflowCatalogEntry } from '../catalog.js';
 import { SCHEMA_V2, SCHEMA_V3, SCHEMA_V4_DOWNSTREAM, SCHEMA_V5, SCHEMA_V7_ARTIFACTS } from '../constants.js';
@@ -10,6 +13,7 @@ import type { DraftDownstreamEntry, DraftStage, DraftUnit, WorkflowDraftParse } 
 import { draftPathFor, DraftProblems, draftUnit } from '../draft/problems.js';
 import type { DraftStageContext } from '../draft/stage.js';
 import { collectStage, collectStringItems } from '../draft/stage.js';
+import { workflowExtensionIssues,type WorkflowParseOptions } from '../extensions.js';
 import type { WorkflowRequires } from '../model.js';
 import { SCHEMA_VERSION } from '../model.js';
 import { documentId, parseConcurrency, parseRequires, parseWorkflowMapping } from '../parse.js';
@@ -21,11 +25,16 @@ import { requiredString } from '../stage-fields.js';
  * failure handling differs. `document` is set only when nothing is incomplete, and it always comes
  * from `parseWorkflowMapping` so runtime parsing stays the one authority.
  */
-export function collectWorkflowDraft(data: Record<string, unknown>, source: string): WorkflowDraftParse {
+export function collectWorkflowDraft(
+  data: Record<string, unknown>,
+  source: string,
+  options: WorkflowParseOptions = {},
+): WorkflowDraftParse {
+  const catalog = options.extensions ?? PLUGIN_EXTENSIONS;
   const problems = new DraftProblems();
   const idUnit = draftUnit(() => documentId(data, source), problems, ['id']);
   const versionUnit = draftUnit(() => documentVersion(data), problems, ['schema_version']);
-  const unknownKeys = unknownWorkflowKeyEntries(data);
+  const unknownKeys = unknownWorkflowKeyEntries(data, catalog);
   const emptyResult = (schemaVersion: number): WorkflowDraftParse =>
     emptyDraftResult({ problems, source, id: idUnit, schemaVersion, unknownKeys });
   if (idUnit.state === 'invalid' || versionUnit.state === 'invalid') return emptyResult(0);
@@ -39,7 +48,10 @@ export function collectWorkflowDraft(data: Record<string, unknown>, source: stri
     return emptyResult(schemaVersion);
   }
   collectSectionVersionProblems(data, { schemaVersion, unknownKeys, problems });
-  return collectDraftBody(data, { source, problems, id: idUnit, schemaVersion, emptyResult });
+  for (const issue of workflowExtensionIssues(catalog, data)) {
+    problems.addMessage(issue.code, issue.message, issue.path);
+  }
+  return collectDraftBody(data, { source, problems, id: idUnit, schemaVersion, emptyResult, catalog });
 }
 
 interface DraftBodyContext {
@@ -48,11 +60,12 @@ interface DraftBodyContext {
   readonly id: DraftUnit<string>;
   readonly schemaVersion: number;
   readonly emptyResult: (schemaVersion: number) => WorkflowDraftParse;
+  readonly catalog: ExtensionCatalog;
 }
 
 /** Collects the stages and sections of a document whose id and schema version are readable. */
 function collectDraftBody(data: Record<string, unknown>, context: DraftBodyContext): WorkflowDraftParse {
-  const { source, problems, id: idUnit, schemaVersion, emptyResult } = context;
+  const { source, problems, id: idUnit, schemaVersion, emptyResult, catalog } = context;
   const { version2, version3, version5, version7 } = schemaFlags(schemaVersion);
   const rawStages: unknown[] = Array.isArray(data.stages) ? data.stages : [];
   const stagesDeclared = rawStages.length > 0;
@@ -86,7 +99,7 @@ function collectDraftBody(data: Record<string, unknown>, context: DraftBodyConte
     },
   );
 
-  return finishWorkflowDraft(data, {
+  return finishWorkflowDraft(data, { problems, catalog }, {
     ...emptyResult(schemaVersion),
     stagesDeclared,
     declaredStageIds,
@@ -96,7 +109,7 @@ function collectDraftBody(data: Record<string, unknown>, context: DraftBodyConte
     outputNames: outputs.names,
     outputsComplete: outputs.complete,
     catalogEntry: catalogEntryOfDraft(source, { id: idUnit, stagesDeclared, requires, downstream: downstream.entries }),
-  }, problems);
+  });
 }
 
 interface SchemaFlags {
@@ -173,12 +186,13 @@ function emptyDraftResult(parts: {
  */
 function finishWorkflowDraft(
   data: Record<string, unknown>,
+  context: { readonly problems: DraftProblems; readonly catalog: ExtensionCatalog },
   draft: WorkflowDraftParse,
-  problems: DraftProblems,
 ): WorkflowDraftParse {
+  const { problems, catalog } = context;
   if (problems.items.length === 0) {
     try {
-      return { ...draft, document: parseWorkflowMapping(data, draft.catalogEntry.file) };
+      return { ...draft, document: parseWorkflowMapping(data, draft.catalogEntry.file, { extensions: catalog }) };
     } catch (error) {
       problems.add(error, draftPathFor(error instanceof Error ? error.message : String(error), data));
     }

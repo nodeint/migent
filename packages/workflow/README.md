@@ -19,6 +19,7 @@ Behavior: [docs/workflows.md](../../docs/workflows.md).
 | Symbol | File | Purpose |
 | --- | --- | --- |
 | `parseWorkflowMapping` | `src/parse.ts` | Strict parse to `WorkflowDocument` |
+| `extensionIssues`, `groupExtensions`, `withoutOwnedKeys` | `src/extensions.ts` | Plugin-claimed keys: validate, group by owner, remove |
 | `collectWorkflowDraft` | `src/draft/` | Collect all draft problems |
 | `loadNamedWorkflow`, `loadWorkflowCatalog`, `loadWorkflowDocument` | `src/load.ts` | Load from `.migent/workflows` |
 | `checkWorkflowCatalog` | `src/catalog.ts` | Cross-workflow checks (ids, downstream) |

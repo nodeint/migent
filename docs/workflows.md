@@ -121,6 +121,20 @@ in an inline agent's `client.options`, or in a named agent. `migent migrate`
 renames `model` to `agent` and removes stage `options`, listing every option it
 removes so you can recreate them as an inline agent if needed.
 
+## Plugin keys
+
+A plugin can claim flat keys on the workflow and on each stage, next to the core keys. The claims are a static,
+core-owned catalog (`PLUGIN_EXTENSIONS` in `@nodeint/migent-contracts`); no plugin claims any key yet.
+
+- A claimed key is accepted at its level and its value is validated against the owner's schema. An invalid value
+  is reported at its own path, and `migent doctor` and the draft checks report every invalid value in one run.
+- A key that no plugin claims keeps the usual handling: an `unknown-key` error from `schema_version` 5, a warning
+  before. A near miss of a claimed key is suggested as "Did you mean".
+- A plugin cannot claim a core or removed key, and two plugins cannot claim the same key on one level. The catalog
+  is checked when it loads.
+- Keys of a plugin disabled with `plugins.<id>.enabled: false` are still validated and are then ignored.
+- Plugin keys are kept when a workflow is rendered or frozen.
+
 ## Decisions and routes
 
 A decision stage declares each choice with a `navigate` destination and
