@@ -2,76 +2,50 @@
 
 ## Unreleased
 
+## 0.9.0
+
 ### Breaking
 
-- The plugin contract changes shape, in the first step of the shared `MigentContext` API. A plugin is
-  `{ manifest, activate }` instead of `{ manifest, handlers }`. The manifest gains `apiVersion` and `uses`, and
-  `uses.agents` replaces `capabilities: ['invokeAgent']`. The `output` intent becomes the `artifact` proposal, which
-  an invocation may propose at most once and which must match a `uses.artifacts` claim. `plugin.failed` gains the
-  `stale` reason, and `plugin.decision` and `plugin.failed` gain `notes`. No plugin is registered, so no session
-  changes. ([#166](https://github.com/nodeint/migent/issues/166))
-
-### Changed
-
-- Plugins run in configuration order instead of id order, and `plugins.frozen` and `session show` list them in chain
-  order. A registered `defaultEnabled` plugin that `plugins:` does not name runs first with empty options, is
-  pinned by new freezes and `--refresh-workflow`, and runs implicitly (`source: implicit` in `session show`) in a
-  session frozen before it was registered. No default plugin is registered, so no session changes.
-  ([#166](https://github.com/nodeint/migent/issues/166))
-
-- Session metrics are written by the first-party metrics plugin to `plugins/metrics/metrics.json` instead of by core
-  to the root `metrics.json`, on both normal completion and `session complete`. Sessions without a frozen workflow no
-  longer get metrics. `session metrics` reads the new path first and falls back to the legacy root file. If plugin
-  selection fails, `session complete` completes the session without plugins and warns on stderr.
-  ([#168](https://github.com/nodeint/migent/issues/168))
+- A plugin is now `{ manifest, activate }` instead of `{ manifest, handlers }`, the manifest gains `apiVersion` and
+  `uses` (`uses.agents` replaces `capabilities: ['invokeAgent']`), and the `output` intent becomes the `artifact`
+  proposal. Migrate each plugin to `activate` and declare its `uses`, including a `uses.artifacts` claim for each file.
+  ([#169](https://github.com/nodeint/migent/pull/169))
 
 ### Added
 
-- Durable plugin artifacts and audit. A plugin can observe a new `session.completed` event, and artifact writes
-  check that the session lock is still held. `session show` lists files under `plugins/<id>/` (not `calls/`) that
-  have no applied `plugin.decision`, or whose content differs from it, as `unrecorded`. The engine exposes
-  `withPluginScope`, which settles every invocation before the caller releases the lock, and `session` exposes
-  `completeManuallyHeld` for a caller that already holds it. Manual completion is unchanged. No plugin is
-  registered, so no session changes. ([#166](https://github.com/nodeint/migent/issues/166))
-- Session reads and freshness. A plugin that declares `uses.session` reads `call.session.snapshot()` (basis seq,
-  status, executions, events, workflow, normalized turns, exit anomalies) and `call.session.resumeFacts(executionId)`;
-  a read after the invocation settles rejects without reading. The core records what each invocation read, and an
-  operation may declare an `evidence` fingerprint (`agent.turn` declares none). When a read changed, or a `fresh`
-  artifact's session moved, the result is discarded and the pass or invocation re-runs once per operation cycle or
-  trigger; a second change records `plugin.failed` with reason `stale` and the value continues unmodified. A
-  discarded interceptor proposal is recorded as `rejected` (`stale`), and a retried handler keeps its first attempt's
-  agent calls. Plugin
-  events never make evidence stale. No plugin is registered, so no session changes.
-  ([#166](https://github.com/nodeint/migent/issues/166))
-- Operation interception. A plugin registers `operations.intercept('agent.turn', { before, after })`, and the
-  runtime runs the interceptors of an operation in chain order around its handler. `agent.turn` lets a `before`
-  interceptor patch `prompt`; an undeclared field, an invalid patch, or a failing, timed-out or cancelled
-  interceptor leaves the value unchanged and records `plugin.decision` (`rejected`) or `plugin.failed`, and
-  `on_error: stop` and `fail` create the existing plugin hold. No plugin is registered, so no session changes.
-  ([#166](https://github.com/nodeint/migent/issues/166))
-- Plugin host core. The `plugins` config section is registered: sessions freeze it per entry, record a
-  `plugins.frozen` event at every freeze, and check the frozen plugins on resume, and `migent doctor` validates the
-  entries against the plugin registry. Registered plugins run at `session.started`, `execution.finished` and
-  `session.stopped`; the core validates and applies their intents, and every failure follows the `ignore`, `stop` or
-  `fail` policy. The plugin manifest, hook, intent and event contracts and the leaf package
-  `@nodeint/migent-plugins` with an empty registry are new. A plugin that declares `invokeAgent` can run one
-  provider turn, stopped on timeout or cancellation. `session show` gains a `plugins` section (active set,
-  invocations, failures, holds, interrupted invocations) and `session follow` streams `plugin.*` records.
-  Without a `plugins` section, behavior is unchanged.
-  ([#150](https://github.com/nodeint/migent/issues/150))
+- Plugin host: the `plugins` config section is frozen per session, checked on resume and validated by `migent doctor`,
+  and registered plugins run at `session.started`, `execution.finished` and `session.stopped`.
+  `session show` gains a `plugins` section and `session follow` streams `plugin.*` records.
+  ([#164](https://github.com/nodeint/migent/pull/164))
+- Operation interception: a plugin registers `operations.intercept('agent.turn', { before, after })` and a `before`
+  interceptor can patch `prompt`. Invalid or failing interceptors leave the value unchanged and follow the plugin
+  failure policy. ([#169](https://github.com/nodeint/migent/pull/169))
+- Plugins can read the session through `call.session` with freshness checks and observe a new `session.completed`
+  event. Plugin artifacts are durable, and `session show` lists unmatched ones as `unrecorded`.
+  ([#169](https://github.com/nodeint/migent/pull/169))
+
+### Changed
+
+- Session metrics are now written by the first-party `metrics` plugin to `plugins/metrics/metrics.json` instead of the
+  root `metrics.json`, on normal completion and `session complete`. `session metrics` reads the new path first and
+  falls back to the legacy root file. ([#177](https://github.com/nodeint/migent/pull/177))
+- Sessions without a frozen workflow no longer get metrics, and if plugin selection fails, `session complete`
+  completes the session without plugins and warns on stderr. ([#177](https://github.com/nodeint/migent/pull/177))
+- Plugins run in configuration order instead of id order. A registered `defaultEnabled` plugin, such as `metrics`,
+  runs first when `plugins:` does not name it, including implicitly in sessions frozen before it was registered.
+  ([#169](https://github.com/nodeint/migent/pull/169))
 
 ### Fixed
 
-- A stage prompt lists decision-scoped artifacts under their own lead, `Write these only for the decision you
-  choose`, so a reviewer that chooses `revise` is no longer told to write a file that only another decision needs.
-  ([#163](https://github.com/nodeint/migent/issues/163))
 - A workflow file that exists but fails validation is now reported as `Workflow <id> is invalid` with the validation
-  error, instead of `Workflow not found`. A `downstream` entry naming such a file reports that it failed to load.
-  ([#162](https://github.com/nodeint/migent/issues/162))
-- Agent stage prompts now always list the execution artifact directory, even when the stage declares no artifact,
-  and point supporting files there. ([#172](https://github.com/nodeint/migent/pull/172))
+  error, instead of `Workflow not found`. ([#170](https://github.com/nodeint/migent/pull/170))
+- Agent stage prompts now always list the execution artifact directory, even when the stage declares no artifact.
+  ([#172](https://github.com/nodeint/migent/pull/172))
 - The resume gate now measures cache age from the source execution's last provider activity instead of its end time.
   ([#178](https://github.com/nodeint/migent/pull/178))
+- A stage prompt lists decision-scoped artifacts under their own lead, so a reviewer that chooses `revise` is no
+  longer told to write a file that only another decision needs.
+  ([#179](https://github.com/nodeint/migent/pull/179))
 
 ## 0.8.0
 
@@ -160,35 +134,9 @@
   `session_id` and `prior_session_id` are now written as quoted strings in `manifest.yaml`, and the manifest reader also
   accepts an unquoted integer. A role run without a session id (library use) now also gets a numeric id.
 
-## 0.5.5
-
-### Added
-
-- Stage replies that the agent can fix get one correction turn per failure kind instead of failing at once:
-  a response-contract violation, a missing or empty required artifact or completion output, and an unusable question
-  file.
-  Exhausted corrections fail the stage with `response_contract_invalid`, `stage_output_missing` or
-  `question_file_invalid`. `execution.json` records them under `corrections`;
-  older `question_correction` entries are still read. New events: `response.contract_invalid`, `stage.output_missing`.
-
-### Changed
-
-- **Response protocol 3.** A stage now reports its outcome (`complete`, `blocked` or `question`) by writing one JSON
-  file, `handoff.json`, in its execution directory, instead of `status:`/`decision:`/`blocker:` header lines plus a
-  separate `question-request.json`. The response text is a free-form report.
-  An unusable handoff (missing, empty, not JSON, not matching the schema, a decision the stage does not allow, or a
-  question on a stage without `ask: human`) gets one correction turn, recorded as `corrections.handoff`, then fails with
-  `handoff_file_invalid`. New event: `handoff.file_invalid`.
-  The handoff document's JSON Schema is published as `HandoffDocument` in `@nodeint/migent-contracts`.
-  A conversation keeps the protocol it started with:
-  existing sessions finish their conversations on protocol 2 (headers and `question-request.json`, with the earlier
-  corrections), and `execution.json` records `response_protocol`.
-  Only a stage that starts with no source execution uses protocol 3.
-  Custom clients and scripts that fake a stage reply must now write `handoff.json`.
-- The missing-status error lists every status the stage allows, including `question` when the stage has `ask: human`.
-
 ## Older versions
 
+- [0.5.5](https://github.com/nodeint/migent/releases/tag/v0.5.5)
 - [0.5.4](https://github.com/nodeint/migent/releases/tag/v0.5.4)
 - [0.5.3](https://github.com/nodeint/migent/releases/tag/v0.5.3)
 - [0.5.2](https://github.com/nodeint/migent/releases/tag/v0.5.2)
