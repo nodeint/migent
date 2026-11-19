@@ -6,8 +6,8 @@ import type { ExtensionCatalog, PluginManifest, PluginRegistry } from '@nodeint/
 import { PLUGIN_EXTENSIONS } from '@nodeint/migent-contracts';
 import type { ClientRegistry } from '@nodeint/migent-kernel';
 import { ConfigurationError, loadWorkspaceConfig, pluginEntryIssues, registryManifests, resolvePluginTarget } from '@nodeint/migent-kernel';
-import type { FrozenExtensions, InspectedPlugin, PluginsInspection } from '@nodeint/migent-session';
-import { effectiveConfigSection, readParsedEvents, readWorkflowFreeze, WORKFLOW_FREEZE_FILE } from '@nodeint/migent-session';
+import type { FrozenExtensions, InspectedPlugin, PluginsInspection, ReadRoleFreeze, WorkflowFreeze } from '@nodeint/migent-session';
+import { effectiveConfigSection, readParsedEvents, readRoleFreeze, readWorkflowFreeze, WORKFLOW_FREEZE_FILE } from '@nodeint/migent-session';
 import { isRecord } from '@nodeint/migent-workflow';
 
 import { declaresAgent, defaultEnabledIds, isEnabledEntry, pluginClassifier } from './freeze.js';
@@ -90,7 +90,9 @@ function implicitDefaults(
 
 const refreshHint = (file: string): string => `Run: migent session continue --refresh-workflow (rewrites ${file}).`;
 
-function assertFreezeMatches(sessionDirectory: string, frozen: FrozenRecord | null): FrozenRecord {
+function assertFreezeMatches(sessionDirectory: string, frozen: FrozenRecord | null, role: boolean): FrozenRecord {
+  // A role freeze lives in the event itself and was checked against its hash when it was read.
+  if (role && frozen !== null) return frozen;
   const file = path.join(sessionDirectory, WORKFLOW_FREEZE_FILE);
   if (frozen === null) {
     throw new ConfigurationError(`${file} has a plugins section but the session recorded no plugins.frozen event. ${refreshHint(WORKFLOW_FREEZE_FILE)}`, { code: 'plugins-freeze-missing' });
@@ -268,6 +270,12 @@ function readLiveConfig(workspace: string, required: boolean): Record<string, un
   }
 }
 
+/** The freeze a session's plugins come from: its role freeze, else its workflow freeze; `role` says which. */
+function readFreeze(sessionDirectory: string): { freeze: ReadRoleFreeze | WorkflowFreeze | null; role: boolean } {
+  const role = readRoleFreeze(sessionDirectory);
+  return role === null ? { freeze: readWorkflowFreeze(sessionDirectory), role: false } : { freeze: role, role: true };
+}
+
 /**
  * Which plugin entries run in an existing session, computed before any dispatch. Checks the freeze against the
  * recorded `plugins.frozen`, then each enabled frozen entry against the registry, then classifies and validates
@@ -284,7 +292,7 @@ export function selectPlugins(
     enforceExtensions?: boolean;
   },
 ): PluginSelection {
-  const freeze = readWorkflowFreeze(sessionDirectory);
+  const { freeze, role } = readFreeze(sessionDirectory);
   if (freeze === null) return NO_PLUGINS;
   const gate = resumeGate(freeze, sessionDirectory, context);
   assertExtensionOwners(gate);
@@ -295,7 +303,7 @@ export function selectPlugins(
   if (frozenSection === null && !Object.hasOwn(config, 'plugins') && defaults.length === 0) return NO_PLUGINS;
   const frozen = frozenSection === null
     ? null
-    : assertFreezeMatches(sessionDirectory, lastFrozenRecord(sessionDirectory));
+    : assertFreezeMatches(sessionDirectory, lastFrozenRecord(sessionDirectory), role);
   const classify = pluginClassifier(context.registry, frozenSection?.liveEntries ?? []);
   const effective = effectiveConfigSection(freeze, config, { key: 'plugins', classifiers: { plugins: classify } });
   const entries = effective?.kind === 'per_entry' ? effective : { entries: {}, live: [], addedAfterFreeze: [] };
@@ -343,7 +351,7 @@ function resolveLive(
   sessionDirectory: string,
   registry: PluginRegistry,
 ): ResolvedLive | null {
-  const freeze = readWorkflowFreeze(sessionDirectory);
+  const freeze = readRoleFreeze(sessionDirectory) ?? readWorkflowFreeze(sessionDirectory);
   if (freeze === null) return null;
   const section = freeze.config.plugins?.kind === 'per_entry' ? freeze.config.plugins : null;
   const defaults = defaultEnabledIds(registry);

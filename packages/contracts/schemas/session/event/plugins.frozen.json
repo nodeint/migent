@@ -95,6 +95,71 @@
               }
             }
           }
+        },
+        "role_freeze": {
+          "type": "object",
+          "required": [
+            "plugins",
+            "target",
+            "extensions"
+          ],
+          "properties": {
+            "plugins": {
+              "type": "object",
+              "required": [
+                "entries",
+                "live_entries"
+              ],
+              "properties": {
+                "entries": {
+                  "type": "object",
+                  "patternProperties": {
+                    "^.*$": {}
+                  }
+                },
+                "live_entries": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "target": {
+              "type": "object",
+              "required": [
+                "client",
+                "model"
+              ],
+              "properties": {
+                "client": {
+                  "type": "string"
+                },
+                "model": {
+                  "type": "string"
+                },
+                "extensions": {
+                  "type": "object",
+                  "patternProperties": {
+                    "^.*$": {}
+                  }
+                },
+                "role_extensions": {
+                  "type": "object",
+                  "patternProperties": {
+                    "^.*$": {}
+                  }
+                }
+              }
+            },
+            "extensions": {
+              "type": "object",
+              "patternProperties": {
+                "^.*$": {}
+              }
+            }
+          },
+          "description": "Plugin selection, resolved target and extension records frozen for a role session."
         }
       }
     }

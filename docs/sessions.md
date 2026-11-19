@@ -102,6 +102,11 @@ The session-level files have distinct purposes:
   freeze hash and the entry versions and pinned agent targets. A freeze file
   that no longer matches the last event, or a missing or upgraded plugin, stops
   the resume with exit code 2.
+- A role session has no freeze file. Before its first execution it records one `plugins.frozen` event whose
+  `role_freeze` object holds the frozen plugin entries, the resolved client, model and extension keys, and the
+  extension versions; `freeze_hash` is the SHA-256 of that object. A role session that already has an execution
+  and no `role_freeze` (an older session) records none and runs as before. A role run then reads its plugins from
+  `role_freeze`, so a later config edit does not change them.
 - The resume gate checks extension owners first. Every plugin that owns at least one frozen extension key, whether
   enabled, disabled, or advisory, must still be registered (`extension-unregistered`) and declare the frozen
   extension version (`extension-version-changed`). Both errors name the plugin and the session, and say to use the

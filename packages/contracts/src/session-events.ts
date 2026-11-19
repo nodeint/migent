@@ -154,6 +154,18 @@ const agentCall = Type.Object({
 const pluginNote = Type.Object({ level: Type.Union([Type.Literal('info'), Type.Literal('warn')]), text: str() });
 const agentCalls = { agent_calls: opt(Type.Array(agentCall)), notes: opt(Type.Array(pluginNote)) };
 
+/**
+ * The freeze of a role session, recorded once before its first execution (a workflow session writes a freeze file
+ * instead). `freeze_hash` is the SHA-256 of the canonical JSON of this object.
+ */
+const roleFreeze = Type.Object({
+  plugins: Type.Object({ entries: obj(), live_entries: Type.Array(str()) }),
+  target: Type.Object({
+    client: str(), model: str(), extensions: opt(obj()), role_extensions: opt(obj()),
+  }),
+  extensions: obj(),
+}, { description: 'Plugin selection, resolved target and extension records frozen for a role session.' });
+
 /** `plugin.*` and `plugins.frozen`. Only `plugin.failed` folds: a `stop` or `fail` failure is a plugin hold. */
 export const PLUGIN_EVENTS = {
   'plugin.hook_invoked': lifecycle('plugin.hook_invoked', {
@@ -181,6 +193,7 @@ export const PLUGIN_EVENTS = {
     plugins: Type.Array(Type.Object({
       id: str(), enabled: Type.Boolean(), advisory: Type.Boolean(), version: nullableStr(), target: nullable(obj()),
     })),
+    role_freeze: opt(roleFreeze),
   }),
 };
 

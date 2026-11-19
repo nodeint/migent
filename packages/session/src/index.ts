@@ -28,6 +28,8 @@ export {
 } from './query.js';
 export type { ResumeFacts } from './resume-facts.js';
 export { resumeFacts } from './resume-facts.js';
+export type { ReadRoleFreeze, RoleFreeze, RoleFreezeSource } from './role-freeze.js';
+export { ensureRoleFreeze, readRoleFreeze } from './role-freeze.js';
 export type { DeleteHooks, DeleteOutcome, DeletionPlan, DeletionSelection, PlannedSession, Refusal } from './session-delete.js';
 export { deletePlannedSession, DELETING_DIRNAME, planSessionDeletion, sessionsRootReal, setDeleteHooks, sweepDeletionLeftovers } from './session-delete.js';
 export type { RecordedDiagnostics } from './session-diagnostics.js';

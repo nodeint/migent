@@ -1,15 +1,29 @@
 import type { ExtensionCatalog, PluginExtensionReads } from '@nodeint/migent-contracts';
 import { extensionKeys, PLUGIN_EXTENSIONS } from '@nodeint/migent-contracts';
 import { loadWorkspaceConfig } from '@nodeint/migent-kernel';
-import { readWorkflowFreeze } from '@nodeint/migent-session';
+import type { FrozenExtensions } from '@nodeint/migent-session';
+import { readRoleFreeze, readWorkflowFreeze } from '@nodeint/migent-session';
+import type { ExtensionValues } from '@nodeint/migent-workflow';
 import { isRecord, withoutOwnedKeys } from '@nodeint/migent-workflow';
+
+/** The fields of a freeze that extension reads use, shared by a workflow freeze and a role freeze. */
+interface ExtensionSource {
+  readonly workflow: {
+    readonly extensions?: ExtensionValues | undefined;
+    readonly stages: Readonly<Record<string, { readonly extensions?: ExtensionValues | undefined }>>;
+  };
+  readonly extensions: FrozenExtensions;
+}
 
 /**
  * The frozen extension keys of one plugin, read from the session freeze at call time and never from live files.
  * A missing freeze reads as having no keys; a corrupt one throws.
  */
 function frozenExtensionReads(sessionDirectory: string, plugin: string): PluginExtensionReads {
-  const read = <T>(pick: (freeze: NonNullable<ReturnType<typeof readWorkflowFreeze>>) => T): T | null => {
+  // A role session keeps its freeze in the event log and has no workflow; a workflow session uses its freeze file.
+  const read = <T>(pick: (freeze: ExtensionSource) => T): T | null => {
+    const role = readRoleFreeze(sessionDirectory);
+    if (role !== null) return pick({ workflow: { extensions: undefined, stages: {} }, extensions: role.extensions });
     const freeze = readWorkflowFreeze(sessionDirectory);
     return freeze === null ? null : pick(freeze);
   };

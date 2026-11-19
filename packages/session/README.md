@@ -40,6 +40,7 @@ diagnostics. Depends on the kernel. Internal; no stable public API. Behavior:
 | `sessionLockState`, `withNumberingLock` | `src/session-lock.ts` | Read-only lock state; workspace numbering lock |
 | `retireSessionNumber`, `readLastIdMark` | `src/session-id.ts` | `.last-id` high-water mark so deleted numbers are never reissued |
 | `loadFrozenWorkflow`, `writeWorkflowFreeze` | `src/session-freeze.ts` | Frozen configuration |
+| `ensureRoleFreeze`, `readRoleFreeze` | `src/role-freeze.ts` | A role session's freeze: one `plugins.frozen` event with a `role_freeze` object, recorded before its first execution; no freeze file |
 | `effectiveConfigSection`, `EntryClassifiers` | `src/freeze-config-sections.ts` | Freezes registered config sections under the freeze key `config` and resolves one on resume. A `per_entry` section needs a classifier map from the caller (engine passes none while no section exists); a missing one throws. Reports `addedAfterFreeze` and leaves the decision to the caller |
 | `applyPluginHolds`, `unresolvedPluginHolds`, `PLUGIN_HOLD_RESOLUTION` | `src/session-fold-holds.ts` | Folds `plugin.failed` (`stop`/`fail`) into `status.json` `plugin_holds`; `session.active` with `from: 'plugin_hold'` resolves them |
 | `readPluginsInspection` | `src/plugin-inspection.ts` | Derives the `session show` `plugins` section from `plugins.frozen` and `plugin.*`; null without plugin data |

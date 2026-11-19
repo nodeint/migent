@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { type AgentToolRunner, gateRoleResume, type RolePolicy, type RunResult, selectRolePolicy, storedRolePolicy } from '@nodeint/migent-engine';
 import { buildStageReplyPrompt, loadRoleResponsibilities, loadWorkspaceConfig, prependRoleInstructions } from '@nodeint/migent-kernel';
-import { type HumanInput, type QuestionAnswerRecord, SessionStore, watchSnapshot } from '@nodeint/migent-session';
+import { type HumanInput, type QuestionAnswerRecord, readRoleFreeze, SessionStore, watchSnapshot } from '@nodeint/migent-session';
 
 import { formatResumeDecision, printNotice } from '../display.js';
 import { EXIT_RESUME_EXPIRED } from '../exits.js';
@@ -19,9 +19,11 @@ export async function gateRole(
 ): Promise<RoleGate> {
   if (sourceExecutionId === null) return { verdict: 'resume', stamp: null, skipped: null };
   const { workspace, sessionId, role, runner, profile } = scope;
+  // A session with a role freeze gates on the frozen client and model, not on this run's live profile.
+  const frozen = readRoleFreeze(path.join(workspace, '.migent', 'sessions', sessionId))?.target ?? profile;
   const gated = await gateRoleResume({
     store: new SessionStore(workspace), workspace, sessionId, role, sourceExecutionId, clients: runner.registry,
-    target: { client: profile.client, model: profile.model },
+    target: { client: frozen.client, model: frozen.model }, interceptors: runner.interceptors,
   });
   const skipped = gated.verdict === 'fresh' ? { source_execution_id: sourceExecutionId, reason: 'expired' as const } : null;
   return { ...gated, skipped };

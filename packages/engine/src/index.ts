@@ -19,6 +19,7 @@ export {
 } from './provider-events.js';
 export type { RoleGateRequest, RolePolicy } from './resume-role.js';
 export { gateRoleResume, selectRolePolicy, storedRolePolicy } from './resume-role.js';
+export { ensureRoleSessionFreeze, withRolePluginScope } from './role-scope.js';
 export type { View, WorkflowSourceKind } from './views.js';
 export {
   getAgentView,

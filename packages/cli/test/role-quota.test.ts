@@ -94,9 +94,10 @@ test('a single verify-exhausted role result returns 1', async () => {
     reset_at: '',
     client: 'fake',
   };
-  const runner = {
-    run: async () => result,
-  } as unknown as AgentToolRunner;
+  // A role run reads the client and plugin registries for its freeze and plugin scope.
+  const runner = Object.assign(new AgentToolRunner(registryOf({ fake: new ScriptedClient([]) }), 10), {
+    run: () => Promise.resolve(result),
+  });
   try {
     expect(await dispatchAgent(root, { role: 'reviewer', prompt: 'Review', runner })).toBe(1);
   } finally {

@@ -16,7 +16,7 @@ export function differingKeys(left: Record<string, unknown>, right: Record<strin
   return different;
 }
 
-function canonical(value: unknown): string {
+export function canonical(value: unknown): string {
   return JSON.stringify(sortValue(value));
 }
 
