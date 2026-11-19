@@ -65,6 +65,7 @@ export {
   SessionLock,
   sessionLockAlive,
   SessionLockHeldError,
+  sessionLockHeldLocally,
   sessionLockState,
   withNumberingLock,
 } from './session-lock.js';

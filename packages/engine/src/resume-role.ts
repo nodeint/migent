@@ -5,6 +5,7 @@ import { isRecord } from '@nodeint/migent-workflow';
 
 import { gateResume, type GateVerdict } from './resume-gate.js';
 import { readExecutionJson } from './run-facts.js';
+import type { InterceptorChain } from './runtime/interception.js';
 
 /** The policy a role session was created with: its name and the map it was chosen from. */
 export interface RolePolicy {
@@ -45,17 +46,24 @@ export interface RoleGateRequest {
   readonly sourceExecutionId: string;
   readonly clients: ClientRegistry;
   readonly stageOnExpired?: OnExpired | null;
+  /** The frozen client and model of the role session. */
+  readonly target: { readonly client: string; readonly model: string };
+  /** The host's interceptors; the role gate runs with none unless the caller supplies them. */
+  readonly interceptors?: InterceptorChain | undefined;
 }
 
 /** The gate for a role session, before `runner.run`. The target stage of a role session is its role. */
-export function gateRoleResume(request: RoleGateRequest): { verdict: GateVerdict; stamp: RolePolicy | null } {
+export async function gateRoleResume(
+  request: RoleGateRequest,
+): Promise<{ verdict: GateVerdict; stamp: RolePolicy | null }> {
   const { store, workspace, sessionId, role, sourceExecutionId, clients } = request;
   const context = store.executionContext(sessionId, sourceExecutionId);
   const stored = context === null ? null : storedRolePolicy(context.directory);
   if (stored === null) return { verdict: 'resume', stamp: null };
-  const { verdict } = gateResume({
+  const { verdict } = await gateResume({
     store, workspace, sessionId, stageId: role, sourceExecutionId,
     policy: stored.policy, stageOnExpired: request.stageOnExpired ?? null, clients,
+    path: 'role', target: request.target, interceptors: request.interceptors,
   });
   return { verdict, stamp: stored.stamp };
 }

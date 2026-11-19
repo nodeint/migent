@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { frozenResumePolicy, readWorkflowFreeze, type SessionStore } from '@nodeint/migent-session';
+import { frozenResumePolicy, frozenStageTarget, readWorkflowFreeze, type SessionStore } from '@nodeint/migent-session';
 import { isRoleStage } from '@nodeint/migent-workflow';
 
 import type { ExecuteRun } from './dispatch.js';
@@ -30,11 +30,11 @@ function cutOffPrompt(store: SessionStore, sessionId: string, executionId: strin
  * `completed_at` it was given when it was cancelled. Only role executions of a stage with a frozen policy
  * are judged; the rest reopen as before.
  */
-export function judgeCancelled(
+export async function judgeCancelled(
   run: Pick<ExecuteRun, 'workspace' | 'workflow' | 'sessionId' | 'runner' | 'store'>,
   latestPerStage: boolean,
   onlyStage: string | null = null,
-): ReopenVerdicts {
+): Promise<ReopenVerdicts> {
   const { workspace, workflow, sessionId, runner, store } = run;
   const freeze = readWorkflowFreeze(path.join(workspace, '.migent', 'sessions', sessionId));
   const skip = new Set<string>();
@@ -44,9 +44,11 @@ export function judgeCancelled(
     const stage = workflow.stages[item.stageId];
     const policy = frozenResumePolicy(freeze, item.stageId);
     if (stage === undefined || !isRoleStage(stage) || policy === null) continue;
-    const { verdict } = gateResume({
+    const { client, model } = frozenStageTarget(freeze, item.stageId);
+    const { verdict } = await gateResume({
       store, workspace, sessionId, stageId: item.stageId, sourceExecutionId: item.executionId,
       policy, stageOnExpired: stage.onExpired, clients: runner.registry,
+      path: 'reopen', target: { client, model }, interceptors: runner.interceptors,
     });
     if (verdict === 'resume') continue;
     skip.add(item.executionId);

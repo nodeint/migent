@@ -13,14 +13,15 @@ import type { ContinueState } from './agent-continue.js';
 export type RoleGate = { verdict: 'resume' | 'fresh' | 'ask'; stamp: RolePolicy | null; skipped: { source_execution_id: string; reason: 'expired' } | null };
 
 /** The resume gate for a role session, before `runner.run`. A session created without a policy is never gated. */
-export function gateRole(
-  scope: { workspace: string; sessionId: string; role: string; runner: AgentToolRunner },
+export async function gateRole(
+  scope: { workspace: string; sessionId: string; role: string; runner: AgentToolRunner; profile: AgentProfile },
   sourceExecutionId: string | null,
-): RoleGate {
+): Promise<RoleGate> {
   if (sourceExecutionId === null) return { verdict: 'resume', stamp: null, skipped: null };
-  const { workspace, sessionId, role, runner } = scope;
-  const gated = gateRoleResume({
+  const { workspace, sessionId, role, runner, profile } = scope;
+  const gated = await gateRoleResume({
     store: new SessionStore(workspace), workspace, sessionId, role, sourceExecutionId, clients: runner.registry,
+    target: { client: profile.client, model: profile.model },
   });
   const skipped = gated.verdict === 'fresh' ? { source_execution_id: sourceExecutionId, reason: 'expired' as const } : null;
   return { ...gated, skipped };
@@ -91,15 +92,15 @@ function cutOffText(scope: { workspace: string; sessionId: string }, executionId
 }
 
 /** One verdict per cancelled execution, decided before any of them is reopened. */
-export function judgeRoleCancelled(
-  scope: { workspace: string; sessionId: string; role: string; runner: AgentToolRunner },
+export async function judgeRoleCancelled(
+  scope: { workspace: string; sessionId: string; role: string; runner: AgentToolRunner; profile: AgentProfile },
   cancelled: readonly { executionId: string }[],
-): RoleCancelledVerdicts {
+): Promise<RoleCancelledVerdicts> {
   const skip = new Set<string>();
   const fresh: { executionId: string; text: string }[] = [];
   let asked = false;
   for (const item of cancelled) {
-    const { verdict } = gateRole(scope, item.executionId);
+    const { verdict } = await gateRole(scope, item.executionId);
     if (verdict === 'resume') continue;
     skip.add(item.executionId);
     if (verdict === 'ask') asked = true;

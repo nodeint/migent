@@ -76,7 +76,8 @@ async function dispatchLocked(context: {
     if (resume.cancelled) return continueCancelledExecutions(workspace, sessionId, scope);
     // The answer is recorded before the gate, so an `ask` stop keeps it for the decision.
     const { text: input, human } = dispatchInput(workspace, sessionId, args);
-    const gated = gateRole({ workspace, sessionId, role: args.role, runner }, resume.executionId);
+    const gateScope = { workspace, sessionId, role: args.role, runner, profile: target };
+    const gated = await gateRole(gateScope, resume.executionId);
     if (gated.verdict === 'ask') return roleResumeExpired(workspace, sessionId);
     const prompt = gated.verdict === 'fresh'
       ? freshRolePrompt({ workspace, sessionId, role: args.role }, input)
@@ -228,7 +229,8 @@ async function continueLocked(
     }
     // The answer is recorded before the gate, so an `ask` stop leaves it saved and the decision consumes it once.
     const recordedAnswer = recordAnswer(store, { sessionId: args.sessionId, state, explicitReply: args.reply });
-    const gated = gateRole({ workspace, sessionId: args.sessionId, role, runner }, resumeSource(state, latest));
+    const gateScope = { workspace, sessionId: args.sessionId, role, runner, profile };
+    const gated = await gateRole(gateScope, resumeSource(state, latest));
     if (gated.verdict === 'ask') return roleResumeExpired(workspace, args.sessionId);
     const next = continueTurn(
       { workspace, store, sessionId: args.sessionId, explicitReply: args.reply, recordedAnswer },
@@ -266,7 +268,8 @@ async function continueCancelledExecutions(
 ): Promise<RunResult[] | number> {
   const { role, runner, profile } = scope;
   const store = new SessionStore(workspace);
-  const verdicts = judgeRoleCancelled({ workspace, sessionId, role, runner }, store.reopenableCancelled(sessionId));
+  const gateScope = { workspace, sessionId, role, runner, profile };
+  const verdicts = await judgeRoleCancelled(gateScope, store.reopenableCancelled(sessionId));
   const reopened = store.reopenCancelledExecutions(sessionId, false, { skip: verdicts.skip });
   for (const item of reopened) {
     log(`session ${sessionId} was cancelled during ${item.executionId}. Resuming that execution.`);

@@ -343,7 +343,7 @@ export async function dispatchExecuteStage(
     ? frozenStageTarget(freeze, stageId)
     : resolveStageTarget(workspace, { workflowId, stageId }, { registry: runner.registry });
   const gate = dispatch.judgedFresh === undefined
-    ? gateStageResume(run, { stageId, stageSpec, freeze })
+    ? await gateStageResume(run, { stageId, stageSpec, freeze })
     : { verdict: 'fresh' as const, sourceExecutionId: dispatch.judgedFresh };
   if (gate.verdict === 'ask') return resumeExpiredStage(sessionId);
   const { turn, prompt, humanInput } = buildRoleStageTurn(
