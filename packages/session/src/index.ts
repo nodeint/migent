@@ -2,6 +2,7 @@ export type { SessionEventListener } from './event-log.js';
 export { SessionEventLog, sessionEventLog, subscribeSessionEvents } from './event-log.js';
 export type { EffectiveConfigSection, EntryClassifiers, FrozenSection, LiveEntry, SectionRequest } from './freeze-config-sections.js';
 export { effectiveConfigSection } from './freeze-config-sections.js';
+export type { FrozenExtensionRecord, FrozenExtensions } from './freeze-extensions.js';
 export type { PluginFreezeInput, PluginsFrozenEntries } from './freeze-plugins.js';
 export { recordPluginsFrozen } from './freeze-plugins.js';
 export type {

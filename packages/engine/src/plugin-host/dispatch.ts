@@ -25,6 +25,7 @@ import { writePluginArtifact } from './artifact-write.js';
 import { type Attempt, type Failure, failureOf, FIRST_ATTEMPT, STALE_FAILURE } from './attempt.js';
 import { buildActivationContext, buildCallContext, emptyRegistrations, type PluginRegistrations } from './context.js';
 import { freshEvidence, type ReadEvidence, readsStale, type SessionReads } from './evidence.js';
+import { configSources } from './extension-reads.js';
 import { declaresAgent } from './freeze.js';
 import { recordPluginFailure } from './holds.js';
 import { HostInterceptorChain, type InterceptorInvocation, recordHookInvoked, type SettledInterceptor, settleInterceptor, type StaleAt } from './interception.js';
@@ -346,9 +347,8 @@ export class PluginHost {
 
   private sourcesOf(plugin: SelectedPlugin) {
     return {
-      manifest: plugin.manifest,
-      options: plugin.config,
-      readCore: (key: string): unknown => loadWorkspaceConfig(this.workspace)[key],
+      manifest: plugin.manifest, options: plugin.config,
+      ...configSources(this.workspace, this.directory, plugin.id),
       ...(this.reads === undefined ? {} : { reads: this.reads }),
     };
   }

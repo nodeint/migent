@@ -3,6 +3,7 @@ import path from 'node:path';
 import { WORKFLOW_SCHEMA_VERSION } from '@nodeint/migent-contracts';
 
 import { SCHEMA_V2 } from './constants.js';
+import type { ExtensionValues } from './extensions.js';
 
 /** The recipient is separate from the question outcome; more recipients can be added later. */
 export type AskTarget = 'human';
@@ -23,6 +24,8 @@ export type StageAgent =
   | { kind: 'inline'; value: Record<string, unknown> };
 
 interface StageFields {
+  /** Plugin keys claimed on this stage, by owner. Absent when the stage carries none. */
+  extensions?: ExtensionValues;
   ask?: AskTarget;
   id: string;
   description: string | null;
@@ -128,6 +131,8 @@ export interface WorkflowDownstream {
 
 export interface WorkflowDocument {
   id: string;
+  /** Plugin keys claimed on the workflow, by owner. Absent when the document carries none. */
+  extensions?: ExtensionValues;
   stages: Record<string, StageSpec>;
   completion: WorkflowCompletion | null;
   requires: WorkflowRequires | null;

@@ -48,6 +48,7 @@ the `plugins` section is the one registered config section.
 | Event log and subscribers | `session` `src/event-log.ts` | Only writer of session events. Subscribers run synchronously inside the lock window. Folding events are delivered after `status.json` is written; heartbeats and item traces are delivered right after their append. |
 | Event-kind traits | `contracts` `src/event-kinds.ts` | One read-only registry (`stream`, `folds`, `skipsStatusWrite`, `stderr`) derived from the event catalog. Other packages read traits here. |
 | Config sections | `contracts` `src/config-sections.ts` | Static list of namespaced sections; `plugins` is the only one. Kernel merges and validates them, doctor reports them, session freezes them. There is no runtime registration API. |
+| Plugin extensions | `contracts` `src/extension-catalog.ts` | Static, core-owned `PLUGIN_EXTENSIONS` catalog, empty today: each entry claims flat keys on the workflow, stage, agent, or role level. `extensionCatalogIssues` rejects a duplicate plugin, a bad key, a key claimed twice on one level, and a core or legacy key, and the module asserts the catalog when it loads. Contracts and the workflow parser derive their valid keys from the same core property sets plus the catalog. A plugin manifest's `extensions` must equal its catalog entry (`createPluginRegistry`). There is no runtime registration API. |
 | Plugin host | `engine` `src/plugin-host/dispatch.ts` | `PluginHost` subscribes to the event log for one run and queues `session.started`, `execution.finished`, `session.stopped` and `session.completed`. `withPluginScope` starts the host, runs an action that holds the session lock, then drains and closes before the caller releases it. Each artifact is written atomically, then recorded; a crash between them leaves an unrecorded file that `session show` reports. A handler must keep no per-invocation state at module scope, because invocations of several stages can run concurrently. The host activates each plugin once per run through a settle-once invoker, closes each invocation's context when it settles, and checks registrations against the manifest's `uses`. A handler's `call.session` reads (snapshot, `resumeFacts`) are captured by the core as evidence, never supplied by the plugin; before applying a result the host repeats the reads, and a changed read discards the result and re-runs once per operation cycle or trigger, then records `plugin.failed: stale`. A handler gets detached frozen data and a per-invocation `call` context, and returns proposals. The host validates them against the closed union (at most one artifact per invocation) and applies them under the session lock. It records `plugin.hook_invoked`, then `plugin.decision` or `plugin.failed`, enforces the invocation deadline, and settles every invocation before the lock is released. |
 | Agent invocation | `engine` `src/agent-invocation.ts` | `targetFromAgent`, `bindTarget`, and `invokeOnce` run one provider turn with no stage. The stage runner binds targets through `bindTarget`. |
 | Operation runtime | `engine` `src/runtime/` | Generic cycle: validate the request, evaluate the policy once, run the handler, validate its output, let the definition decide, authorize the transition against declared edges, apply the changes, continue. An optional `InterceptorChain` runs before the handler and after its output check, for the fields an operation declares `interceptable`; the runtime judges each proposal (declared fields only, re-validated, never a core change) and keeps the value unchanged for a refused one. An empty chain makes no extra await. It names no operation or plugin and imports nothing from `src/execution/` or `src/plugin-host/`. Exceptions, including cancellation, propagate. |
@@ -60,14 +61,21 @@ the `plugins` section is the one registered config section.
   A seam passes detached, frozen data; operation inputs and outputs are plain data.
 - Session events are recorded only through the event log, and `status.json` is derived from them by the fold.
   Both run under the session lock. Other session files are written by their owning `session` functions.
+- Every plugin read removes plugin-owned extension keys. The only path to extension data is `config.extensions`,
+  which returns the calling plugin's own frozen keys. `call.session.snapshot().workflow` drops `extensions` and the
+  owned agent keys of inline stage agents, and `config.core('agents' | 'roles')` drops the catalog's agent and role
+  keys, both through `withoutOwnedKeys`. A field no plugin owns is returned unchanged. A new plugin read that returns
+  workflow or config data must do the same.
 - Resume reads the frozen core workflow, `roles`, `targets`, and `resume_policies`, not live files. A registered
   config section follows its own freeze policy (`frozen`, `live`, or `per_entry`).
 
 ## Freeze keys
 
 The freeze file keeps resolved core settings at the top level: `roles`, `targets`, and
-`resume_policies`. The key `config` holds only registered config sections. See
-[Sessions](sessions.md).
+`resume_policies`. The key `config` holds only registered config sections. Plugin extensions add three optional keys:
+`extensions` (the version and owned keys per level of every plugin with a catalog entry),
+`targets.<stage>.extensions`, and `role_extensions`. They are written only when non-empty. Reading a freeze never
+consults the current catalog: ownership comes from the recorded `extensions` map. See [Sessions](sessions.md).
 
 ## Related documents
 

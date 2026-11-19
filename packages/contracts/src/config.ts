@@ -1,6 +1,7 @@
 import Type, { type Static } from 'typebox';
 
 import { id, nullable } from './common.js';
+import { type ExtensionLevel, PLUGIN_EXTENSIONS, withExtensionProperties } from './extension-catalog.js';
 
 /**
  * Structure of `.migent/config.yaml` / `config.local.yaml` and of the merged (effective) config.
@@ -78,41 +79,43 @@ const agentFields = {
   resume_policy: NonBlankString,
 };
 
+/** Core agent properties shared by every agent shape, none required. */
+export const AGENT_CORE_PROPERTIES = {
+  model: Type.Optional(agentFields.model),
+  effort: Type.Optional(agentFields.effort),
+  client: Type.Optional(agentFields.client),
+  resume_policy: Type.Optional(agentFields.resume_policy),
+};
+
 /** Field definitions shared by every agent shape, none required. */
-export const AgentFields = Type.Object(
-  {
-    model: Type.Optional(agentFields.model),
-    effort: Type.Optional(agentFields.effort),
-    client: Type.Optional(agentFields.client),
-    resume_policy: Type.Optional(agentFields.resume_policy),
-  },
-  { $id: id('config/agent-fields'), title: 'Agent fields' },
-);
+export const AgentFields = Type.Object(AGENT_CORE_PROPERTIES, { $id: id('config/agent-fields'), title: 'Agent fields' });
+
+const LEVEL_AGENT: ExtensionLevel = 'agent';
 
 /** `agents.<name>` in one layer. Either layer may supply part of an entry, `{}` included. */
 export const NamedAgentFragment = Type.Object(
-  { ...AgentFields.properties },
+  withExtensionProperties({ ...AgentFields.properties }, PLUGIN_EXTENSIONS, LEVEL_AGENT),
   { $id: id('config/named-agent-fragment'), title: 'Named agent (layer)', description: 'A partial named agent in one config file.' },
 );
 
 /** An inline agent replaces wholesale, so it is complete when supplied. */
 export const InlineAgent = Type.Object(
-  {
+  withExtensionProperties({
     model: agentFields.model,
     effort: Type.Optional(agentFields.effort),
     client: Type.Optional(agentFields.client),
     resume_policy: Type.Optional(agentFields.resume_policy),
-  },
+  }, PLUGIN_EXTENSIONS, LEVEL_AGENT),
   { $id: id('config/inline-agent'), title: 'Inline agent', description: 'A complete agent definition.' },
 );
 
 export const ResolvedAgent = Type.Object(
-  {
+  withExtensionProperties({
     model: agentFields.model,
     effort: Type.Optional(agentFields.effort),
     client: Type.Optional(agentFields.client),
     resume_policy: Type.Optional(agentFields.resume_policy),
-  },
+  }, PLUGIN_EXTENSIONS, LEVEL_AGENT),
   { $id: id('config/resolved-agent'), title: 'Agent (effective)', description: 'A named agent after layers merge.' },
 );
 
@@ -139,12 +142,14 @@ export const Responsibilities = Type.Array(NonBlankString, {
 
 export const Description = NonBlankString;
 
+export const ROLE_CORE_PROPERTIES = {
+  description: Type.Optional(nullable(Description)),
+  agent: Type.Optional(RoleAgent),
+  responsibilities: Type.Optional(nullable(Responsibilities)),
+};
+
 export const RoleEntry = Type.Object(
-  {
-    description: Type.Optional(nullable(Description)),
-    agent: Type.Optional(RoleAgent),
-    responsibilities: Type.Optional(nullable(Responsibilities)),
-  },
+  withExtensionProperties(ROLE_CORE_PROPERTIES, PLUGIN_EXTENSIONS, 'role'),
   { $id: id('config/role'), title: 'Role', description: 'A role: its intent and the agent it uses.' },
 );
 

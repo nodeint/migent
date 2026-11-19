@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 import {
   buildStructuralIndex,
   type ClientRegistry,
+  configExtensionErrors,
   type ConfigOwner,
   configSectionIssues,
   ConfigurationError,
@@ -49,6 +50,9 @@ export interface ConfigAnalysis {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+/** The plugin extension catalog the config checks validate against. */
+export type AnalysisExtensions = Parameters<typeof configExtensionErrors>[1];
+
 /**
  * Applies the runtime's rules to an effective config and reports every violation, not just the first.
  * `effortChecks` carries what the environment learned about models; pass `{}` for a static check.
@@ -62,6 +66,8 @@ export function analyzeConfig(
     readonly ownerOf: (path: readonly (string | number)[]) => ConfigOwner;
     /** The static plugin registry. Absent means no plugin is registered. */
     readonly plugins?: PluginRegistry;
+    /** Plugin extensions that claim keys on agents and roles. Defaults to the static catalog. */
+    readonly extensions?: Parameters<typeof configExtensionErrors>[1];
   },
 ): ConfigAnalysis {
   const { effortChecks, ownerOf, nativeOptionFacts } = source;
@@ -69,7 +75,7 @@ export function analyzeConfig(
   const { error, fromError } = errorReporters(diagnostics, ownerOf);
 
   try { rejectLegacyConfigKeys(config); } catch (caught) { fromError(caught, ['models']); }
-  for (const issue of structuralIssues(config, { plugins: source.plugins, clients })) fromError(issue);
+  for (const issue of configIssues(config, { ...source, clients })) fromError(issue);
   const agents: Record<string, unknown> = isRecord(config.agents) ? config.agents : {};
   const roles: Record<string, unknown> = isRecord(config.roles) ? config.roles : {};
   if (isRecord(config.roles) && Object.keys(roles).length === 0) error('roles-empty', 'roles is empty.', { path: ['roles'] });
@@ -83,13 +89,26 @@ export function analyzeConfig(
   checkRoleKeys(roles, fromError);
   const ctx: AnalysisContext = {
     config, clients, effortChecks, nativeOptionFacts, structure, unmapped, diagnostics, error, fromError, ownerOf,
+    extensions: source.extensions,
   };
   const executableByClient = checkAgentDefinitions(ctx);
   const { roleNames, roleDescriptions } = checkRoles(ctx, roles);
 
   checkResumePolicies(config, diagnostics, ownerOf);
-  warnUnknownRoleKeys(config, diagnostics, ownerOf);
+  warnUnknownRoleKeys({ config, extensions: source.extensions }, diagnostics, ownerOf);
   return { diagnostics, executableByClient, roleNames, roleDescriptions, unmapped };
+}
+
+/** Structural problems of the config, then the invalid plugin keys on its agents and roles. */
+function configIssues(
+  config: Record<string, unknown>,
+  source: {
+    plugins?: PluginRegistry;
+    clients: ClientRegistry;
+    extensions?: Parameters<typeof configExtensionErrors>[1];
+  },
+): readonly Error[] {
+  return [...structuralIssues(config, source), ...configExtensionErrors(config, source.extensions)];
 }
 
 function structuralIssues(
@@ -136,11 +155,11 @@ function checkRoleKeys(roles: Record<string, unknown>, fromError: ReportCaught):
 }
 
 function warnUnknownRoleKeys(
-  config: Record<string, unknown>,
+  { config, extensions }: { config: Record<string, unknown>; extensions: Parameters<typeof configExtensionErrors>[1] },
   diagnostics: DiagnosticList,
   ownerOf: (path: readonly (string | number)[]) => ConfigOwner,
 ): void {
-  for (const unknown of unknownRoleKeyEntries(config)) {
+  for (const unknown of unknownRoleKeyEntries(config, extensions)) {
     diagnostics.add({ severity: 'warning', code: unknown.code, message: unknown.message, path: unknown.path, source: { layer: ownerOf(unknown.path) } });
   }
 }
@@ -154,6 +173,7 @@ type ReportError = (
 interface AnalysisContext {
   readonly config: Record<string, unknown>;
   readonly clients: ClientRegistry;
+  readonly extensions: Parameters<typeof configExtensionErrors>[1];
   readonly effortChecks: Readonly<Record<string, ModelEffortCheck>>;
   readonly nativeOptionFacts: NativeOptionFacts | undefined;
   readonly structure: StructuralIndex;
@@ -209,7 +229,7 @@ function checkAgentEntry(ctx: AnalysisContext, entry: AgentEntry): { client: str
     target = loadAgentDefinition(
       definition,
       { label: entry.field, path: entry.path },
-      { registry: clients, index: verdicts },
+      { registry: clients, index: verdicts, extensions: ctx.extensions },
     );
   } catch (caught) {
     fromError(caught, entry.path);
@@ -283,7 +303,9 @@ function checkRole(ctx: AnalysisContext, roleKey: string, role: unknown): RoleCh
   let resolved;
   let description: string | null;
   try {
-    resolved = resolveRoleCascade(config, roleKey, { options: null, registry: clients, index: structure });
+    resolved = resolveRoleCascade(config, roleKey, {
+      options: null, registry: clients, index: structure, extensions: ctx.extensions,
+    });
     loadRoleResponsibilities(config, roleKey, structure);
     description = loadRoleDescription(config, roleKey, structure);
   } catch (caught) {
@@ -343,12 +365,23 @@ function unmappedMessage(aliases: readonly string[]): string {
  * `readConfigLayer`, so a layer that fails to parse never gets here.
  */
 export function validateConfigLayers(
-  layers: { project: Record<string, unknown>; local?: Record<string, unknown> | null },
+  layers: {
+    project: Record<string, unknown>;
+    local?: Record<string, unknown> | null;
+    /** Plugin extension catalog; defaults to the static one. */
+    extensions?: AnalysisExtensions;
+  },
   clients: ClientRegistry,
   plugins?: PluginRegistry,
 ): Diagnostic[] {
+  const { extensions } = layers;
   const merged = mergeConfigLayers(layers.project, layers.local);
-  const analysis = analyzeConfig(merged.config, clients, { effortChecks: {}, ownerOf: merged.ownerOf, plugins });
+  const analysis = analyzeConfig(merged.config, clients, {
+    effortChecks: {},
+    ownerOf: merged.ownerOf,
+    plugins,
+    ...(extensions === undefined ? {} : { extensions }),
+  });
   return analysis.diagnostics.items;
 }
 

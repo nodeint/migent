@@ -87,6 +87,14 @@ The session-level files have distinct purposes:
   Agent sessions do not have this file. Its `config` key holds only registered
   config sections; frozen `roles`, `targets`, and `resume_policies` stay at the
   top level.
+- Plugin extension keys are frozen too, without a `schema_version` bump. `workflow` holds the workflow and stage keys,
+  flat. `targets.<stage>.extensions` holds the keys on the resolved agent, and `role_extensions` the keys on each role,
+  both grouped by plugin id. `extensions` records, for every plugin with a catalog entry at freeze time, its
+  extension `version` and the `keys` it owned per level; the lists can be empty. Each key is written only when it is
+  non-empty, so a freeze with no extensions is unchanged. Reading a freeze uses only these records: a value that the
+  current plugin schema would reject, or a plugin that is no longer registered, still reads, so `session show` keeps
+  working. A body key that is neither core nor listed in `extensions`, or a malformed extension mapping, makes the
+  freeze corrupt. A freeze written without `extensions` reads as having none.
 - The `plugins` config section freezes per entry. Every entry except an
   advisory plugin is frozen, but only an enabled entry must be registered and
   at the frozen version when the session resumes. Each freeze (start, prepared
@@ -94,6 +102,18 @@ The session-level files have distinct purposes:
   freeze hash and the entry versions and pinned agent targets. A freeze file
   that no longer matches the last event, or a missing or upgraded plugin, stops
   the resume with exit code 2.
+- The resume gate checks extension owners first. Every plugin that owns at least one frozen extension key, whether
+  enabled, disabled, or advisory, must still be registered (`extension-unregistered`) and declare the frozen
+  extension version (`extension-version-changed`). Both errors name the plugin and the session, and say to use the
+  Migent version that started the session or to start a new session. Inspection and manual completion never run
+  the gate.
+- An enabled plugin with both a current catalog entry and a recorded extension version resumes only when the two
+  versions match and its frozen `plugins.<id>` entry still validates against the current manifest, whatever its
+  semver. A changed semver is allowed in that case, and the plugin then runs, and records events, at the current
+  version. If the entry no longer validates, the resume stops with
+  `plugin-version-changed` naming the failing field; if the extension version differs, with
+  `extension-version-changed`. A plugin with no catalog entry or no recorded extension version keeps the exact
+  semver rule.
 - Plugins run in chain order: first the registered `defaultEnabled` plugins that `plugins:` does not name, in
   registry order, with empty options; then the configured entries in declaration order. A default plugin listed
   under `plugins:` takes its declared position, and `enabled: false` turns it off. New freezes and

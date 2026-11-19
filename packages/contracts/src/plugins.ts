@@ -3,6 +3,7 @@ import Type, { type Static, type TSchema } from 'typebox';
 import { id, nullable } from './common.js';
 import { NonBlankString, RoleAgent } from './config.js';
 import { CONFIG_SECTION_KEY_PATTERN,type ConfigSection } from './config-sections.js';
+import type { PluginExtension } from './extension-catalog.js';
 
 /**
  * Plugin contracts: manifest, shared LLM-plugin config, hook input, proposals and the invocation contexts, plus
@@ -95,7 +96,8 @@ export const PluginManifest = Type.Object(
   },
   { $id: id('plugins/manifest'), title: 'Plugin manifest', description: 'Readable without activating the plugin. `configSchema` is a TypeBox schema.' },
 );
-export type PluginManifest = Static<typeof PluginManifest>;
+/** `extensions` is the plugin's catalog entry. It is a type-only field: the generated schema stays unchanged. */
+export type PluginManifest = Static<typeof PluginManifest> & { readonly extensions?: PluginExtension };
 
 export const LlmPluginConfig = Type.Object(
   {
@@ -208,6 +210,15 @@ export class PluginContextClosed extends Error {
   }
 }
 
+/** `config.extensions`: frozen reads of the calling plugin's keys. Each throws `PluginContextClosed` once closed. */
+export interface PluginExtensionReads {
+  readonly workflow: () => Readonly<Record<string, unknown>> | null;
+  readonly stage: (stageId: string) => Readonly<Record<string, unknown>> | null;
+  /** The keys on the agent resolved for the stage. */
+  readonly agent: (stageId: string) => Readonly<Record<string, unknown>> | null;
+  readonly role: (name: string) => Readonly<Record<string, unknown>> | null;
+}
+
 /** Members both contexts share. */
 export interface PluginSharedContext {
   readonly config: {
@@ -215,6 +226,11 @@ export interface PluginSharedContext {
     readonly options: Readonly<Record<string, unknown>>;
     /** A declared core config key, frozen. */
     readonly core: (key: string) => unknown;
+    /**
+     * The calling plugin's own extension keys, as frozen when the session started. Each member returns a detached,
+     * deeply frozen mapping, or `null` when the plugin has no keys there. A plugin never sees another plugin's keys.
+     */
+    readonly extensions: PluginExtensionReads;
   };
   /** Recorded as notes on the invocation's terminal event while the invocation is open; dropped afterwards. */
   readonly log: {

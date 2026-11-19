@@ -1,4 +1,4 @@
-import { type Plugin, type TSchema } from '@nodeint/migent-contracts';
+import { type Plugin, type TObject, type TSchema } from '@nodeint/migent-contracts';
 import { expect, test } from 'vitest';
 
 import { createPluginRegistry } from '../src/index.ts';
@@ -27,4 +27,26 @@ test('an unsupported apiVersion is refused: another major or a greater minor', (
   expect(() => createPluginRegistry([plugin('a', { major: 2, minor: 0 })])).toThrow(/needs plugin API 2\.0/);
   expect(() => createPluginRegistry([plugin('a', { major: 1, minor: 1 })])).toThrow(/needs plugin API 1\.1/);
   expect(() => createPluginRegistry([plugin('a', { major: 0, minor: 0 })])).toThrow(/needs plugin API 0\.0/);
+});
+
+const extension = { plugin: 'a', version: 1, fields: { stage: { type: 'object', properties: { a_key: { type: 'string' } } } as unknown as TObject } };
+const withExtensions = (id: string, extensions: unknown): Plugin => {
+  const base = plugin(id);
+  return { ...base, manifest: { ...base.manifest, extensions: extensions as never } };
+};
+
+test('a manifest whose extensions match its catalog entry is accepted', () => {
+  expect(createPluginRegistry([withExtensions('a', extension)], [extension]).ids()).toEqual(['a']);
+});
+
+test('a manifest whose extensions differ from its catalog entry is rejected', () => {
+  expect(() => createPluginRegistry([withExtensions('a', { ...extension, version: 2 })], [extension])).toThrow(/must declare the extensions/);
+});
+
+test('a manifest that omits extensions while the catalog has an entry is rejected', () => {
+  expect(() => createPluginRegistry([plugin('a')], [extension])).toThrow(/must declare the extensions/);
+});
+
+test('a manifest that declares extensions the catalog does not list is rejected', () => {
+  expect(() => createPluginRegistry([withExtensions('a', extension)], [])).toThrow(/does not list/);
 });

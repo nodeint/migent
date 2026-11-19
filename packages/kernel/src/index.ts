@@ -107,6 +107,7 @@ export {
   placeRoleAgent,
   upsertAgent,
 } from './config-edit.js';
+export { configExtensionErrors } from './config-extensions.js';
 export { configSectionIssues } from './config-sections.js';
 export { patchConfigText, upgradeConfigText } from './config-text.js';
 export {

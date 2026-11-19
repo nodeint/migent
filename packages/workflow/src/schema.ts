@@ -8,7 +8,10 @@ const stageArtifactSchema = z.object({
   scope: z.enum(['published', 'local']),
 });
 
+const extensionValuesSchema = z.record(z.string(), z.record(z.string(), z.unknown()));
+
 const stageFieldSchema = {
+  extensions: extensionValuesSchema.optional(),
   ask: z.literal('human').optional(),
   id: z.string(),
   description: z.string().nullable(),
@@ -75,6 +78,7 @@ export const workflowRequiresSchema = z.object({
 
 export const workflowDocumentSchema = z.object({
   id: z.string(),
+  extensions: extensionValuesSchema.optional(),
   stages: z.record(z.string(), stageSpecSchema),
   completion: workflowCompletionSchema.nullable(),
   requires: workflowRequiresSchema.nullable(),

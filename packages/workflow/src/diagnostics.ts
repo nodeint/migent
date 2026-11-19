@@ -1,4 +1,4 @@
-import { WorkflowDecisionEntry, WorkflowDocumentInput, WorkflowSession, WorkflowStage } from '@nodeint/migent-contracts';
+import { type ExtensionCatalog, extensionKeys, PLUGIN_EXTENSIONS, WorkflowDecisionEntry, WorkflowDocumentInput, WorkflowSession, WorkflowStage } from '@nodeint/migent-contracts';
 
 import { SCHEMA_V5 } from './constants.js';
 import { isRecord } from './record.js';
@@ -100,8 +100,13 @@ export function unknownKeys(value: Record<string, unknown>, valid: readonly stri
 }
 
 /** Unknown keys at the top level, stages, `produces`, `session` and decision entries, with author-coordinate paths. */
-export function unknownWorkflowKeyEntries(data: Record<string, unknown>): UnknownKey[] {
-  const entries = unknownKeyEntries(data, { valid: WORKFLOW_KEYS, location: '', base: [] });
+export function unknownWorkflowKeyEntries(
+  data: Record<string, unknown>,
+  catalog: ExtensionCatalog = PLUGIN_EXTENSIONS,
+): UnknownKey[] {
+  const workflowKeys = [...WORKFLOW_KEYS, ...extensionKeys(catalog, 'workflow')];
+  const stageKeys = extensionKeys(catalog, 'stage');
+  const entries = unknownKeyEntries(data, { valid: workflowKeys, location: '', base: [] });
   const version = typeof data.schema_version === 'number' ? data.schema_version : 0;
   if (!Array.isArray(data.stages)) return entries;
   data.stages.forEach((stage, index) => {
@@ -109,8 +114,8 @@ export function unknownWorkflowKeyEntries(data: Record<string, unknown>): Unknow
     const location = `stages.${stage.id}`;
     const base = ['stages', index];
     entries.push(...(version >= SCHEMA_V5
-      ? unknownKeyEntries(stage, { valid: STAGE_KEYS_V5, location, base, renamed: STAGE_V5_RENAMED })
-      : unknownKeyEntries(stage, { valid: STAGE_KEYS_V4, location, base })));
+      ? unknownKeyEntries(stage, { valid: [...STAGE_KEYS_V5, ...stageKeys], location, base, renamed: STAGE_V5_RENAMED })
+      : unknownKeyEntries(stage, { valid: [...STAGE_KEYS_V4, ...stageKeys], location, base })));
     if (isRecord(stage.produces)) entries.push(...unknownKeyEntries(stage.produces, { valid: PRODUCES_KEYS, location: `${location}.produces`, base: [...base, 'produces'] }));
     if (isRecord(stage.session)) entries.push(...unknownKeyEntries(stage.session, { valid: SESSION_KEYS, location: `${location}.session`, base: [...base, 'session'] }));
     if (!Array.isArray(stage.decision)) return;
@@ -125,8 +130,11 @@ export function unknownWorkflowKeyEntries(data: Record<string, unknown>): Unknow
 }
 
 /** Unknown keys of a workflow mapping as messages. */
-export function unknownWorkflowKeys(data: Record<string, unknown>): string[] {
-  return unknownWorkflowKeyEntries(data).map((entry) => entry.message);
+export function unknownWorkflowKeys(
+  data: Record<string, unknown>,
+  catalog: ExtensionCatalog = PLUGIN_EXTENSIONS,
+): string[] {
+  return unknownWorkflowKeyEntries(data, catalog).map((entry) => entry.message);
 }
 
 const RULES: readonly [RegExp, string][] = [

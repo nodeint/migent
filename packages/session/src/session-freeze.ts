@@ -2,6 +2,8 @@ import { createHash } from 'node:crypto';
 import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
+import type { ExtensionCatalog } from '@nodeint/migent-contracts';
+import { PLUGIN_EXTENSIONS } from '@nodeint/migent-contracts';
 import type { ClientRegistry } from '@nodeint/migent-kernel';
 import { writeFileAtomic } from '@nodeint/migent-kernel';
 import {
@@ -13,6 +15,7 @@ import {
 } from '@nodeint/migent-kernel';
 import { ConfigurationError } from '@nodeint/migent-kernel';
 import { log } from '@nodeint/migent-kernel';
+import type { ExtensionValues } from '@nodeint/migent-workflow';
 import { isRecord } from '@nodeint/migent-workflow';
 import {
   isRoleStage,
@@ -22,19 +25,26 @@ import {
   parseWorkflowMapping,
   type StageArtifact,
   type StageSpec,
+  unknownWorkflowKeys,
   type WorkflowCompletion,
   type WorkflowDocument,
 } from '@nodeint/migent-workflow';
-import { parseYamlDocument } from '@nodeint/migent-workflow';
 import { DEFAULT_MAX_VERIFY, SCHEMA_V2, SCHEMA_V3, SCHEMA_V4_DOWNSTREAM, SCHEMA_V5, SCHEMA_V7_ARTIFACTS } from '@nodeint/migent-workflow';
 import { stringify } from 'yaml';
 
 import { type EntryClassifiers, freezeConfigSections, type FrozenSection, readFrozenConfigSections } from './freeze-config-sections.js';
 import { corrupt } from './freeze-corrupt.js';
+import {
+  freezeExtensionKeys,
+  type FrozenExtensions,
+  readFrozenExtensions,
+  recordedCatalog,
+} from './freeze-extensions.js';
+import { errorText, readFreezeMapping } from './freeze-file.js';
 import type { PluginFreezeInput, PluginsFrozenEntries } from './freeze-plugins.js';
-import { freezeStagePolicy, frozenPolicyMap, readResumePolicyNames } from './freeze-resume-policy.js';
+import { frozenPolicyMap, readResumePolicyNames } from './freeze-resume-policy.js';
 import { sessionMapping } from './freeze-session-mapping.js';
-import { readTargets } from './freeze-targets.js';
+import { readTargets, resolveFreezeTargets } from './freeze-targets.js';
 
 export { frozenResumePolicy } from './freeze-resume-policy.js';
 
@@ -56,6 +66,8 @@ export interface WorkflowFreeze {
   resumePolicyNames: Record<string, string | null>;
   /** Registered config sections frozen at creation, by key; empty when none was written. */
   config: Record<string, FrozenSection>;
+  /** Plugin extension data recorded at creation; empty for a freeze written without any. */
+  extensions: FrozenExtensions;
 }
 
 export interface WrittenFreeze {
@@ -73,6 +85,8 @@ export interface FreezeSource {
   readonly classifiers?: EntryClassifiers;
   /** Plugin support: the `plugins` classifier and the validated snapshot. Needed when the config has `plugins`. */
   readonly plugins?: PluginFreezeInput;
+  /** Plugin extensions to validate and freeze. Defaults to `PLUGIN_EXTENSIONS`. */
+  readonly extensions?: ExtensionCatalog;
 }
 
 /**
@@ -102,24 +116,23 @@ function withPluginDefaults(config: Record<string, unknown>, source: FreezeSourc
 }
 
 export function writeWorkflowFreeze(sessionDirectory: string, source: FreezeSource): WrittenFreeze {
-  const { workspace, workflow, resolveClient } = source;
+  const { workspace, workflow, resolveClient, extensions: catalog = PLUGIN_EXTENSIONS } = source;
   const config = withPluginDefaults(loadWorkspaceConfig(workspace), source);
   const { plugins, classifiers } = pluginFreeze(config, source);
   const roles: Record<string, string[]> = {};
   for (const role of roleNames(workflow)) roles[role] = loadRoleResponsibilities(config, role);
-  const targets: Record<string, Record<string, unknown>> = {};
   const resumePolicies = frozenPolicyMap(config);
-  for (const stage of Object.values(workflow.stages)) {
-    if (!isRoleStage(stage)) continue;
-    const target = resolveStageSpec(config, stage, { registry: resolveClient });
-    const policy = freezeStagePolicy(config, stage, target);
-    targets[stage.id] = { ...copyTarget(target), ...(resumePolicies === null ? {} : { resume_policy: policy }) };
-  }
+  const { written: targets, resolved, roleTargets } = resolveFreezeTargets(workflow, {
+    config,
+    spec: { registry: resolveClient, extensions: catalog },
+    resumePolicies,
+  });
   const sections = freezeConfigSections(config, classifiers);
   const sourceSha256 = sourceFileHash(workflow.source);
   const filePath = path.join(sessionDirectory, WORKFLOW_FREEZE_FILE);
   const workflowBody = workflowMapping(workflow);
-  parseWorkflowMapping(workflowBody, filePath);
+  parseWorkflowMapping(workflowBody, filePath, { extensions: catalog });
+  const extensionKeys = freezeExtensionKeys(catalog, { workflow, targets: resolved, roleTargets });
   const text = stringify(
     {
       schema_version: 2,
@@ -129,35 +142,12 @@ export function writeWorkflowFreeze(sessionDirectory: string, source: FreezeSour
       targets,
       ...(resumePolicies === null ? {} : { resume_policies: resumePolicies }),
       ...(sections === null ? {} : { config: sections }),
+      ...extensionKeys,
     },
     { lineWidth: 0 },
   );
   writeFileAtomic(filePath, text);
   return { hash: sha256(text), sourceSha256, ...(plugins === undefined ? {} : { plugins }) };
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-/** The freeze file as a mapping; null when it is missing. */
-function readFreezeMapping(filePath: string): Record<string, unknown> | null {
-  let text: string;
-  try {
-    if (!statSync(filePath).isFile()) return null;
-    text = readFileSync(filePath, 'utf8');
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
-    throw corrupt(filePath, errorText(error));
-  }
-  let parsed: unknown;
-  try {
-    parsed = parseYamlDocument(text);
-  } catch (error) {
-    throw corrupt(filePath, errorText(error));
-  }
-  if (!isRecord(parsed)) throw corrupt(filePath, 'expected a mapping');
-  return parsed;
 }
 
 /** Null when the file is missing. A broken file throws and names the path. */
@@ -171,9 +161,15 @@ export function readWorkflowFreeze(sessionDirectory: string): WorkflowFreeze | n
     throw corrupt(filePath, 'source_sha256 must be a string or null');
   }
   if (!isRecord(parsed.workflow)) throw corrupt(filePath, 'workflow must be a mapping');
+  const extensions = readFrozenExtensions(parsed, filePath);
   let workflow: WorkflowDocument;
   try {
-    workflow = parseWorkflowMapping(parsed.workflow, filePath);
+    // Ownership comes from the freeze alone, never from the current catalog.
+    const recorded = recordedCatalog(extensions.records);
+    // The live parser only rejects unknown keys from schema_version 5; a freeze is never lenient.
+    const [stray] = unknownWorkflowKeys(parsed.workflow, recorded);
+    if (stray !== undefined) throw new ConfigurationError(`Unknown workflow keys: ${stray}`);
+    workflow = parseWorkflowMapping(parsed.workflow, filePath, { extensions: recorded });
   } catch (error) {
     throw corrupt(filePath, errorText(error));
   }
@@ -185,6 +181,7 @@ export function readWorkflowFreeze(sessionDirectory: string): WorkflowFreeze | n
     resumePolicies: isRecord(parsed.resume_policies) ? parsed.resume_policies : {},
     resumePolicyNames: readResumePolicyNames(parsed.targets),
     config: readFrozenConfigSections(parsed.config, (message) => corrupt(filePath, message)),
+    extensions,
   };
 }
 
@@ -380,7 +377,20 @@ function sameList(left: readonly string[], right: readonly string[]): boolean {
   return left.length === right.length && left.every((item, index) => item === right[index]);
 }
 
+/** Claimed plugin keys, written flat after the core keys in the order the model holds them (catalog order). */
+function withExtensions(
+  mapped: Record<string, unknown>,
+  extensions: ExtensionValues | undefined,
+): Record<string, unknown> {
+  for (const keys of Object.values(extensions ?? {})) Object.assign(mapped, keys);
+  return mapped;
+}
+
 function workflowMapping(workflow: WorkflowDocument): Record<string, unknown> {
+  return withExtensions(coreWorkflowMapping(workflow), workflow.extensions);
+}
+
+function coreWorkflowMapping(workflow: WorkflowDocument): Record<string, unknown> {
   if (isWorkflowV2(workflow)) return version2WorkflowMapping(workflow);
   return {
     schema_version: 1,
@@ -504,7 +514,8 @@ function stageMapping(stage: StageSpec, versions: MappingVersions = {}): Record<
   if ((stage.runWhen !== null && stage.runWhen !== undefined)) {
     mapped.run_when = { changed_paths: stage.runWhen.changedPaths };
   }
-  return Object.assign(mapped, verifyFields(stage));
+  Object.assign(mapped, verifyFields(stage));
+  return withExtensions(mapped, stage.extensions);
 }
 
 function completionMapping(completion: WorkflowCompletion): Record<string, unknown> {

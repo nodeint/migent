@@ -3,7 +3,7 @@ import { catalogEntryFromDocument, checkWorkflowCatalog, collectWorkflowDraft, p
 
 import { OPTIONAL_MAPPING_CODE, optionalArtifactMappings } from './artifact-notes.js';
 import type { Diagnostic } from './check.js';
-import { analyzeConfig } from './config-check.js';
+import { type AnalysisExtensions,analyzeConfig } from './config-check.js';
 
 type Mapping = Record<string, unknown>;
 
@@ -49,7 +49,11 @@ export interface ConfigDraftInput {
  * exactly as the runtime would. Findings carry the layer that owns the node (`draft` marks the draft's).
  * A missing project layer (scope local) is the caller's error to report.
  */
-export function validateConfigDraft(input: ConfigDraftInput, clients: ClientRegistry): Diagnostic[] {
+export function validateConfigDraft(
+  input: ConfigDraftInput,
+  clients: ClientRegistry,
+  extensions?: AnalysisExtensions,
+): Diagnostic[] {
   const out: Diagnostic[] = [];
   out.push(...versionDiagnostics(input.draft, `${input.scope} config`, { layer: input.scope }));
   if (input.companion !== null) {
@@ -60,7 +64,11 @@ export function validateConfigDraft(input: ConfigDraftInput, clients: ClientRegi
   const local = input.scope === 'local' ? input.draft : input.companion;
   if (project === null) return out;
   const merged = mergeConfigLayers(project, local);
-  const analysis = analyzeConfig(merged.config, clients, { effortChecks: {}, ownerOf: merged.ownerOf });
+  const analysis = analyzeConfig(merged.config, clients, {
+    effortChecks: {},
+    ownerOf: merged.ownerOf,
+    ...(extensions === undefined ? {} : { extensions }),
+  });
   for (const item of analysis.diagnostics.items) {
     // The alias waits for this machine's mapping; that describes the machine, not the document.
     out.push(item.code === 'agent-unmapped' ? { ...item, severity: 'warning' } : item);
@@ -97,7 +105,12 @@ type WorkflowDraft = ReturnType<typeof collectWorkflowDraft>;
 type StageDraft = WorkflowDraft['stages'][number];
 
 /** Parser problems, optional-artifact notes and unknown keys of the draft, in that order. */
-function draftDiagnostics(draft: Mapping, parsed: WorkflowDraft, source: Diagnostic['source']): Diagnostic[] {
+function draftDiagnostics(
+  draft: Mapping,
+  parsed: WorkflowDraft,
+  context: { source: Diagnostic['source']; extensions?: AnalysisExtensions },
+): Diagnostic[] {
+  const { source, extensions } = context;
   const out: Diagnostic[] = [];
   // Every independent problem of the draft, not just the first one.
   for (const problem of parsed.problems) {
@@ -115,7 +128,7 @@ function draftDiagnostics(draft: Mapping, parsed: WorkflowDraft, source: Diagnos
     out.push({ severity: 'warning', code: OPTIONAL_MAPPING_CODE, message: item.message, path: item.path, source });
   }
   // Unknown keys are independent of every other rule; a newer schema turns them into errors above.
-  for (const entry of unknownWorkflowKeyEntries(draft)) {
+  for (const entry of unknownWorkflowKeyEntries(draft, extensions)) {
     out.push({ severity: 'warning', code: entry.code, message: entry.message, path: entry.path, source });
   }
   return out;
@@ -155,12 +168,36 @@ function siblingCatalog(siblings: WorkflowDraftInput['siblings']): {
   return { entries, failedIds, diagnostics };
 }
 
+/** `stages`, the stage, `agent`, then at least one field below it. */
+const INLINE_AGENT_FIELD_DEPTH = 3;
+/** Index of the `agent` segment in a stage path. */
+const INLINE_AGENT_KEY_INDEX = 2;
+
 interface StageCheckContext {
   config: Mapping;
   ownerOf: MergedConfig['ownerOf'];
   clients: ClientRegistry;
   label: string;
   source: Diagnostic['source'];
+  extensions?: AnalysisExtensions;
+}
+
+/** A claimed key inside the stage's own inline agent: the workflow owns it, at its full author path. */
+function inlineAgentExtensionDiagnostic(
+  error: ConfigurationError,
+  where: { stage: RoleStageSpec; index: number },
+  ctx: StageCheckContext,
+): Diagnostic | null {
+  const { path } = error;
+  const isInline = path?.[0] === 'stages' && path[INLINE_AGENT_KEY_INDEX] === 'agent' && path.length > INLINE_AGENT_FIELD_DEPTH;
+  if (!isInline) return null;
+  return {
+    severity: 'error',
+    code: error.code ?? 'workflow-invalid',
+    message: `${ctx.label}.${where.stage.id}: ${error.message}`,
+    path: ['stages', where.index, ...path.slice(INLINE_AGENT_KEY_INDEX)],
+    source: ctx.source,
+  };
 }
 
 /** Maps a stage resolution error to the diagnostic owned by the workflow or the config layer. */
@@ -193,9 +230,14 @@ function stageDiagnostics(stageDraft: StageDraft, ctx: StageCheckContext): Diagn
   const {index} = stageDraft;
   let target;
   try {
-    target = resolveStageSpec(config, stage, { registry: clients });
+    target = resolveStageSpec(config, stage, {
+      registry: clients,
+      ...(ctx.extensions === undefined ? {} : { extensions: ctx.extensions }),
+    });
   } catch (error) {
     if (!(error instanceof ConfigurationError)) throw error;
+    const claimed = inlineAgentExtensionDiagnostic(error, { stage, index }, ctx);
+    if (claimed !== null) return [claimed];
     return [resolutionDiagnostic(error, { stage, index }, ctx)];
   }
   const failure = optionsFailure(config, stage, { target, clients });
@@ -252,12 +294,16 @@ function catalogDiagnostics(
 }
 
 /** Validates an unsaved workflow against the parser, the catalog rules and the effective config. */
-export function validateWorkflowDraft(input: WorkflowDraftInput, clients: ClientRegistry): Diagnostic[] {
+export function validateWorkflowDraft(
+  input: WorkflowDraftInput,
+  clients: ClientRegistry,
+  extensions?: AnalysisExtensions,
+): Diagnostic[] {
   const out: Diagnostic[] = [];
   const source = { workflow: input.file };
   out.push(...versionDiagnostics(input.draft, input.file === '' ? 'workflow' : input.file, source));
-  const parsed = collectWorkflowDraft(input.draft, input.file);
-  out.push(...draftDiagnostics(input.draft, parsed, source));
+  const parsed = collectWorkflowDraft(input.draft, input.file, extensions === undefined ? {} : { extensions });
+  out.push(...draftDiagnostics(input.draft, parsed, { source, ...(extensions === undefined ? {} : { extensions }) }));
   const draftId = parsed.id.state === 'invalid' ? null : parsed.id.value;
   out.push(...catalogDiagnostics(input, { parsed, draftId }, source));
 
@@ -272,7 +318,10 @@ export function validateWorkflowDraft(input: WorkflowDraftInput, clients: Client
   ];
   if (layerVersions.length > 0) return dedupe([...out, ...layerVersions]);
   // Only stages whose role, agent and options are readable take part in config resolution.
-  const ctx = { config, ownerOf, clients, label: draftId ?? input.file, source };
+  const ctx = {
+    config, ownerOf, clients, label: draftId ?? input.file, source,
+    ...(extensions === undefined ? {} : { extensions }),
+  };
   for (const stageDraft of parsed.stages) out.push(...stageDiagnostics(stageDraft, ctx));
   return dedupe(out);
 }

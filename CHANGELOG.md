@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+### Added
+
+- Contracts declare a static plugin extension catalog (`PLUGIN_EXTENSIONS`, empty today) that lets a plugin claim flat
+  keys on workflows, stages, agents, and roles, and `createPluginRegistry` checks a manifest's `extensions` against
+  it. ([#174](https://github.com/nodeint/migent/issues/174))
+- The workflow parser, draft collector, and the session freeze accept, validate, and keep plugin-claimed keys on
+  workflows and stages. ([#174](https://github.com/nodeint/migent/issues/174))
+- Config loading, `migent doctor`, and agent and role resolution accept, validate, and carry plugin-claimed keys on
+  named agents, inline agents, and roles. ([#174](https://github.com/nodeint/migent/issues/174))
+- The session freeze records plugin-claimed keys on workflows, stages, resolved agents, and roles, and reads them
+  without the current extension catalog. ([#174](https://github.com/nodeint/migent/issues/174))
+- Resuming a session refuses when a plugin that owns frozen extension keys is unregistered or declares another
+  extension version, and a plugin with an extension catalog entry may change its semver when its frozen entry still
+  validates. ([#174](https://github.com/nodeint/migent/issues/174))
+- Plugins read their own frozen extension keys through `config.extensions` (`workflow()`, `stage(id)`, `agent(id)`,
+  `role(name)`), and no other plugin read, including `call.session.snapshot()` and `config.core`, exposes
+  plugin-owned keys. ([#174](https://github.com/nodeint/migent/issues/174))
+
 ## 0.9.0
 
 ### Breaking

@@ -1,3 +1,4 @@
+import { type ExtensionCatalog, extensionKeys, PLUGIN_EXTENSIONS } from '@nodeint/migent-contracts';
 import type { UnknownKey } from '@nodeint/migent-workflow';
 import { isRecord } from '@nodeint/migent-workflow';
 import { unknownKeyEntries } from '@nodeint/migent-workflow';
@@ -11,11 +12,15 @@ const ROLE_V4_RENAMED: Readonly<Record<string, string>> = {
   options: "is no longer supported. Move options into the role's agent under client.options.",
 };
 
-/** Unknown keys under each role of a config document, with their paths. */
-export function unknownRoleKeyEntries(config: Record<string, unknown>): UnknownKey[] {
+/** Unknown keys under each role of a config document, with their paths. Claimed role keys are known. */
+export function unknownRoleKeyEntries(
+  config: Record<string, unknown>,
+  extensions: ExtensionCatalog = PLUGIN_EXTENSIONS,
+): UnknownKey[] {
   if (!isRecord(config.roles)) return [];
+  const valid = [...ROLE_KEYS, ...extensionKeys(extensions, 'role')];
   return Object.entries(config.roles).flatMap(([name, role]) =>
     isRecord(role)
-      ? unknownKeyEntries(role, { valid: ROLE_KEYS, location: `roles.${name}`, base: ['roles', name], renamed: ROLE_V4_RENAMED })
+      ? unknownKeyEntries(role, { valid, location: `roles.${name}`, base: ['roles', name], renamed: ROLE_V4_RENAMED })
       : []);
 }
