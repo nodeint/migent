@@ -17,7 +17,7 @@ import {
   type Which,
 } from './catalog.js';
 import type { ModelEffortCheck } from './check.js';
-import { agentClientType } from './client-type.js';
+import { agentClientType, clientUnusable, isRecord } from './client-type.js';
 import { checkModelEfforts } from './effort-check.js';
 
 /**
@@ -190,16 +190,4 @@ function distance(left: string, right: string): number {
     previous = current;
   }
   return previous[right.length];
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-/** True when `client` is present but is not a mapping with a usable `type`: the structural check explains it. */
-function clientUnusable(definition: Record<string, unknown>): boolean {
-  const {client} = definition;
-  if ((client === null || client === undefined)) return false;
-  if (!isRecord(client)) return true;
-  return (client.type !== null && client.type !== undefined) && (typeof client.type !== 'string' || client.type.trim() === '');
 }

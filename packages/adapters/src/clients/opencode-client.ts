@@ -18,6 +18,7 @@ import { classifyProviderError, providerErrorMessage } from '../types.js';
 import { NativeOptions } from '../utils/native-options.js';
 import { parseHelpOptions } from '../utils/parse-help-options.js';
 import { compact, finite, isRecord, labelOf, parseJsonObject } from './json.js';
+import { emptySegmentedRun, modelsCommandFor, segmentedRunOutput, versionCommandFor } from './segmented-run.js';
 
 const NATIVE = new NativeOptions({
   label: 'opencode',
@@ -27,34 +28,6 @@ const NATIVE = new NativeOptions({
   ],
   policy: [{ name: 'variant', overridable: true }],
 });
-
-function trimToStatusHeader(text: string): string {
-  const header = /(?:^|\n)[ \t]*status:[ \t]*(?:complete|blocked)\b/im.exec(text);
-  if (header !== null) return text.slice(header.index).trimStart();
-  const glued = /status:[ \t]*(?:complete|blocked)\b/i.exec(text);
-  if (glued !== null) return text.slice(glued.index).trim();
-  return text;
-}
-
-function hasStatusHeader(text: string): boolean {
-  return (
-    /(?:^|\n)[ \t]*status:[ \t]*(?:complete|blocked)\b/im.test(text) ||
-    /status:[ \t]*(?:complete|blocked)\b/i.test(text)
-  );
-}
-
-function textWithStatusHeader(segments: readonly (readonly string[])[]): string {
-  let lastNonempty = '';
-  for (let index = segments.length - 1; index >= 0; index -= 1) {
-    const text = (segments[index] ?? []).join('').trim();
-    if (!text) continue;
-    if (!lastNonempty) lastNonempty = text;
-    const trimmed = trimToStatusHeader(text);
-    if (hasStatusHeader(trimmed)) return trimmed;
-  }
-  if (lastNonempty) return trimToStatusHeader(lastNonempty);
-  return '';
-}
 
 function events(stdout: string): Record<string, unknown>[] {
   const out: Record<string, unknown>[] = [];
@@ -208,34 +181,31 @@ export class OpencodeClient implements CliClient {
   }
 
   public modelsCommand(): CommandSpec {
-    return { argv: [this.command, 'models'] };
+    return modelsCommandFor(this.command);
   }
 
   public versionCommand(): CommandSpec {
-    return { argv: [this.command, '--version'] };
+    return versionCommandFor(this.command);
   }
 
   public parseRun(stdout: string, lastMessageFile: string): CliRunOutput {
     void lastMessageFile;
-    const segments: string[][] = [[]];
-    let sessionId: string | null = null;
-    let errorMessage: string | null = null;
-    let sawEvent = false;
+    const run = emptySegmentedRun();
     for (const payload of events(stdout)) {
-      sawEvent = true;
+      run.sawEvent = true;
       const id = payload.sessionID;
-      if (typeof id === 'string' && id) sessionId = id;
+      if (typeof id === 'string' && id) run.sessionId = id;
       const eventType = payload.type;
       if (eventType === 'text') {
         const {text} = partOf(payload);
-        if (typeof text === 'string' && text) segments[segments.length - 1]?.push(text);
+        if (typeof text === 'string' && text) run.segments[run.segments.length - 1]?.push(text);
       } else if (eventType === 'tool_use') {
-        if (segments[segments.length - 1]?.length) segments.push([]);
+        if (run.segments[run.segments.length - 1]?.length) run.segments.push([]);
       } else if (eventType === 'error') {
-        errorMessage = errorString(payload);
+        run.errorMessage = errorString(payload);
       }
     }
-    return segmentedRunOutput(stdout, { segments, sessionId, errorMessage, sawEvent });
+    return segmentedRunOutput(stdout, run);
   }
 
   public parseModels(stdout: string): ModelCatalog {
@@ -361,25 +331,4 @@ export class OpencodeClient implements CliClient {
       return item.id;
     }))];
   }
-}
-
-interface SegmentedRun {
-  segments: readonly (readonly string[])[];
-  sessionId: string | null;
-  errorMessage: string | null;
-  sawEvent: boolean;
-}
-
-/** Picks the run output: model text, else the reported error, else the raw stdout when no event parsed. */
-function segmentedRunOutput(
-  stdout: string,
-  parsed: SegmentedRun,
-): CliRunOutput {
-  const { segments, sessionId, errorMessage, sawEvent } = parsed;
-  const text = textWithStatusHeader(segments);
-  if (text) return { text, sessionId, source: 'model' };
-  if (errorMessage) return { text: errorMessage, sessionId, source: 'error' };
-  if (sawEvent) return { text: '', sessionId, source: 'none' };
-  const raw = stdout.trim();
-  return { text: raw, sessionId: null, source: raw === '' ? 'none' : 'error' };
 }

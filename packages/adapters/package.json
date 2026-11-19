@@ -44,6 +44,9 @@
   "scripts": {
     "prepack": "pnpm -w run build && cp ../../LICENSE ."
   },
+  "dependencies": {
+    "@nodeint/migent-contracts": "workspace:*"
+  },
   "devDependencies": {
     "typescript": "^6.0.3"
   }

@@ -15,6 +15,7 @@ import { classifyProviderError, providerErrorMessage } from '../types.js';
 import { NativeOptions } from '../utils/native-options.js';
 import { parseHelpOptions } from '../utils/parse-help-options.js';
 import { compact, finite, isRecord, labelOf, parseJsonObject, picked } from './json.js';
+import { emptySegmentedRun, modelsCommandFor, segmentedRunOutput, versionCommandFor } from './segmented-run.js';
 
 const GROK_REASONING_OPTION = 'reasoning-effort';
 const GROK_EFFORT_PROBE = 'migent-probe';
@@ -38,34 +39,6 @@ const NATIVE = new NativeOptions({
   renames: { [GROK_REASONING_OPTION]: { flag: '--reasoning-effort', aliases: ['--effort'] } },
   policy: [{ name: GROK_REASONING_OPTION, prompt: true, allowDefault: true, overridable: true }],
 });
-
-function trimToStatusHeader(text: string): string {
-  const header = /(?:^|\n)[ \t]*status:[ \t]*(?:complete|blocked)\b/im.exec(text);
-  if (header !== null) return text.slice(header.index).trimStart();
-  const glued = /status:[ \t]*(?:complete|blocked)\b/i.exec(text);
-  if (glued !== null) return text.slice(glued.index).trim();
-  return text;
-}
-
-function hasStatusHeader(text: string): boolean {
-  return (
-    /(?:^|\n)[ \t]*status:[ \t]*(?:complete|blocked)\b/im.test(text) ||
-    /status:[ \t]*(?:complete|blocked)\b/i.test(text)
-  );
-}
-
-function textWithStatusHeader(segments: readonly (readonly string[])[]): string {
-  let lastNonempty = '';
-  for (let index = segments.length - 1; index >= 0; index -= 1) {
-    const text = (segments[index] ?? []).join('').trim();
-    if (!text) continue;
-    if (!lastNonempty) lastNonempty = text;
-    const trimmed = trimToStatusHeader(text);
-    if (hasStatusHeader(trimmed)) return trimmed;
-  }
-  if (lastNonempty) return trimToStatusHeader(lastNonempty);
-  return '';
-}
 
 function toolNameOf(payload: Record<string, unknown>): string {
   for (const key of ['toolName', 'title', 'kind']) {
@@ -151,36 +124,33 @@ export class GrokClient implements CliClient {
   }
 
   public modelsCommand(): CommandSpec {
-    return { argv: [this.command, 'models'] };
+    return modelsCommandFor(this.command);
   }
 
   public versionCommand(): CommandSpec {
-    return { argv: [this.command, '--version'] };
+    return versionCommandFor(this.command);
   }
 
   public parseRun(stdout: string, lastMessageFile: string): CliRunOutput {
     void lastMessageFile;
-    const segments: string[][] = [[]];
-    let sessionId: string | null = null;
-    let errorMessage: string | null = null;
-    let sawEvent = false;
+    const run = emptySegmentedRun();
     for (const rawLine of stdout.split(/\r\n|\n|\r/)) {
       const payload = parseJsonObject(rawLine);
       if (payload === null) continue;
-      sawEvent = true;
+      run.sawEvent = true;
       const eventType = payload.type;
       if (endsTextSegment(payload)) {
-        if (segments[segments.length - 1]?.length) segments.push([]);
+        if (run.segments[run.segments.length - 1]?.length) run.segments.push([]);
       } else if (eventType === 'text') {
         const data = nonEmptyString(payload.data);
-        if (data !== null) segments[segments.length - 1]?.push(data);
+        if (data !== null) run.segments[run.segments.length - 1]?.push(data);
       } else if (eventType === 'end') {
-        sessionId = nonEmptyString(payload.sessionId) ?? sessionId;
+        run.sessionId = nonEmptyString(payload.sessionId) ?? run.sessionId;
       } else if (eventType === 'error') {
-        errorMessage = nonEmptyString(payload.message) ?? errorMessage;
+        run.errorMessage = nonEmptyString(payload.message) ?? run.errorMessage;
       }
     }
-    return segmentedRunOutput(stdout, { segments, sessionId, errorMessage, sawEvent });
+    return segmentedRunOutput(stdout, run);
   }
 
   public parseModels(stdout: string): ModelCatalog {
@@ -341,25 +311,4 @@ function endsTextSegment(payload: Record<string, unknown>): boolean {
 
 function nonEmptyString(value: unknown): string | null {
   return typeof value === 'string' && value ? value : null;
-}
-
-interface SegmentedRun {
-  segments: readonly (readonly string[])[];
-  sessionId: string | null;
-  errorMessage: string | null;
-  sawEvent: boolean;
-}
-
-/** Picks the run output: model text, else the reported error, else the raw stdout when no event parsed. */
-function segmentedRunOutput(
-  stdout: string,
-  parsed: SegmentedRun,
-): CliRunOutput {
-  const { segments, sessionId, errorMessage, sawEvent } = parsed;
-  const text = textWithStatusHeader(segments);
-  if (text) return { text, sessionId, source: 'model' };
-  if (errorMessage) return { text: errorMessage, sessionId, source: 'error' };
-  if (sawEvent) return { text: '', sessionId, source: 'none' };
-  const raw = stdout.trim();
-  return { text: raw, sessionId: null, source: raw === '' ? 'none' : 'error' };
 }

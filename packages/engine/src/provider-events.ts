@@ -1,35 +1,10 @@
 import { eventKindTraits } from '@nodeint/migent-contracts';
 import { logProgress, utcNow } from '@nodeint/migent-kernel';
 import type { ExecutionContext, SessionStore } from '@nodeint/migent-session';
-import { isRecord } from '@nodeint/migent-workflow';
-
-const CONTROL_PLANE_WARNING_MARKERS = ['failed to refresh available models'];
 
 function reportsOnStderr(event: string, itemProgress: boolean): boolean {
   if (eventKindTraits(event).stderr) return true;
   return itemProgress && event === 'provider.item_completed';
-}
-
-export function providerErrorMessage(payload: Record<string, unknown>): string | null {
-  const {message} = payload;
-  if (typeof message === 'string' && message.trim()) return message.trim();
-  const {error} = payload;
-  if (isRecord(error)) {
-    const nested = error.message;
-    if (typeof nested === 'string' && nested.trim()) return nested.trim();
-  }
-  if (typeof error === 'string' && error.trim()) return error.trim();
-  return null;
-}
-
-export function classifyProviderError(message: string | null): { event: string; summary: string } {
-  let summary = typeof message === 'string' && message.trim() ? message.trim() : '';
-  if (!summary) summary = 'provider emitted an error';
-  const lowered = summary.toLowerCase();
-  const event = CONTROL_PLANE_WARNING_MARKERS.some((marker) => lowered.includes(marker))
-    ? 'provider.warning'
-    : 'provider.error';
-    return { event, summary };
 }
 
 export class ProviderEvent {

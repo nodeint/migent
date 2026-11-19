@@ -2,6 +2,8 @@
 import { type ChildProcess, spawn, type StdioOptions } from 'node:child_process';
 import { StringDecoder } from 'node:string_decoder';
 
+import type { CommandSpec } from '@nodeint/migent-contracts';
+
 import { isShellSignalExitCode } from './constants.js';
 import { wrapperArgv } from './process-ownership.js';
 import { TailBuffer } from './tail-buffer.js';
@@ -326,11 +328,4 @@ export function describeStartFailure(
   }
 }
 
-export interface CommandSpec {
-  argv: string[];
-  stdin?: string | null;
-  /** Windows: pass `argv` to the process unquoted (for `cmd.exe /s /c "..."`). */
-  windowsVerbatimArguments?: boolean;
-  /** Merge the command's stderr into its stdout at the file-descriptor level. */
-  mergeStderr?: boolean;
-}
+export type { CommandSpec };

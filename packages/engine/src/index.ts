@@ -14,8 +14,6 @@ export { DEFAULT_MAX_DISPATCHES, EXECUTE_EXIT_CODES, executeNamedWorkflow } from
 export { withPluginScope } from './plugin-host/scope.js';
 export { withLivePlugins } from './plugin-host/selection.js';
 export {
-  classifyProviderError,
-  providerErrorMessage,
   ProviderEvent,
   ProviderEventReporter,
 } from './provider-events.js';

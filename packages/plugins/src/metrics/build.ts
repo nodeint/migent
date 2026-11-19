@@ -1,4 +1,4 @@
-import type { PluginSessionEvent, PluginSessionSnapshot } from '@nodeint/migent-contracts';
+import type { PluginExecutionRow, PluginSessionEvent, PluginSessionSnapshot } from '@nodeint/migent-contracts';
 
 import {
   addTurn,
@@ -19,28 +19,6 @@ import {
 } from './values.js';
 
 type Event = PluginSessionEvent;
-
-/** An execution row as the snapshot carries it (the session package's `ExecutionRow`). */
-interface Row {
-  id: string;
-  order: number | null;
-  stageId: string;
-  attempt: number | null;
-  provider: string | null;
-  model: string | null;
-  agentId: string | null;
-  resumes: string | null;
-  status: string | null;
-  outcomeStatus: string | null;
-  decision: string | null;
-  blocker: string | null;
-  error: string | null;
-  failureReason: string | null;
-  createdAt: string | null;
-  completedAt: string | null;
-  skip: Record<string, unknown> | null;
-  freshReason: string | null;
-}
 
 interface Stage {
   role?: string | null;
@@ -69,7 +47,7 @@ interface Source {
   sessionId: string;
   status: Readonly<Record<string, unknown>>;
   workflow: Workflow | null;
-  executions: Row[];
+  executions: PluginExecutionRow[];
   events: readonly Event[];
   turns: readonly Turn[];
   clients: Readonly<Record<string, string | null>>;
@@ -110,7 +88,7 @@ function decisionTargets(workflow: Workflow, stageId: string, decision: string |
   return routeTargets(stage.routes?.[decision]).filter((target) => target !== 'complete');
 }
 
-function revisionMap(executions: Row[], workflow: Workflow | null): Map<string, number> {
+function revisionMap(executions: PluginExecutionRow[], workflow: Workflow | null): Map<string, number> {
   const counts = new Map<string, number>();
   if (workflow === null) return counts;
   for (const execution of executions) {
@@ -122,7 +100,7 @@ function revisionMap(executions: Row[], workflow: Workflow | null): Map<string, 
   return counts;
 }
 
-function routedFrom(executions: Row[], workflow: Workflow | null): Map<string, string | null> {
+function routedFrom(executions: PluginExecutionRow[], workflow: Workflow | null): Map<string, string | null> {
   const routed = new Map<string, string | null>();
   const candidate = new Map<string, string | null>();
   for (const execution of executions) {
@@ -137,7 +115,7 @@ function routedFrom(executions: Row[], workflow: Workflow | null): Map<string, s
 }
 
 function stageObjects(
-  executions: Row[],
+  executions: PluginExecutionRow[],
   workflow: Workflow | null,
   revisions: Map<string, number>,
 ): Record<string, unknown> {
@@ -203,7 +181,7 @@ function verifyStats(events: readonly Event[], hasCommands: boolean): {
   };
 }
 
-function sessionWallMs(executions: Row[]): number | null {
+function sessionWallMs(executions: PluginExecutionRow[]): number | null {
   const [first] = executions;
   if (first === undefined) return null;
   if (executions.some((execution) => execution.completedAt === null || execution.createdAt === null)) return null;
@@ -253,7 +231,7 @@ interface ExecutionResult {
 }
 
 function executionObject(
-  execution: Row,
+  execution: PluginExecutionRow,
   shared: { events: readonly Event[]; turns: readonly Turn[]; workflow: Workflow | null },
   facts: { cancelled: number; anomalies: Anomalies; routedFromId: string | null; client: string | null },
 ): ExecutionResult {
@@ -416,7 +394,7 @@ export function buildMetrics(sessionId: string, snapshot: PluginSessionSnapshot)
     sessionId,
     status: snapshot.status,
     workflow,
-    executions: snapshot.executions as unknown as Row[],
+    executions: snapshot.executions as unknown as PluginExecutionRow[],
     events: snapshot.events,
     turns: snapshot.turns as unknown as Turn[],
     clients: snapshot.execution_clients,
