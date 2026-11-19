@@ -82,12 +82,14 @@ export function resolveFreezeTargets(
     const target = resolveStageSpec(config, stage, spec);
     out.resolved[stage.id] = target;
     out.roleTargets[stage.role] = target;
+    // Always selected, so an agent naming an unknown policy is refused even when none is configured.
+    const policy = freezeStagePolicy(config, stage, target);
     out.written[stage.id] = {
       client: target.client,
       model: target.model,
       options: { ...target.options },
       ...targetExtensionField(target),
-      ...(resumePolicies === null ? {} : { resume_policy: freezeStagePolicy(config, stage, target) }),
+      ...(resumePolicies === null ? {} : { resume_policy: policy }),
     };
   }
   return out;
