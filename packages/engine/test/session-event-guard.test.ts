@@ -10,7 +10,7 @@ import { AgentToolRunner, executeNamedWorkflow } from '../src/index.ts';
 import { assertEventsValid } from './event-validation.ts';
 import { PLAN_REVIEW_WORKFLOW, registryOf, ScriptedClient, tempDir } from './support.ts';
 
-const CONFIG = ['schema_version: 7', 'roles:', '  dev:', '    agent: { client: { type: fake }, model: fake }', ''].join('\n');
+const CONFIG = ['schema_version: 8', 'roles:', '  dev:', '    agent: { client: { type: fake }, model: fake }', ''].join('\n');
 const WORKFLOW = ['schema_version: 3', 'id: wf', 'stages:', '  - { id: one, role: dev }', ''].join('\n');
 const DONE = 'status: complete\n\ndone';
 

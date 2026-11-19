@@ -111,7 +111,7 @@ describe('the snapshot workflow carries no extension data', () => {
     const directory = path.join(workspace, '.migent', 'sessions', 's1');
     writeFileSync(path.join(workspace, '.migent', 'config.yaml'), 'roles:\n  dev: {}\n');
     const document = parseWorkflowMapping(
-      { schema_version: 7, id: 'flow', gone_flow: 'a', stages: [{ id: 'one', role: 'dev', depends_on: [], gone_stage: 'b', agent }] },
+      { schema_version: 8, id: 'flow', gone_flow: 'a', stages: [{ id: 'one', role: 'dev', depends_on: [], gone_stage: 'b', agent }] },
       'flow.yaml',
       { extensions: catalog },
     );

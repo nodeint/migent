@@ -32,7 +32,7 @@ const analyze = (config: Mapping, extensions?: Extensions) =>
   }).diagnostics.items;
 
 const config = (overrides: { agent?: unknown; role?: unknown; inline?: unknown } = {}): Mapping => ({
-  schema_version: 7,
+  schema_version: 8,
   agents: { named: { client: { type: 'codex' }, model: 'm', fixture_agent: overrides.agent ?? { mode: 'a' } } },
   roles: {
     dev: { agent: 'named', fixture_role: overrides.role ?? { mode: 'r' } },
@@ -91,7 +91,7 @@ test('config draft validation reports every invalid claimed key with its path an
 });
 
 test('config draft validation attributes a local-layer override to the local layer', () => {
-  const local = { schema_version: 7, agents: { named: { fixture_agent: { mode: 5 } } } };
+  const local = { schema_version: 8, agents: { named: { fixture_agent: { mode: 5 } } } };
   const items = validateConfigDraft({ scope: 'local', draft: local, companion: config() }, defaultClients(), catalog);
   const errors = items.filter((item) => item.severity === 'error');
   expect(errors.map((item) => item.path)).toEqual([['agents', 'named', 'fixture_agent', 'mode']]);
@@ -107,7 +107,7 @@ test('layer validation forwards the catalog', () => {
 });
 
 const workflow = (agent: Mapping): Mapping => ({
-  schema_version: 7,
+  schema_version: 8,
   id: 'flow',
   stages: [{ id: 'a', role: 'dev', depends_on: [], agent: { client: { type: 'codex' }, model: 'm', ...agent } }],
 });

@@ -14,7 +14,7 @@ beforeEach(() => {
 afterEach(() => { restoreProduction(); });
 
 const PROJECT = {
-  schema_version: 7,
+  schema_version: 8,
   agents: { x: { client: { type: 'codex' }, model: 'm' } },
   roles: { dev: { agent: 'x' } },
 };

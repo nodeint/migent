@@ -23,7 +23,7 @@ export function registryOf(clients: Record<string, CliClient>): ClientRegistry {
 }
 
 export const SESSION_CONFIG = `\
-schema_version: 7
+schema_version: 8
 agents:
   grok:
     client:

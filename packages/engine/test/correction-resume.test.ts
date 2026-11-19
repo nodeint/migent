@@ -33,10 +33,10 @@ async function cancelledStage(responses: string[], protocol = 2) {
   const workspace = tempDir('migent-question-ws-');
   mkdirSync(path.join(workspace, '.migent', 'workflows'), { recursive: true });
   writeFileSync(path.join(workspace, '.migent', 'config.yaml'), [
-    'schema_version: 7', 'roles:', '  planner:', '    agent: { client: { type: fake }, model: fake }', '',
+    'schema_version: 8', 'roles:', '  planner:', '    agent: { client: { type: fake }, model: fake }', '',
   ].join('\n'));
   writeFileSync(path.join(workspace, '.migent', 'workflows', 'wf.yaml'), [
-    'schema_version: 7', 'id: wf', 'artifacts:', '  plan: { file: plan.md }', 'stages:', '  - { id: plan, role: planner, artifacts: [plan] }', '',
+    'schema_version: 8', 'id: wf', 'artifacts:', '  plan: { file: plan.md }', 'stages:', '  - { id: plan, role: planner, artifacts: [plan] }', '',
   ].join('\n'));
   const sessionId = createWorkflowSession(workspace, 'wf', { task: 'Finish the notes' });
   const provider = new HangFirstProvider(pidFile, responses);

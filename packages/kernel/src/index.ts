@@ -162,7 +162,7 @@ export {
   shouldPublishOutputs,
 } from './outputs.js';
 export { needsPluginTarget, pluginTargetIssues, resolvePluginTarget } from './plugin-targets.js';
-export { pluginEntryIssues, type PluginManifestData, type PluginRegistry, type PluginValidationInput,registryManifests } from './plugin-validation.js';
+export { pluginEntryIssues, type PluginManifestData, type PluginProblem, type PluginRegistry, type PluginValidationInput,pluginValidationProblems, type PluginValidationScope, registryManifests } from './plugin-validation.js';
 export type {
   EndpointState,
   ProcessInspector,
@@ -201,8 +201,6 @@ export {
 } from './provider-spawn.js';
 export type { Question, QuestionAnswer } from './questions.js';
 export { answerQuestions, formatQuestionAnswers, loadQuestionFile, QuestionFileError, storedQuestions } from './questions.js';
-export type { OnExpired, OnExpiredInput, OnExpiredOrigin, PolicySelection, ResolvedResumePolicy, ResumeEstimate, ResumeEvaluation, ResumeFacts } from './resume-policy.js';
-export { agentResumePolicyName, DEFAULT_RESUME_POLICY, effectiveOnExpired, evaluateResume, globMatches, ON_EXPIRED_ACTIONS, parseDuration, selectResumePolicy, validateResumePolicies } from './resume-policy.js';
 export { log, utcNow } from './runtime.js';
 export {
   addArtifactContext,

@@ -6,6 +6,7 @@ import { AgentToolRunner } from '@nodeint/migent-engine';
 import { SessionStore } from '@nodeint/migent-session';
 import { expect, test } from 'vitest';
 
+import { withPlugins } from '../src/client.ts';
 import { executeWorkflow } from '../src/commands/execute.ts';
 import { cliHooks } from '../src/hooks.ts';
 import { main } from '../src/index.ts';
@@ -109,10 +110,10 @@ test('a live follow replays the expiry with its evidence and the decision comman
 
 test('a sibling question survives an expired stage: the decision runs only the decided stage (T13)', async () => {
   const stages = '  - { id: plan, role: planner, ask: human }\n  - { id: other, role: planner, ask: human }\n';
-  const root = writeFakeWorkflowWorkspace({ plan: `schema_version: 7\nid: plan\nstages:\n${stages}` });
-  appendFileSync(path.join(root, '.migent/config.yaml'), '\nresume_policies:\n  fake:\n    match: { client: fake }\n    cache_ttl: 1s\n    on_expired: ask\n');
+  const root = writeFakeWorkflowWorkspace({ plan: `schema_version: 8\nid: plan\nstages:\n${stages}` });
+  appendFileSync(path.join(root, '.migent/config.yaml'), '\nplugins:\n  prompt_cache_ttl:\n    policies:\n      fake:\n        match: { client: fake }\n        cache_ttl: 1s\n        on_expired: ask\n');
   const provider = new ScriptedClient([question, question, 'status: complete\n\nDone']);
-  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
+  const runner = withPlugins(new AgentToolRunner(registryOf({ fake: provider }), 10));
   const run = { root, runner, id: '' };
   try {
     cliHooks.runner = runner;
@@ -142,11 +143,11 @@ test('a sibling question survives an expired stage: the decision runs only the d
 
 test('a sibling blocker survives an expired stage: the decision runs only the decided stage (T13)', async () => {
   const stages = '  - { id: plan, role: planner, ask: human }\n  - { id: other, role: planner }\n';
-  const root = writeFakeWorkflowWorkspace({ plan: `schema_version: 7\nid: plan\nstages:\n${stages}` });
-  appendFileSync(path.join(root, '.migent/config.yaml'), '\nresume_policies:\n  fake:\n    match: { client: fake }\n    cache_ttl: 1s\n    on_expired: ask\n');
+  const root = writeFakeWorkflowWorkspace({ plan: `schema_version: 8\nid: plan\nstages:\n${stages}` });
+  appendFileSync(path.join(root, '.migent/config.yaml'), '\nplugins:\n  prompt_cache_ttl:\n    policies:\n      fake:\n        match: { client: fake }\n        cache_ttl: 1s\n        on_expired: ask\n');
   const blocker = 'status: blocked\nblocker: missing design\n\nnope';
   const provider = new ScriptedClient([question, blocker, 'status: complete\n\nDone']);
-  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
+  const runner = withPlugins(new AgentToolRunner(registryOf({ fake: provider }), 10));
   const run = { root, runner, id: '' };
   try {
     cliHooks.runner = runner;

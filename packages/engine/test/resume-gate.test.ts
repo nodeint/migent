@@ -6,9 +6,8 @@ import type { BuildCommandInput, CommandSpec } from '@nodeint/migent-kernel';
 import { SessionLock, SessionStore, watchSnapshot } from '@nodeint/migent-session';
 import { afterEach, describe, expect, test } from 'vitest';
 
-import { AgentToolRunner } from '../src/agent-runner.ts';
 import { executeNamedWorkflow } from '../src/execute.ts';
-import { ageProviderEvents,registryOf, ScriptedClient } from './support.ts';
+import { ageProviderEvents,registryOf, runnerWithPlugins,ScriptedClient  } from './support.ts';
 
 const roots: string[] = [];
 afterEach(() => {
@@ -24,11 +23,13 @@ const scopeQuestion = {
 };
 const QUESTION = 'status: question\n\n' + JSON.stringify({ schema_version: 1, questions: [scopeQuestion] });
 
-const POLICY = (onExpired: string) => `resume_policies:
-  fake:
-    match: { client: fake }
-    cache_ttl: 1s
-    on_expired: ${onExpired}
+const POLICY = (onExpired: string) => `plugins:
+  prompt_cache_ttl:
+    policies:
+      fake:
+        match: { client: fake }
+        cache_ttl: 1s
+        on_expired: ${onExpired}
 `;
 
 function workspace(config: { policy?: string }, stages: string): string {
@@ -37,9 +38,9 @@ function workspace(config: { policy?: string }, stages: string): string {
   mkdirSync(path.join(root, '.migent/workflows'), { recursive: true });
   writeFileSync(
     path.join(root, '.migent/config.yaml'),
-    `schema_version: 7\nroles:\n  planner:\n    agent: { client: { type: fake }, model: fake }\n${config.policy ?? ''}`,
+    `schema_version: 8\nroles:\n  planner:\n    agent: { client: { type: fake }, model: fake }\n${config.policy ?? ''}`,
   );
-  writeFileSync(path.join(root, '.migent/workflows/plan.yaml'), `schema_version: 7\nid: plan\nstages:\n${stages}`);
+  writeFileSync(path.join(root, '.migent/workflows/plan.yaml'), `schema_version: 8\nid: plan\nstages:\n${stages}`);
   return root;
 }
 
@@ -48,7 +49,7 @@ const ASK_STAGE = '  - id: plan\n    role: planner\n    ask: human\n';
 /** Runs the asking stage and returns once it stopped on the question, with the clock moved past the TTL. */
 async function asked(root: string, responses: string[]) {
   const provider = new ScriptedClient([QUESTION, ...responses]);
-  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
+  const runner = runnerWithPlugins(registryOf({ fake: provider }), 10);
   const first = await executeNamedWorkflow(root, { workflowId: 'plan', task: 'Plan' }, runner);
   expect(first.code).toBe(9);
   // Age the source execution so the 1s TTL has passed.
@@ -141,7 +142,7 @@ describe('resume gate', () => {
   }, 30_000);
 
   test('a stage on_expired overrides the policy', async () => {
-    const root = workspace({ policy: POLICY('ask') }, `${ASK_STAGE}    session:\n      on_expired: fresh\n`);
+    const root = workspace({ policy: POLICY('ask') }, `${ASK_STAGE}    prompt_cache_ttl:\n      on_expired: fresh\n`);
     const run = await asked(root, ['status: complete\n\nDone']);
     const result = await executeNamedWorkflow(root, { sessionId: run.sessionId, reply: 'New sessions only' }, run.runner);
     expect(result.code).toBe(0);
@@ -164,7 +165,7 @@ describe('resume_from target with no execution of its own', () => {
 
   async function completedA(root: string, responses: string[]) {
     const provider = new ScriptedClient(['status: complete\n\nA done', ...responses]);
-    const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
+    const runner = runnerWithPlugins(registryOf({ fake: provider }), 10);
     const first = await executeNamedWorkflow(root, { workflowId: 'plan', task: 'Plan', maxDispatches: 1 }, runner);
     const sessionDirectory = path.join(root, '.migent/sessions', first.sessionId);
     const file = path.join(sessionDirectory, 'executions/0001-a--attempt-01/execution.json');
@@ -238,11 +239,11 @@ describe('a running sibling finishes before the expiry stops the session', () =>
     const root = workspace({ policy: POLICY('ask') }, `concurrency: 2\n${STAGES}`.replace('concurrency: 2\n', ''));
     writeFileSync(
       path.join(root, '.migent/workflows/plan.yaml'),
-      `schema_version: 7\nid: plan\nconcurrency: 2\nstages:\n${STAGES}`,
+      `schema_version: 8\nid: plan\nconcurrency: 2\nstages:\n${STAGES}`,
     );
     const releaseFile = path.join(root, 'release');
     const provider = new HoldingClient([QUESTION, 'status: complete\n\nSlow done', 'status: complete\n\nAsk done'], releaseFile);
-    const runner = new AgentToolRunner(registryOf({ fake: provider }), 20);
+    const runner = runnerWithPlugins(registryOf({ fake: provider }), 20);
     const first = await executeNamedWorkflow(root, { workflowId: 'plan', task: 'Plan', stageId: 'ask' }, runner);
     expect(first.code).toBe(9);
     const sessionDirectory = path.join(root, '.migent/sessions', first.sessionId);

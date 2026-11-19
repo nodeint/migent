@@ -515,25 +515,23 @@ test('verify-only stages reject a missing list and role-only keys', () => {
   expect(() => loadWorkflowDocument(flow)).toThrow(/description must be one line/);
 });
 
-const sessionFlow = (session: string) => {
+const sessionFlow = (session: string, version?: number) => {
   const dir = tempDir('migent-flow-');
   const flow = path.join(dir, 'flow.yaml');
   writeFileSync(
     flow,
-    `id: f\nstages:\n  - id: a\n    role: dev\n  - id: b\n    role: dev\n    depends_on: [a]\n    session:\n${session}\n`,
+    `${version === undefined ? '' : `schema_version: ${version}\n`}id: f\nstages:\n  - id: a\n    role: dev\n  - id: b\n    role: dev\n    depends_on: [a]\n    session:\n${session}\n`,
     'utf8',
   );
   return flow;
 };
 
-test('session.on_expired parses alone and with resume_from', () => {
-  const alone = loadWorkflowDocument(sessionFlow('      on_expired: fresh'));
-  expect(alone.stages.b).toMatchObject({ resumeFrom: null, onExpired: 'fresh' });
-  const both = loadWorkflowDocument(sessionFlow('      resume_from: a\n      on_expired: resume'));
-  expect(both.stages.b).toMatchObject({ resumeFrom: 'a', onExpired: 'resume' });
-  expect(loadWorkflowDocument(sessionFlow('      resume_from: a')).stages.b).toMatchObject({ onExpired: null });
+test('session.on_expired is no longer a core key', () => {
+  expect(() => loadWorkflowDocument(sessionFlow('      on_expired: fresh', 8))).toThrow(/on_expired/);
+  expect(loadWorkflowDocument(sessionFlow('      resume_from: a')).stages.b).toMatchObject({ resumeFrom: 'a' });
 });
 
-test('session.on_expired rejects an invalid value', () => {
-  expect(() => loadWorkflowDocument(sessionFlow('      on_expired: later'))).toThrow(/stages\.b\.session\.on_expired/);
+test('a legacy session.on_expired in a schema 8 stage names its new location', () => {
+  const moved = /stages\.b\.session\.on_expired moved to stages\.b\.prompt_cache_ttl\.on_expired in schema_version 8/;
+  expect(() => loadWorkflowDocument(sessionFlow('      on_expired: fresh', 8))).toThrow(moved);
 });

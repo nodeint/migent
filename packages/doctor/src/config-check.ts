@@ -32,7 +32,7 @@ import {
 import { type Check, type Diagnostic, DiagnosticList, failed, type ModelEffortCheck,passed } from './check.js';
 import { failurePath, failureText } from './clients.js';
 import { analyzeNativeOptions, type NativeOptionFacts } from './native-options.js';
-import { checkResumePolicies } from './resume-check.js';
+import { checkPluginValidation } from './plugin-validate-check.js';
 
 /** What the structural rules found in one effective config. Pure: no files, PATH or catalogs. */
 export interface ConfigAnalysis {
@@ -94,7 +94,7 @@ export function analyzeConfig(
   const executableByClient = checkAgentDefinitions(ctx);
   const { roleNames, roleDescriptions } = checkRoles(ctx, roles);
 
-  checkResumePolicies(config, diagnostics, ownerOf);
+  checkPluginValidation(config, source.plugins, { clients, diagnostics, ownerOf });
   warnUnknownRoleKeys({ config, extensions: source.extensions }, diagnostics, ownerOf);
   return { diagnostics, executableByClient, roleNames, roleDescriptions, unmapped };
 }

@@ -11,8 +11,8 @@ import { cliHooks } from '../src/hooks.ts';
 import { main } from '../src/index.ts';
 import { capture, registryOf, removeWorkspace, ScriptedClient, writeFakeWorkflowWorkspace } from './support.ts';
 
-const PLAN = 'schema_version: 7\nid: plan\nartifacts:\n  plan: { file: plan.md }\nstages:\n  - id: draft\n    role: planner\n    artifacts: [plan]\n';
-const IMPLEMENT = 'schema_version: 7\nid: implement\nstages:\n  - { id: work, role: developer }\n';
+const PLAN = 'schema_version: 8\nid: plan\nartifacts:\n  plan: { file: plan.md }\nstages:\n  - id: draft\n    role: planner\n    artifacts: [plan]\n';
+const IMPLEMENT = 'schema_version: 8\nid: implement\nstages:\n  - { id: work, role: developer }\n';
 const UUID = '3f2b8c1e-5a47-4d0e-9b6a-1c2d3e4f5a6b';
 
 const workspaces: string[] = [];
@@ -161,7 +161,7 @@ test('session run --session --prior starts a prepared session and keeps the nume
   expect(rawManifest(workspace, prepared).prior_session_id).toBe(producer);
 });
 
-const TWO_STAGES = 'schema_version: 7\nid: two\nartifacts:\n  a: { file: a.md }\n  b: { file: b.md }\nstages:\n  - id: first\n    role: planner\n    artifacts: [a]\n  - id: second\n    role: planner\n    depends_on: [first]\n    artifacts: [b]\n';
+const TWO_STAGES = 'schema_version: 8\nid: two\nartifacts:\n  a: { file: a.md }\n  b: { file: b.md }\nstages:\n  - id: first\n    role: planner\n    artifacts: [a]\n  - id: second\n    role: planner\n    depends_on: [first]\n    artifacts: [b]\n';
 
 test('a runnable UUID-named session continues with a new execution', async () => {
   const workspace = writeFakeWorkflowWorkspace({ two: TWO_STAGES });

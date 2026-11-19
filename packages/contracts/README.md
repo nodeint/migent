@@ -30,6 +30,9 @@ exit codes, and environment variables.
   not load `typebox`. The root export re-exports all of it.
 - Core-only: `CONFIG_SECTIONS`, `EVENT_KIND_TRAITS`, `EXIT_CATALOG`, and `SESSION_STATUS_CATALOG` are owned by
   the core; no runtime registration. See [docs/architecture.md](../../docs/architecture.md).
+- Plugin API 1.1 (`PLUGIN_API_VERSION`) adds an optional `Plugin.validate`, a pure function from the plugin's options,
+  agents and stages to problems. A plugin written for 1.0 stays valid. `PluginValidationInput` and
+  `PluginValidationProblem` describe it.
 - Every Migent environment variable is listed in `ENV_CATALOG`.
 - After changing a schema, `ENV_CATALOG`, `EXIT_CATALOG`, or `SESSION_STATUS_CATALOG`, run `pnpm generate` and commit
   `schemas/` and
@@ -51,7 +54,7 @@ exit codes, and environment variables.
 | `FIXED_LIFECYCLE_EVENTS`, `STATUS_LIFECYCLE_EVENTS`, `RESUME_EVENTS`, `SESSION_CLIENT_EVENT_FORMS` | `src/session-events.ts` | Per-event schemas with concrete types, keyed by event name. Client events expose `schema`, `current` and `historical`. Types: `SessionEventRecord<N>`, `ClientEventCurrent<N>`, `ClientEventHistorical<N>`, `SessionEventName` |
 | `EVENT_KIND_TRAITS`, `eventKindTraits`, `EventKindTraits` | `src/event-kinds.ts` | Read-only trait registry per event kind (`stream`, `folds`, `skipsStatusWrite`, `stderr`), covering every `SESSION_EVENT_SCHEMAS` kind. Kernel, adapters, session and engine read traits here instead of keeping their own lists |
 | `CONFIG_SECTIONS`, `ConfigSection`, `EntryClassifier`, `assertConfigSections` | `src/config-sections.ts` | Static, core-owned list of namespaced config sections (key, TypeBox schema, `deep`/`replace` merge, `frozen`/`live`/`per_entry` freeze). Empty today; keys must match `^[a-z][a-z0-9_]*$` and may not be a core or legacy key, and the module asserts this on load. There is no runtime registration API |
-| `PLUGIN_EXTENSIONS`, `PluginExtension`, `ExtensionCatalog`, `extensionCatalogIssues`, `extensionKeys`, `extensionOwner`, `withExtensionProperties` | `src/extension-catalog.ts`, `src/extensions.ts` | Static, core-owned catalog of the flat keys a plugin claims on workflows, stages, agents, and roles (one object schema per level, plus an integer `version`). Empty today. `*_CORE_PROPERTIES` (`WORKFLOW_`, `STAGE_`, `ROLE_`, `AGENT_`) hold the core properties; the exported workflow, stage, role, and agent shapes are the core properties plus the catalog keys. The module asserts the catalog on load. No runtime registration API |
+| `PLUGIN_EXTENSIONS`, `PluginExtension`, `ExtensionCatalog`, `extensionCatalogIssues`, `extensionKeys`, `extensionOwner`, `withExtensionProperties` | `src/extension-catalog.ts`, `src/extensions.ts` | Static, core-owned catalog of the flat keys a plugin claims on workflows, stages, agents, and roles (one object schema per level, plus an integer `version`). Holds the `prompt_cache_ttl` entry (agent `policy`, stage `on_expired`). `*_CORE_PROPERTIES` (`WORKFLOW_`, `STAGE_`, `ROLE_`, `AGENT_`) hold the core properties; the exported workflow, stage, role, and agent shapes are the core properties plus the catalog keys. The module asserts the catalog on load. No runtime registration API |
 | `./data` | `src/data/` | Typebox-free subpath: `EXIT_CATALOG`, `ExecutionStatus`, `StageOutcomeStatus`, version constants |
 | `ENV_CATALOG` | `src/env.ts` | `MIGENT_DEBUG`, `MIGENT_NO_INPUT`, `MIGENT_HOME`, `DISABLE_TELEMETRY` |
 | `KNOWN_SHAPES` | `src/known-shapes.ts` | Opt-in shapes for passthrough files |

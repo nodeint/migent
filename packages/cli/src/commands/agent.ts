@@ -17,7 +17,7 @@ import { bindCancellationSignals } from '../signals.js';
 import { optionalText, stringList } from '../text.js';
 import { findWorkspace, invocationCwdPath, resolvePrompt } from '../workspace.js';
 import { continueState, continueTurn } from './agent-continue.js';
-import { answersInput, freshRolePrompt, gateRole, judgeRoleCancelled, newRolePolicy, recordAnswer, resumeSource, rolePrompt, roleResumeExpired, runFreshAttempt } from './agent-resume.js';
+import { answersInput, freshRolePrompt, gateRole, judgeRoleCancelled, recordAnswer, resumeSource, rolePrompt, roleResumeExpired, runFreshAttempt } from './agent-resume.js';
 
 const CLIENT_MAPPING = 'claude→claude-code, codex→codex, grok→grok, agy→agy, opencode→opencode';
 
@@ -94,7 +94,6 @@ async function dispatchLocked(context: {
       sessionId,
       resumeExecutionId: gated.verdict === 'fresh' ? null : resume.executionId,
       stageId: args.role,
-      resumePolicy: gated.stamp ?? newRolePolicy(workspace, { createdSession, role: args.role, target }),
       resumeSkipped: gated.skipped,
     });
     return [result];
@@ -268,7 +267,6 @@ async function continueLocked(
       sessionId: args.sessionId,
       resumeExecutionId: gated.verdict === 'fresh' ? null : next.resumeId,
       stageId: role,
-      resumePolicy: gated.stamp,
       resumeSkipped: gated.skipped,
     });
     printAgent({ ...result }, { role: role, client: profile.client, model: profile.model }, workspace);

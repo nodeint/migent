@@ -260,16 +260,6 @@
         }
       ]
     },
-    "on_expired": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "null"
-        }
-      ]
-    },
     "verify": {
       "type": "array",
       "items": {

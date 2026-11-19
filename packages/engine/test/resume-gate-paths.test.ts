@@ -1,11 +1,13 @@
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
+import { createPluginRegistry } from '@nodeint/migent-plugins';
 import { createWorkflowSession, SessionStore } from '@nodeint/migent-session';
 import { afterEach, expect, test } from 'vitest';
 
-import { AgentToolRunner, executeNamedWorkflow } from '../src/index.ts';
-import { ageProviderEvents,registryOf, ScriptedClient, tempDir as makeTempDir } from './support.ts';
+import { executeNamedWorkflow } from '../src/index.ts';
+import { pluginFreezeInput } from '../src/plugin-host/freeze.ts';
+import { ageProviderEvents,FakeClient, registryOf, runnerWithPlugins,ScriptedClient, tempDir as makeTempDir  } from './support.ts';
 
 const roots: string[] = [];
 
@@ -28,11 +30,13 @@ agents:
 roles:
   developer:
     agent: fake
-resume_policies:
-  fake:
-    match: { client: fake }
-    cache_ttl: 1s
-    on_expired: ask
+plugins:
+  prompt_cache_ttl:
+    policies:
+      fake:
+        match: { client: fake }
+        cache_ttl: 1s
+        on_expired: ask
 `;
 
 const ROUTE_BACK = `\
@@ -69,7 +73,7 @@ function setup(workflow: string): { workspace: string; sessionId: string } {
   mkdirSync(path.join(workspace, '.migent', 'workflows'), { recursive: true });
   writeFileSync(path.join(workspace, '.migent', 'config.yaml'), CONFIG, 'utf8');
   writeFileSync(path.join(workspace, '.migent', 'workflows', 'wf.yaml'), workflow, 'utf8');
-  return { workspace, sessionId: createWorkflowSession(workspace, 'wf', { task: 'task' }) };
+  return { workspace, sessionId: createWorkflowSession(workspace, 'wf', { task: 'task', plugins: pluginFreezeInput(createPluginRegistry(), registryOf({ fake: new FakeClient('fake', 'fake') })) }) };
 }
 
 /** Moves every execution's end time past the 1s TTL. */
@@ -86,7 +90,7 @@ function ageAll(workspace: string, sessionId: string): void {
 test('route back: a revise decision that would resume the expired implement conversation stops with exit 10', async () => {
   const { workspace, sessionId } = setup(ROUTE_BACK);
   const provider = new ScriptedClient(['status: complete\n\nimplemented', 'status: complete\ndecision: revise\n\nfix it', 'status: complete\n\nfixed']);
-  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
+  const runner = runnerWithPlugins(registryOf({ fake: provider }), 10);
   const first = await executeNamedWorkflow(workspace, { workflowId: 'wf', sessionId, maxDispatches: 2 }, runner);
   // The dispatch ceiling (5) ends the first run after implement and the revise decision.
   expect(first.code).toBe(5);
@@ -102,7 +106,7 @@ test('route back: a revise decision that would resume the expired implement conv
 test('verify repair: resuming an exhausted verify after the TTL stops with exit 10 and creates no execution', async () => {
   const { workspace, sessionId } = setup(VERIFY);
   const provider = new ScriptedClient(['status: complete\n\ndone', 'status: complete\n\ndone'], ['# n\n', null]);
-  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
+  const runner = runnerWithPlugins(registryOf({ fake: provider }), 10);
   const first = await executeNamedWorkflow(workspace, { workflowId: 'wf', sessionId }, runner);
   expect(first.stopReason).toBe('verify_exhausted');
   ageAll(workspace, sessionId);
@@ -123,14 +127,14 @@ test('a refreshed workflow brings a stage on_expired override that wins over the
     options: [{ id: 'A', label: 'Small' }, { id: 'B', label: 'Large' }],
   }] });
   const provider = new ScriptedClient([question, 'status: complete\n\nDone']);
-  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
+  const runner = runnerWithPlugins(registryOf({ fake: provider }), 10);
   const first = await executeNamedWorkflow(workspace, { workflowId: 'wf', sessionId }, runner);
   expect(first.code).toBe(9);
   ageAll(workspace, sessionId);
   // The draft now sets the override while the policy says `ask`; the refresh brings it into the frozen session.
   writeFileSync(
     path.join(workspace, '.migent', 'workflows', 'wf.yaml'),
-    `schema_version: 7\nid: wf\nstages:\n${stage}    session:\n      on_expired: fresh\n`,
+    `schema_version: 8\nid: wf\nstages:\n${stage}    prompt_cache_ttl:\n      on_expired: fresh\n`,
     'utf8',
   );
   const done = await executeNamedWorkflow(workspace, { sessionId, reply: 'Small', refreshWorkflow: true }, runner);

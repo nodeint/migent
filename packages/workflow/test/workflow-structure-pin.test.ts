@@ -6,7 +6,7 @@ import { collectWorkflowDraft, parseWorkflowMapping } from '../src/index.ts';
 type Mapping = Record<string, unknown>;
 
 const stage = (id: string, extra: Mapping = {}): Mapping => ({ id, role: 'developer', depends_on: [], ...extra });
-const doc = (stages: unknown[], extra: Mapping = {}): Mapping => ({ schema_version: 7, id: 'w', stages, ...extra });
+const doc = (stages: unknown[], extra: Mapping = {}): Mapping => ({ schema_version: 8, id: 'w', stages, ...extra });
 
 const cases: Record<string, Mapping> = {
   'stage not a mapping': doc(['a']),

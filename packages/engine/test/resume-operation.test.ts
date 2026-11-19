@@ -55,12 +55,12 @@ function workspace(plugins: string): string {
   mkdirSync(path.join(root, '.migent/workflows'), { recursive: true });
   writeFileSync(
     path.join(root, '.migent/config.yaml'),
-    'schema_version: 7\nroles:\n  planner:\n    agent: { client: { type: fake }, model: fake }\n'
-    + `resume_policies:\n  fake:\n    match: { client: fake }\n    cache_ttl: 1h\n    on_expired: ask\n${plugins}`,
+    'schema_version: 8\nroles:\n  planner:\n    agent: { client: { type: fake }, model: fake }\n'
+    + plugins,
   );
   writeFileSync(
     path.join(root, '.migent/workflows/plan.yaml'),
-    'schema_version: 7\nid: plan\nstages:\n  - id: plan\n    role: planner\n    ask: human\n',
+    'schema_version: 8\nid: plan\nstages:\n  - id: plan\n    role: planner\n    ask: human\n',
   );
   return root;
 }
@@ -175,11 +175,11 @@ async function twoAsked(): Promise<Asked> {
   mkdirSync(path.join(root, '.migent/workflows'), { recursive: true });
   writeFileSync(
     path.join(root, '.migent/config.yaml'),
-    'schema_version: 7\nroles:\n  planner:\n    agent: { client: { type: fake }, model: fake }\n',
+    'schema_version: 8\nroles:\n  planner:\n    agent: { client: { type: fake }, model: fake }\n',
   );
   writeFileSync(
     path.join(root, '.migent/workflows/plan.yaml'),
-    'schema_version: 7\nid: plan\nconcurrency: 2\nstages:\n'
+    'schema_version: 8\nid: plan\nconcurrency: 2\nstages:\n'
     + '  - id: a\n    role: planner\n    ask: human\n  - id: b\n    role: planner\n    ask: human\n',
   );
   const runner = new AgentToolRunner(registryOf({ fake: new ScriptedClient([QUESTION, QUESTION]) }), 10);
@@ -189,9 +189,6 @@ async function twoAsked(): Promise<Asked> {
   return { root, sessionId: first.sessionId, directory: path.join(root, '.migent/sessions', first.sessionId), sources };
 }
 
-const POLICY = {
-  name: 'p', cacheTtlSec: 3600, marginSec: 0, minContextTokens: 0, onExpired: null, match: null,
-} as const;
 
 describe('concurrent gates', () => {
   test('two overlapping gates in one process each judge and record their own source', async () => {
@@ -219,8 +216,7 @@ describe('concurrent gates', () => {
       };
       const gate = (stageId: string) => gateResume({
         store: new SessionStore(session.root), workspace: session.root, sessionId: session.sessionId, stageId,
-        sourceExecutionId: session.sources[stageId] ?? '', policy: POLICY, stageOnExpired: null,
-        clients: registryOf({ fake: new ScriptedClient([]) }), path: 'dispatch',
+        sourceExecutionId: session.sources[stageId] ?? '',         clients: registryOf({ fake: new ScriptedClient([]) }), path: 'dispatch',
         target: { client: 'fake', model: 'fake' }, interceptors: chain,
       });
       const [a, b] = await Promise.all([gate('a'), gate('b')]);

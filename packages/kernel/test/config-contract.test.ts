@@ -13,7 +13,7 @@ import {
 
 describe('config layer contract', () => {
   test('a partial named agent is a valid layer and merges into a valid effective config', () => {
-    const project = { schema_version: 7, agents: { a: { client: { type: 'codex' } } }, roles: { r: { agent: 'a' } } };
+    const project = { schema_version: 8, agents: { a: { client: { type: 'codex' } } }, roles: { r: { agent: 'a' } } };
     const local = { agents: { a: { model: 'm' } } };
     expect(isValid(ConfigLayer, project)).toBe(true);
     expect(isValid(EffectiveConfig, project)).toBe(false);

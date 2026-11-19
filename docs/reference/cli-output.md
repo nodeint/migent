@@ -1211,7 +1211,6 @@ Type: object
 | `decisions[].navigate` | string \| string[] \| null | yes | | |
 | `max_revisions` | number \| null | yes | | |
 | `resume_from` | string \| null | yes | | |
-| `on_expired` | string \| null | no | | |
 | `verify` | string[] | yes | | |
 | `max_verify` | number | yes | | |
 | `verify_timeout` | number \| null | yes | | |

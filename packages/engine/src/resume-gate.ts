@@ -1,6 +1,6 @@
 import path from 'node:path';
 
-import type { ClientRegistry, OnExpired, ResolvedResumePolicy } from '@nodeint/migent-kernel';
+import type { ClientRegistry } from '@nodeint/migent-kernel';
 import { cancellationSignal } from '@nodeint/migent-kernel';
 import { readParsedEvents, type SessionStore } from '@nodeint/migent-session';
 
@@ -22,17 +22,12 @@ export interface GateRequest {
   readonly stageId: string;
   /** The execution whose conversation would be resumed. */
   readonly sourceExecutionId: string;
-  /** The frozen or inherited policy; null means no policy applies and the gate does not run. */
-  readonly policy: ResolvedResumePolicy | null;
-  /** `session.on_expired` of the stage, from the frozen workflow. */
-  readonly stageOnExpired: OnExpired | null;
   readonly clients: ClientRegistry;
   /** Which caller asks, and the frozen target of the stage or role. */
   readonly path: ResumeInput['path'];
   readonly target: { readonly client: string; readonly model: string };
   /** The host's interceptors; none for a gate no plugin intercepts. */
   readonly interceptors?: InterceptorChain | undefined;
-  readonly now?: Date;
 }
 
 export interface GateResult {
@@ -69,14 +64,13 @@ function isUse(event: LogEvent, request: GateRequest): boolean {
 }
 
 /**
- * The one gate for resuming a conversation after the prompt cache may have expired. Without a policy it
- * returns `resume` and writes nothing. A human decision for this `(stage, source)` is applied once and wins, then
- * an existing pending stop asks. Otherwise the `conversation.resume` operation decides, and an expired verdict is
- * recorded as `resume.expired`, whatever the action. The caller holds the session lock.
+ * The one gate for resuming a conversation after the prompt cache may have expired. A human decision for this
+ * `(stage, source)` is applied once and wins, then an existing pending stop asks. Otherwise the
+ * `conversation.resume` operation decides: the handler resumes, and a plugin may propose otherwise. An expired
+ * verdict is recorded as `resume.expired`, whatever the action. The caller holds the session lock.
  */
 export async function gateResume(request: GateRequest): Promise<GateResult> {
-  const { policy, store, sessionId, stageId, sourceExecutionId } = request;
-  if (policy === null) return { verdict: 'resume', estimate: null };
+  const { store, sessionId, stageId, sourceExecutionId } = request;
   const decision = decidedChoice(request);
   if (decision !== null) return { verdict: decision, estimate: null };
   const waiting = store.pendingResumes(sessionId);
@@ -86,8 +80,7 @@ export async function gateResume(request: GateRequest): Promise<GateResult> {
   const directory = path.join(request.workspace, '.migent', 'sessions', sessionId);
   const runtime = new OperationRuntime<GateChange>({
     operations: [createConversationResumeOperation({
-      workspace: request.workspace, policy, stageOnExpired: request.stageOnExpired, clients: request.clients,
-      ...(request.now === undefined ? {} : { now: request.now }),
+      workspace: request.workspace, clients: request.clients,
     })],
     applier: new GateApplier({ store, sessionId, directory }),
     ...(request.interceptors === undefined ? {} : { interceptors: request.interceptors }),

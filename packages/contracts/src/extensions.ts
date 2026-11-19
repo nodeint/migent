@@ -13,7 +13,7 @@ import { STAGE_CORE_PROPERTIES, WORKFLOW_CORE_PROPERTIES } from './workflow.js';
 export const LEGACY_EXTENSION_KEYS: Readonly<Record<ExtensionLevel, readonly string[]>> = {
   workflow: ['outputs', 'requires'],
   stage: ['produces', 'model', 'options'],
-  agent: ['options', 'provider'],
+  agent: ['options', 'provider', 'resume_policy'],
   role: ['options', 'default_model', 'instructions'],
 };
 

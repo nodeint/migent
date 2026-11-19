@@ -42,11 +42,9 @@ import {
 } from './freeze-extensions.js';
 import { errorText, readFreezeMapping } from './freeze-file.js';
 import type { PluginFreezeInput, PluginsFrozenEntries } from './freeze-plugins.js';
-import { frozenPolicyMap, readResumePolicyNames } from './freeze-resume-policy.js';
 import { sessionMapping } from './freeze-session-mapping.js';
 import { readTargets, resolveFreezeTargets } from './freeze-targets.js';
-
-export { frozenResumePolicy } from './freeze-resume-policy.js';
+import { type LegacyPolicyData, readLegacyFreeze } from './legacy-freeze.js';
 
 export const WORKFLOW_FREEZE_FILE = 'workflow.frozen.yaml';
 
@@ -60,10 +58,8 @@ export interface WorkflowFreeze {
   workflow: WorkflowDocument;
   roles: Record<string, string[]>;
   targets: Record<string, StageTarget>;
-  /** The `resume_policies` of the config at creation; empty when none was configured. */
-  resumePolicies: Record<string, unknown>;
-  /** The name of the policy each stage selected at creation; null when none applies. */
-  resumePolicyNames: Record<string, string | null>;
+  /** Prompt cache policy data of a freeze written before the `prompt_cache_ttl` plugin, translated on read. */
+  legacy: LegacyPolicyData;
   /** Registered config sections frozen at creation, by key; empty when none was written. */
   config: Record<string, FrozenSection>;
   /** Plugin extension data recorded at creation; empty for a freeze written without any. */
@@ -96,6 +92,7 @@ export interface FreezeSource {
 function pluginFreeze(
   config: Record<string, unknown>,
   source: FreezeSource,
+  workflowBody: Record<string, unknown>,
 ): { plugins: PluginsFrozenEntries | undefined; classifiers: EntryClassifiers } {
   const hasPlugins = Object.hasOwn(config, 'plugins');
   if (hasPlugins && source.plugins === undefined) {
@@ -106,7 +103,7 @@ function pluginFreeze(
   }
   if (source.plugins === undefined) return { plugins: undefined, classifiers: source.classifiers ?? {} };
   return {
-    plugins: hasPlugins ? source.plugins.snapshot(config) : undefined,
+    plugins: hasPlugins ? source.plugins.snapshot(config, workflowBody) : undefined,
     classifiers: { ...source.classifiers, plugins: source.plugins.classify },
   };
 }
@@ -118,19 +115,17 @@ function withPluginDefaults(config: Record<string, unknown>, source: FreezeSourc
 export function writeWorkflowFreeze(sessionDirectory: string, source: FreezeSource): WrittenFreeze {
   const { workspace, workflow, resolveClient, extensions: catalog = PLUGIN_EXTENSIONS } = source;
   const config = withPluginDefaults(loadWorkspaceConfig(workspace), source);
-  const { plugins, classifiers } = pluginFreeze(config, source);
+  const workflowBody = workflowMapping(workflow);
+  const { plugins, classifiers } = pluginFreeze(config, source, workflowBody);
   const roles: Record<string, string[]> = {};
   for (const role of roleNames(workflow)) roles[role] = loadRoleResponsibilities(config, role);
-  const resumePolicies = frozenPolicyMap(config);
   const { written: targets, resolved, roleTargets } = resolveFreezeTargets(workflow, {
     config,
     spec: { registry: resolveClient, extensions: catalog },
-    resumePolicies,
   });
   const sections = freezeConfigSections(config, classifiers);
   const sourceSha256 = sourceFileHash(workflow.source);
   const filePath = path.join(sessionDirectory, WORKFLOW_FREEZE_FILE);
-  const workflowBody = workflowMapping(workflow);
   parseWorkflowMapping(workflowBody, filePath, { extensions: catalog });
   const extensionKeys = freezeExtensionKeys(catalog, { workflow, targets: resolved, roleTargets });
   const text = stringify(
@@ -140,7 +135,6 @@ export function writeWorkflowFreeze(sessionDirectory: string, source: FreezeSour
       workflow: workflowBody,
       roles,
       targets,
-      ...(resumePolicies === null ? {} : { resume_policies: resumePolicies }),
       ...(sections === null ? {} : { config: sections }),
       ...extensionKeys,
     },
@@ -161,15 +155,16 @@ export function readWorkflowFreeze(sessionDirectory: string): WorkflowFreeze | n
     throw corrupt(filePath, 'source_sha256 must be a string or null');
   }
   if (!isRecord(parsed.workflow)) throw corrupt(filePath, 'workflow must be a mapping');
+  const { workflow: workflowBody, legacy } = readLegacyFreeze(parsed);
   const extensions = readFrozenExtensions(parsed, filePath);
   let workflow: WorkflowDocument;
   try {
     // Ownership comes from the freeze alone, never from the current catalog.
     const recorded = recordedCatalog(extensions.records);
     // The live parser only rejects unknown keys from schema_version 5; a freeze is never lenient.
-    const [stray] = unknownWorkflowKeys(parsed.workflow, recorded);
+    const [stray] = unknownWorkflowKeys(workflowBody, recorded);
     if (stray !== undefined) throw new ConfigurationError(`Unknown workflow keys: ${stray}`);
-    workflow = parseWorkflowMapping(parsed.workflow, filePath, { extensions: recorded });
+    workflow = parseWorkflowMapping(workflowBody, filePath, { extensions: recorded });
   } catch (error) {
     throw corrupt(filePath, errorText(error));
   }
@@ -178,8 +173,7 @@ export function readWorkflowFreeze(sessionDirectory: string): WorkflowFreeze | n
     workflow,
     roles: readRoles(parsed.roles, filePath),
     targets: readTargets(parsed.targets, filePath, parsed.schema_version),
-    resumePolicies: isRecord(parsed.resume_policies) ? parsed.resume_policies : {},
-    resumePolicyNames: readResumePolicyNames(parsed.targets),
+    legacy,
     config: readFrozenConfigSections(parsed.config, (message) => corrupt(filePath, message)),
     extensions,
   };

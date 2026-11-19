@@ -12,6 +12,8 @@ export type {
 } from './legacy-execution-client.js';
 export { legacyExecutionClient } from './legacy-execution-client.js';
 export { readExecutionClient } from './legacy-execution-client.js';
+export type { LegacyPolicyData } from './legacy-freeze.js';
+export { readLegacyRoleStamp } from './legacy-freeze.js';
 export { requireSessionDirectory } from './manual-completion.js';
 export { formatNextCommand,publishNextSuggestions, resolveNextSuggestions } from './next-handoff.js';
 export { resolveHandoff } from './next-handoff.js';
@@ -54,7 +56,7 @@ export { PLUGIN_HOLD_RESOLUTION, type PluginHold, unresolvedPluginHolds } from '
 export { readExecutions, readSessionManifest, sessionSchemaVersion } from './session-fold-read.js';
 export type { FreezeSource, LiveWorkflowRef, WorkflowFreeze } from './session-freeze.js';
 export { collectFrozenDrift,WORKFLOW_FREEZE_FILE } from './session-freeze.js';
-export { frozenResumePolicy, frozenRoleInstructions, frozenStageTarget, loadFrozenWorkflow, readWorkflowFreeze, requireLiveWorkflow, warnIfFrozenDrift, writeWorkflowFreeze } from './session-freeze.js';
+export { frozenRoleInstructions, frozenStageTarget, loadFrozenWorkflow, readWorkflowFreeze, requireLiveWorkflow, warnIfFrozenDrift, writeWorkflowFreeze } from './session-freeze.js';
 export { LAST_ID_FILENAME, readLastIdMark, retireSessionNumber, setAfterNumericClaim, setBeforeNumericClaim } from './session-id.js';
 export type { CancelRequestResult } from './session-lock.js';
 export type { SessionLockState } from './session-lock.js';

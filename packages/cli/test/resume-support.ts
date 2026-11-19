@@ -4,6 +4,7 @@ import path from 'node:path';
 import { AgentToolRunner } from '@nodeint/migent-engine';
 import { expect } from 'vitest';
 
+import { withPlugins } from '../src/client.ts';
 import { executeWorkflow } from '../src/commands/execute.ts';
 import { cliHooks } from '../src/hooks.ts';
 import { main } from '../src/index.ts';
@@ -18,17 +19,17 @@ const MAX_PARALLEL = 10;
 const EXIT_QUESTION = 9;
 const EXIT_EXPIRED = 10;
 
-const POLICY = 'resume_policies:\n  fake:\n    match: { client: fake }\n    cache_ttl: 1s\n    on_expired: ask\n';
+const POLICY = 'plugins:\n  prompt_cache_ttl:\n    policies:\n      fake:\n        match: { client: fake }\n        cache_ttl: 1s\n        on_expired: ask\n';
 
 /** A workflow session whose asking stage was answered and then held by an expired `ask` resume. */
 export async function waiting(
   responses: string[],
   stages = '  - { id: plan, role: planner, ask: human }\n',
 ): Promise<{ root: string; id: string; provider: ScriptedClient; runner: AgentToolRunner }> {
-  const root = writeFakeWorkflowWorkspace({ plan: `schema_version: 7\nid: plan\nstages:\n${stages}` });
+  const root = writeFakeWorkflowWorkspace({ plan: `schema_version: 8\nid: plan\nstages:\n${stages}` });
   appendFileSync(path.join(root, '.migent/config.yaml'), `\n${POLICY}`);
   const provider = new ScriptedClient([question, ...responses]);
-  const runner = new AgentToolRunner(registryOf({ fake: provider }), MAX_PARALLEL);
+  const runner = withPlugins(new AgentToolRunner(registryOf({ fake: provider }), MAX_PARALLEL));
   cliHooks.runner = runner;
   const first = await capture(() => executeWorkflow(root, {
     action: 'start', workflowId: 'plan', task: 'Plan', runner, stageId: null,

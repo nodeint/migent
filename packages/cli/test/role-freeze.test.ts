@@ -6,6 +6,7 @@ import { AgentToolRunner } from '@nodeint/migent-engine';
 import { createAgentSession, readParsedEvents } from '@nodeint/migent-session';
 import { expect, test } from 'vitest';
 
+import { pluginRegistry, withPlugins } from '../src/client.ts';
 import { continueAgent, dispatchAgent } from '../src/commands/agent.ts';
 import { capture, registryOf, removeWorkspace, ScriptedClient, writeFakeWorkflowWorkspace } from './support.ts';
 
@@ -20,7 +21,7 @@ const eventNames = (root: string, id: string): string[] =>
 
 function runnerOf(responses: string[]): { runner: AgentToolRunner; provider: ScriptedClient } {
   const provider = new ScriptedClient(responses);
-  return { runner: new AgentToolRunner(registryOf({ fake: provider }), 10), provider };
+  return { runner: withPlugins(new AgentToolRunner(registryOf({ fake: provider }), 10)), provider };
 }
 
 /** A session that crashed between `session.created` and `plugins.frozen`: no freeze, no execution. */
@@ -101,7 +102,7 @@ const ASK = 'status: question\n\n' + JSON.stringify({ schema_version: 1, questio
   id: '1', question: 'Scope?', context: 'c', selection: 'single',
   options: [{ id: 'A', label: 'a' }, { id: 'B', label: 'b' }],
 }] });
-const POLICY = '\nresume_policies:\n  fake:\n    match: { client: fake }\n    cache_ttl: 1h\n    on_expired: ask\n';
+const POLICY = '\nplugins:\n  prompt_cache_ttl:\n    policies:\n      fake:\n        match: { client: fake }\n        cache_ttl: 1h\n        on_expired: ask\n';
 
 /** A default-enabled plugin that records every hook and every `conversation.resume` request it sees. */
 function probeOf(seen: string[], requests: Record<string, unknown>[]): Plugin {
@@ -133,7 +134,10 @@ function probeOf(seen: string[], requests: Record<string, unknown>[]): Plugin {
   };
 }
 const withProbe = (runner: AgentToolRunner, plugin: Plugin): AgentToolRunner => Object.assign(runner, {
-  pluginRegistry: { ids: () => ['probe'], get: (id: string) => (id === 'probe' ? plugin : undefined) } satisfies PluginRegistry,
+  pluginRegistry: {
+    ids: () => [...pluginRegistry().ids(), 'probe'],
+    get: (id: string) => (id === 'probe' ? plugin : pluginRegistry().get(id)),
+  } satisfies PluginRegistry,
 });
 
 test('a role run fires start and stop hooks, and a continuation fires only its own stop', async () => {
@@ -147,7 +151,7 @@ test('a role run fires start and stop hooks, and a continuation fires only its o
     expect(seen).toEqual(['session.started', 'execution.finished', 'session.stopped']);
     const id = readdirSync(path.join(root, '.migent/sessions'))[0]!;
     // A config edit after creation does not change the frozen selection: the probe still runs.
-    appendFileSync(path.join(root, '.migent/config.yaml'), '\nplugins:\n  probe:\n    enabled: false\n');
+    appendFileSync(path.join(root, '.migent/config.yaml'), '  probe:\n    enabled: false\n');
     seen.length = 0;
     expect((await capture(() => continueAgent(root, { sessionId: id, reply: 'B', runner }))).value).toBe(0);
     expect(seen).toEqual(['execution.finished', 'session.stopped']);

@@ -80,6 +80,16 @@ export class DiagnosticList {
     this.items.push(diagnostic);
   }
 
+  /** Adds an error, first dropping any error already reported at the same path: one root cause, one error. */
+  public replaceErrorAt(diagnostic: Diagnostic & { path: readonly (string | number)[] }): void {
+    const where = diagnostic.path.join('.');
+    for (let index = this.items.length - 1; index >= 0; index -= 1) {
+      const item = this.items[index];
+      if (item?.severity === 'error' && item.path?.join('.') === where) this.items.splice(index, 1);
+    }
+    this.add(diagnostic);
+  }
+
   public get errors(): Diagnostic[] {
     return this.items.filter((item) => item.severity === 'error');
   }

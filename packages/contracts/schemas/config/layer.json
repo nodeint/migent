@@ -23,14 +23,6 @@
         }
       }
     },
-    "resume_policies": {
-      "type": "object",
-      "patternProperties": {
-        "^.*$": {
-          "$ref": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/resume-policy.json"
-        }
-      }
-    },
     "plugins": {
       "type": "object",
       "patternProperties": {

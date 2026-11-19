@@ -14,7 +14,7 @@ import { SessionStore } from '../src/session-store.ts';
 import { freezeSessionTask } from '../src/task-file.ts';
 import { tempDir, writeSessionConfig } from './support.ts';
 
-const PLAN = `schema_version: 7
+const PLAN = `schema_version: 8
 id: plan
 stages:
   - id: draft

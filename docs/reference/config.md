@@ -17,7 +17,6 @@ Type: object
 | `model` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
 | `effort` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
 | `client` | [Client selection](#config-client-json) \| null | no | | The CLI client that runs the model. `type` is required when `options` is set. |
-| `resume_policy` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
 
 <a id="config-agent-placeholder-json"></a>
 
@@ -71,7 +70,6 @@ Type: object
 | `schema_version` | number | no | | Document version. The local file's value is ignored. |
 | `agents` | map of ([Agent (effective)](#config-resolved-agent-json) \| [Unmapped agent](#config-agent-placeholder-json)) | no | | |
 | `roles` | map of [Role](#config-role-json) | yes | | |
-| `resume_policies` | map of [Resume policy](#config-resume-policy-json) | no | | |
 | `plugins` | map of (map of any) | no | | Plugin entries by plugin id. Every entry takes `enabled` (default `true`), `on_error` and `timeout_sec`; a plugin that calls an agent also takes `agent` (a named agent or an inline one) and `description`. Other fields belong to the plugin. Sessions freeze every entry except an advisory plugin; a local layer may set `enabled: false`. Example: `plugins: { my_plugin: { enabled: true } }`. |
 
 <a id="config-inline-agent-json"></a>
@@ -89,7 +87,8 @@ Type: object
 | `model` | string | yes | pattern: `"\\S"` | A string with a non-blank value. |
 | `effort` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
 | `client` | [Client selection](#config-client-json) \| null | no | | The CLI client that runs the model. `type` is required when `options` is set. |
-| `resume_policy` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
+| `prompt_cache_ttl` | object | no | | Selects the prompt cache policy of the agent. |
+| `prompt_cache_ttl.policy` | string | no | pattern: `"\\S"` | The name of a `plugins.prompt_cache_ttl.policies` entry. |
 
 <a id="config-layer-json"></a>
 
@@ -106,7 +105,6 @@ Type: object
 | `schema_version` | number | no | | Document version. The local file's value is ignored. |
 | `agents` | map of [Named agent (layer)](#config-named-agent-fragment-json) | no | | |
 | `roles` | map of [Role](#config-role-json) | no | | |
-| `resume_policies` | map of [Resume policy](#config-resume-policy-json) | no | | |
 | `plugins` | map of (map of any) | no | | Plugin entries by plugin id. Every entry takes `enabled` (default `true`), `on_error` and `timeout_sec`; a plugin that calls an agent also takes `agent` (a named agent or an inline one) and `description`. Other fields belong to the plugin. Sessions freeze every entry except an advisory plugin; a local layer may set `enabled: false`. Example: `plugins: { my_plugin: { enabled: true } }`. |
 
 <a id="config-named-agent-fragment-json"></a>
@@ -124,7 +122,8 @@ Type: object
 | `model` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
 | `effort` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
 | `client` | [Client selection](#config-client-json) \| null | no | | The CLI client that runs the model. `type` is required when `options` is set. |
-| `resume_policy` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
+| `prompt_cache_ttl` | object | no | | Selects the prompt cache policy of the agent. |
+| `prompt_cache_ttl.policy` | string | no | pattern: `"\\S"` | The name of a `plugins.prompt_cache_ttl.policies` entry. |
 
 <a id="config-resolved-agent-json"></a>
 
@@ -141,7 +140,8 @@ Type: object
 | `model` | string | yes | pattern: `"\\S"` | A string with a non-blank value. |
 | `effort` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
 | `client` | [Client selection](#config-client-json) \| null | no | | The CLI client that runs the model. `type` is required when `options` is set. |
-| `resume_policy` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
+| `prompt_cache_ttl` | object | no | | Selects the prompt cache policy of the agent. |
+| `prompt_cache_ttl.policy` | string | no | pattern: `"\\S"` | The name of a `plugins.prompt_cache_ttl.policies` entry. |
 
 <a id="config-resume-on-expired-json"></a>
 
@@ -152,39 +152,6 @@ Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contract
 `ask` stops for a human decision, `fresh` starts a new conversation, `resume` resumes anyway.
 
 Type: `"ask"` \| `"fresh"` \| `"resume"`
-
-<a id="config-resume-policy-match-json"></a>
-
-## Resume policy match
-
-Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/resume-policy-match.json`
-
-The client and model glob a policy applies to.
-
-Type: object
-
-| Field | Type | Required | Notes | Description |
-| --- | --- | --- | --- | --- |
-| `client` | string | no | pattern: `"\\S"` | A string with a non-blank value. |
-| `model` | string | no | pattern: `"\\S"` | A model name glob. |
-
-<a id="config-resume-policy-json"></a>
-
-## Resume policy
-
-Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/config/resume-policy.json`
-
-A guard for resuming a conversation after the prompt cache may have expired.
-
-Type: object
-
-| Field | Type | Required | Notes | Description |
-| --- | --- | --- | --- | --- |
-| `match` | [Resume policy match](#config-resume-policy-match-json) | no | | The client and model glob a policy applies to. |
-| `cache_ttl` | string | yes | pattern: `"^\\d+(s\|m\|h)$"` | How long the prompt cache lives, such as `5m` or `1h`. |
-| `margin` | string | no | pattern: `"^\\d+(s\|m\|h)$"` | Safety margin subtracted from `cache_ttl`. |
-| `min_context_tokens` | integer | no | minimum: `0` | Below this context size an expired cache is not worth guarding. |
-| `on_expired` | [Resume on expired](#config-resume-on-expired-json) | no | | `ask` stops for a human decision, `fresh` starts a new conversation, `resume` resumes anyway. |
 
 <a id="config-role-agent-json"></a>
 

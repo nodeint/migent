@@ -55,7 +55,7 @@ test('a frozen target with unreadable help warns instead of passing silently', a
 });
 
 const INLINE = {
-  config: `schema_version: 7
+  config: `schema_version: 8
 agents:
   grok:
     client:
@@ -65,7 +65,7 @@ roles:
   dev:
     agent: grok
 `,
-  workflow: `schema_version: 7
+  workflow: `schema_version: 8
 id: w
 stages:
   - id: build

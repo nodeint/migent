@@ -28,7 +28,7 @@ exports[`config --json 1`] = `
           "agent": "reviewer-model",
         },
       },
-      "schema_version": 7,
+      "schema_version": 8,
     },
     "local": null,
   },
@@ -46,7 +46,7 @@ exports[`config and workflow validate/render --json: valid and invalid drafts 1`
       "--json",
     ],
     "code": 0,
-    "draft": "schema_version: 7
+    "draft": "schema_version: 8
 agents:
   planner-model:
     client:
@@ -79,7 +79,7 @@ roles:
       "--json",
     ],
     "code": 1,
-    "draft": "schema_version: 7
+    "draft": "schema_version: 8
 agents:
   planner-model:
     client:
@@ -199,7 +199,7 @@ a: [
       "--json",
     ],
     "code": 1,
-    "draft": "schema_version: 7
+    "draft": "schema_version: 8
 roles: 3
 ",
     "stderr": "",
@@ -234,7 +234,7 @@ roles: 3
       "--json",
     ],
     "code": 1,
-    "draft": "schema_version: 7
+    "draft": "schema_version: 8
 unknown_key: 1
 ",
     "stderr": "",
@@ -299,7 +299,7 @@ unknown_key: 1
       "--json",
     ],
     "code": 0,
-    "draft": "schema_version: 7
+    "draft": "schema_version: 8
 agents:
   planner-model:
     client:
@@ -319,7 +319,7 @@ roles:
     "stdout": {
       "command": "config.render",
       "diagnostics": [],
-      "rendered": "schema_version: 7
+      "rendered": "schema_version: 8
 agents:
   planner-model:
     client:
@@ -348,7 +348,7 @@ roles:
       "--json",
     ],
     "code": 0,
-    "draft": "schema_version: 7
+    "draft": "schema_version: 8
 id: plan
 stages:
   - id: draft
@@ -374,7 +374,7 @@ stages:
       "--json",
     ],
     "code": 1,
-    "draft": "schema_version: 7
+    "draft": "schema_version: 8
 id: broken
 stages:
   - id: draft
@@ -433,7 +433,7 @@ stages:
       "--json",
     ],
     "code": 1,
-    "draft": "schema_version: 7
+    "draft": "schema_version: 8
 id: x
 stages: {}
 ",
@@ -470,7 +470,7 @@ stages: {}
       "--json",
     ],
     "code": 0,
-    "draft": "schema_version: 7
+    "draft": "schema_version: 8
 id: x
 stages:
   - { id: a, role: planner, depends_on: [b] }
@@ -493,7 +493,7 @@ stages:
       "--json",
     ],
     "code": 1,
-    "draft": "schema_version: 7
+    "draft": "schema_version: 8
 id: x
 stages:
   - { id: a, role: planner, bogus: true }
@@ -550,7 +550,7 @@ stages:
       "--json",
     ],
     "code": 0,
-    "draft": "schema_version: 7
+    "draft": "schema_version: 8
 id: plan
 stages:
   - id: draft
@@ -563,7 +563,7 @@ stages:
     "stdout": {
       "command": "workflow.render",
       "diagnostics": [],
-      "rendered": "schema_version: 7
+      "rendered": "schema_version: 8
 id: plan
 stages:
   - id: draft
@@ -588,7 +588,7 @@ exports[`config save and workflow save --json 1`] = `
     "command": "config.save",
     "diagnostics": [],
     "file": "config.local.yaml",
-    "hash": "9af16728c6db44db2a72111376a5ffc5e520b1f981a32d21449fcc26efd0c706",
+    "hash": "d88e784fc9b1a5ae5186624da17e07ad53d3c1a8801b50c597e5621ad196e17f",
     "schema_version": 1,
     "valid": true,
     "written": true,
@@ -604,7 +604,7 @@ exports[`config save and workflow save --json 2`] = `
     "command": "config.save",
     "diagnostics": [],
     "file": "config.local.yaml",
-    "hash": "9af16728c6db44db2a72111376a5ffc5e520b1f981a32d21449fcc26efd0c706",
+    "hash": "d88e784fc9b1a5ae5186624da17e07ad53d3c1a8801b50c597e5621ad196e17f",
     "schema_version": 1,
     "valid": true,
     "written": true,
@@ -618,7 +618,7 @@ exports[`config save and workflow save --json 3`] = `
   "stderr": "",
   "stdout": {
     "command": "config.save",
-    "current_hash": "9af16728c6db44db2a72111376a5ffc5e520b1f981a32d21449fcc26efd0c706",
+    "current_hash": "d88e784fc9b1a5ae5186624da17e07ad53d3c1a8801b50c597e5621ad196e17f",
     "diagnostics": [
       {
         "code": "stale-base",
@@ -671,7 +671,7 @@ exports[`config save and workflow save --json 5`] = `
     "command": "workflow.save",
     "diagnostics": [],
     "file": "workflows/saved.yaml",
-    "hash": "c5e54f146cbe2733f20651bf52bea524fa784dec4b206eb157a77c8a176e6512",
+    "hash": "d5658043ee56bc6f86fe81f16b4ea9c31a78e57b32fc6ee229152a8a1c42c218",
     "schema_version": 1,
     "valid": true,
     "written": true,
@@ -751,7 +751,7 @@ exports[`config validate --json: multi-error drafts keep diagnostic precedence 1
 [
   {
     "code": 1,
-    "draft": "schema_version: 7
+    "draft": "schema_version: 8
 roles:
   developer:
     agent: missing
@@ -784,7 +784,7 @@ roles:
   },
   {
     "code": 1,
-    "draft": "schema_version: 7
+    "draft": "schema_version: 8
 agents:
   a:
     model: 3
@@ -821,7 +821,7 @@ roles:
   },
   {
     "code": 1,
-    "draft": "schema_version: 7
+    "draft": "schema_version: 8
 agents:
   a:
     model: 3
@@ -858,7 +858,7 @@ roles:
   },
   {
     "code": 1,
-    "draft": "schema_version: 7
+    "draft": "schema_version: 8
 agents:
   a:
     model: 3
@@ -913,7 +913,7 @@ roles:
   },
   {
     "code": 0,
-    "draft": "schema_version: 7
+    "draft": "schema_version: 8
 agents:
   x: {}
 roles:
@@ -951,7 +951,7 @@ agents:
   },
   {
     "code": 1,
-    "draft": "schema_version: 7
+    "draft": "schema_version: 8
 roles:
   r:
     agent:
@@ -991,7 +991,7 @@ roles:
   },
   {
     "code": 1,
-    "draft": "schema_version: 7
+    "draft": "schema_version: 8
 roles:
   r:
     agent:
@@ -1029,7 +1029,7 @@ roles:
   },
   {
     "code": 1,
-    "draft": "schema_version: 7
+    "draft": "schema_version: 8
 agents: 3
 roles: {}
 ",
@@ -1072,7 +1072,7 @@ roles: {}
   },
   {
     "code": 1,
-    "draft": "schema_version: 7
+    "draft": "schema_version: 8
 roles:
   r:
     instructions: [a]
@@ -1409,7 +1409,7 @@ exports[`get --json 4`] = `
           "agent": "reviewer-model",
         },
       },
-      "schema_version": 7,
+      "schema_version": 8,
     },
     "kind": "config",
     "local_agents": [],
@@ -1456,7 +1456,6 @@ exports[`get --json 5`] = `
         "id": "draft",
         "max_revisions": null,
         "max_verify": 3,
-        "on_expired": null,
         "options": {},
         "problems": [],
         "resume_from": null,
@@ -1484,7 +1483,6 @@ exports[`get --json 5`] = `
         "id": "review",
         "max_revisions": null,
         "max_verify": 3,
-        "on_expired": null,
         "options": {},
         "problems": [],
         "resume_from": null,
@@ -1879,6 +1877,13 @@ exports[`session complete --json and session follow --json on a stopped session 
           "source": "implicit",
           "version": "1.0.0",
         },
+        {
+          "advisory": false,
+          "enabled": true,
+          "id": "prompt_cache_ttl",
+          "source": "implicit",
+          "version": "1.0.0",
+        },
       ],
       "added_after_freeze": [],
       "freeze_mismatch": null,
@@ -2020,6 +2025,13 @@ exports[`session complete --json and session follow --json on a stopped session 
           "advisory": false,
           "enabled": true,
           "id": "metrics",
+          "source": "implicit",
+          "version": "1.0.0",
+        },
+        {
+          "advisory": false,
+          "enabled": true,
+          "id": "prompt_cache_ttl",
           "source": "implicit",
           "version": "1.0.0",
         },

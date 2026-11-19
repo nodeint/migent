@@ -25,8 +25,33 @@ export interface PluginExtension {
 
 export type ExtensionCatalog = readonly PluginExtension[];
 
-/** Static and core-owned. Empty in production; a feature adds its entry here. */
-export const PLUGIN_EXTENSIONS: ExtensionCatalog = [];
+/** What an expired prompt cache does: `ask` stops for a human, `fresh` starts anew, `resume` resumes anyway. */
+export const PROMPT_CACHE_TTL_ACTIONS = ['ask', 'fresh', 'resume'] as const;
+
+/** Defined here, not in `config.ts`, which imports this module. */
+const PromptCacheTtlAgent = Type.Object(
+  { policy: Type.Optional(Type.String({ pattern: '\\S', description: 'The name of a `plugins.prompt_cache_ttl.policies` entry.' })) },
+  { additionalProperties: false, description: 'Selects the prompt cache policy of the agent.' },
+);
+
+const PromptCacheTtlStage = Type.Object(
+  { on_expired: Type.Optional(Type.Union(PROMPT_CACHE_TTL_ACTIONS.map((action) => Type.Literal(action)), {
+    description: 'What this stage does when the prompt cache may have expired.',
+  })) },
+  { additionalProperties: false, description: 'Overrides the policy action for this stage.' },
+);
+
+/** Static and core-owned. A feature adds its entry here. */
+export const PLUGIN_EXTENSIONS: ExtensionCatalog = [
+  {
+    plugin: 'prompt_cache_ttl',
+    version: 1,
+    fields: {
+      agent: Type.Object({ prompt_cache_ttl: PromptCacheTtlAgent }),
+      stage: Type.Object({ prompt_cache_ttl: PromptCacheTtlStage }),
+    },
+  },
+];
 
 /** The keys claimed on one level, in catalog order. */
 export function extensionKeys(catalog: ExtensionCatalog, level: ExtensionLevel): string[] {

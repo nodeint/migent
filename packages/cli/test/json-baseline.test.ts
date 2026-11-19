@@ -29,7 +29,7 @@ import { CancelOnCommand, capture, registryOf, removeWorkspace, ScriptedClient, 
 // Epic #97 step 1: baseline of every `--json` output on fixed fixtures. Later steps replace
 // hand-written types with TypeBox schemas; these snapshots must not change except for error messages.
 
-const CONFIG = `schema_version: 7
+const CONFIG = `schema_version: 8
 agents:
   planner-model:
     client:
@@ -46,7 +46,7 @@ roles:
     agent: reviewer-model
 `;
 
-const WORKFLOW = `schema_version: 7
+const WORKFLOW = `schema_version: 8
 id: plan
 stages:
   - id: draft
@@ -56,7 +56,7 @@ stages:
     depends_on: [draft]
 `;
 
-const BAD_WORKFLOW = `schema_version: 7
+const BAD_WORKFLOW = `schema_version: 8
 id: broken
 stages:
   - id: draft
@@ -198,15 +198,15 @@ test('config and workflow validate/render --json: valid and invalid drafts', asy
     [['config', 'validate', '@draft', '--format', 'yaml', '--json'], CONFIG.replace('agent: reviewer-model', 'agent: nope')],
     [['config', 'validate', '@draft', '--format', 'yaml', '--json'], 'a: [\n'],
     [['config', 'validate', '@draft', '--format', 'json', '--json'], '{"a": 1, "a": 2}'],
-    [['config', 'validate', '@draft', '--format', 'yaml', '--json'], 'schema_version: 7\nroles: 3\n'],
-    [['config', 'validate', '@draft', '--format', 'yaml', '--json'], 'schema_version: 7\nunknown_key: 1\n'],
+    [['config', 'validate', '@draft', '--format', 'yaml', '--json'], 'schema_version: 8\nroles: 3\n'],
+    [['config', 'validate', '@draft', '--format', 'yaml', '--json'], 'schema_version: 8\nunknown_key: 1\n'],
     [['config', 'validate', '@draft', '--scope', 'local', '--format', 'yaml', '--json'], 'agents:\n  planner-model:\n    model: x\n'],
     [['config', 'render', '@draft', '--format', 'yaml', '--json'], CONFIG],
     [['workflow', 'validate', '@draft', '--format', 'yaml', '--json'], WORKFLOW],
     [['workflow', 'validate', '@draft', '--format', 'yaml', '--json'], BAD_WORKFLOW],
-    [['workflow', 'validate', '@draft', '--format', 'yaml', '--json'], 'schema_version: 7\nid: x\nstages: {}\n'],
-    [['workflow', 'validate', '@draft', '--format', 'yaml', '--json'], 'schema_version: 7\nid: x\nstages:\n  - { id: a, role: planner, depends_on: [b] }\n  - { id: b, role: planner, depends_on: [a] }\n'],
-    [['workflow', 'validate', '@draft', '--format', 'yaml', '--json'], 'schema_version: 7\nid: x\nstages:\n  - { id: a, role: planner, bogus: true }\n'],
+    [['workflow', 'validate', '@draft', '--format', 'yaml', '--json'], 'schema_version: 8\nid: x\nstages: {}\n'],
+    [['workflow', 'validate', '@draft', '--format', 'yaml', '--json'], 'schema_version: 8\nid: x\nstages:\n  - { id: a, role: planner, depends_on: [b] }\n  - { id: b, role: planner, depends_on: [a] }\n'],
+    [['workflow', 'validate', '@draft', '--format', 'yaml', '--json'], 'schema_version: 8\nid: x\nstages:\n  - { id: a, role: planner, bogus: true }\n'],
     [['workflow', 'render', '@draft', '--format', 'yaml', '--json'], WORKFLOW],
   ];
   const results = [];
@@ -275,7 +275,7 @@ test('get clients/models/options/efforts --json with a fake codex catalog', asyn
 function fakeWorkspace(extra: Record<string, string> = {}): string {
   const workspace = realpathSync(
     writeFakeWorkflowWorkspace({
-      plan: `schema_version: 7
+      plan: `schema_version: 8
 id: plan
 artifacts:
   plan: { file: plan.md }
@@ -288,7 +288,7 @@ downstream:
     task: Implement the plan
     artifacts: { plan: plan }
 `,
-      implement: 'schema_version: 7\nid: implement\nstages:\n  - { id: work, role: developer }\n',
+      implement: 'schema_version: 8\nid: implement\nstages:\n  - { id: work, role: developer }\n',
       ...extra,
     }),
   );
@@ -311,7 +311,7 @@ test('session run --workflow completes and publishes outputs', async () => {
   expect(await json(['session', 'run', '--workflow', 'plan', '--task', 'Write a plan', '--skip-preflight'], undefined, workspace)).toMatchSnapshot();
 });
 
-const TWO_STAGE = `schema_version: 7
+const TWO_STAGE = `schema_version: 8
 id: partial
 artifacts:
   plan: { file: plan.md }
@@ -439,7 +439,7 @@ test('update --check --json', async () => {
 });
 
 test('config save and workflow save --json', async () => {
-  const localDraft = 'schema_version: 7\n# note\nagents:\n  planner-model:\n    client:\n      type: codex\n    model: gpt-5.1\n';
+  const localDraft = 'schema_version: 8\n# note\nagents:\n  planner-model:\n    client:\n      type: codex\n    model: gpt-5.1\n';
   const created = await json(['config', 'save', '@draft', '--scope', 'local', '--format', 'yaml', '--json'], localDraft);
   expect(created).toMatchSnapshot();
   const {hash} = (created.stdout as { hash: string });
@@ -598,21 +598,21 @@ test('known shapes describe files written by a real scripted run', async () => {
 test('config validate --json: multi-error drafts keep diagnostic precedence', async () => {
   const drafts = [
     // unknown agent wins over malformed responsibilities in the same role
-    'schema_version: 7\nroles:\n  developer:\n    agent: missing\n    responsibilities: 3\n',
+    'schema_version: 8\nroles:\n  developer:\n    agent: missing\n    responsibilities: 3\n',
     // one invalid named agent shared by several roles reports once
-    'schema_version: 7\nagents:\n  a:\n    model: 3\nroles:\n  one:\n    agent: a\n  two:\n    agent: a\n',
+    'schema_version: 8\nagents:\n  a:\n    model: 3\nroles:\n  one:\n    agent: a\n  two:\n    agent: a\n',
     // invalid named agent used by a role whose other fields are also invalid
-    'schema_version: 7\nagents:\n  a:\n    model: 3\nroles:\n  one:\n    agent: a\n    responsibilities: 3\n    description: 4\n',
+    'schema_version: 8\nagents:\n  a:\n    model: 3\nroles:\n  one:\n    agent: a\n    responsibilities: 3\n    description: 4\n',
     // malformed inline role agent next to an invalid named agent
-    'schema_version: 7\nagents:\n  a:\n    model: 3\nroles:\n  one:\n    agent:\n      client: oops\n  two:\n    agent: a\n',
+    'schema_version: 8\nagents:\n  a:\n    model: 3\nroles:\n  one:\n    agent:\n      client: oops\n  two:\n    agent: a\n',
     // empty placeholder is the only diagnostic
-    'schema_version: 7\nagents:\n  x: {}\nroles:\n  r:\n    agent: x\n',
+    'schema_version: 8\nagents:\n  x: {}\nroles:\n  r:\n    agent: x\n',
     // bad client options and unknown client key
-    'schema_version: 7\nroles:\n  r:\n    agent:\n      model: m\n      client:\n        type: codex\n        options:\n          1a: x\n',
-    'schema_version: 7\nroles:\n  r:\n    agent:\n      model: m\n      client:\n        type: codex\n        extra: 1\n',
+    'schema_version: 8\nroles:\n  r:\n    agent:\n      model: m\n      client:\n        type: codex\n        options:\n          1a: x\n',
+    'schema_version: 8\nroles:\n  r:\n    agent:\n      model: m\n      client:\n        type: codex\n        extra: 1\n',
     // agents is not a mapping, roles empty, legacy role key
-    'schema_version: 7\nagents: 3\nroles: {}\n',
-    'schema_version: 7\nroles:\n  r:\n    instructions: [a]\n    agent: nope\n',
+    'schema_version: 8\nagents: 3\nroles: {}\n',
+    'schema_version: 8\nroles:\n  r:\n    instructions: [a]\n    agent: nope\n',
   ];
   const results = [];
   for (const draft of drafts) {

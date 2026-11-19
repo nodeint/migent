@@ -24,12 +24,12 @@ function project(model: unknown, extra: Record<string, unknown> = {}): string {
   directories.push(workspace);
   mkdirSync(path.join(workspace, '.migent', 'workflows'), { recursive: true });
   writeFileSync(path.join(workspace, '.migent', 'config.yaml'), stringifyConfig({
-    schema_version: 7,
+    schema_version: 8,
     roles: { developer: { agent: model } },
     ...extra,
   }));
   writeFileSync(path.join(workspace, '.migent', 'workflows', 'work.yaml'), stringifyConfig({
-    schema_version: 7,
+    schema_version: 8,
     stages: [{ id: 'work', role: 'developer' }],
   }));
   return workspace;
@@ -65,19 +65,19 @@ test('inline defaults support options, effort, clients, and local overrides', ()
   expect(resolveStageTarget(workspace, { workflowId: 'work', stageId: 'work' }, { registry: resolve }).options).toEqual({ model_reasoning_effort: 'low' });
   // A stage's inline agent replaces the role's wholesale, effort and client included.
   writeFileSync(path.join(workspace, '.migent', 'workflows', 'work.yaml'), stringifyConfig({
-    schema_version: 7,
+    schema_version: 8,
     stages: [{ id: 'work', role: 'developer', agent: { client: { type: 'codex', options: { model_reasoning_effort: 'high' } }, model: 'stage' } }],
   }));
   expect(resolveStageTarget(workspace, { workflowId: 'work', stageId: 'work' }, { registry: resolve })).toEqual({
     client: 'codex', model: 'stage', options: { model_reasoning_effort: 'high' },
   });
   writeFileSync(path.join(workspace, '.migent', 'workflows', 'work.yaml'), stringifyConfig({
-    schema_version: 7, stages: [{ id: 'work', role: 'developer' }],
+    schema_version: 8, stages: [{ id: 'work', role: 'developer' }],
   }));
   expect(diagnose(workspace, { clients, which }).every((check) => check.ok)).toBe(true);
   expect(clientsFromConfig(workspace)).toEqual(['codex']);
   writeFileSync(path.join(workspace, '.migent', 'config.local.yaml'), stringifyConfig({
-    schema_version: 7,
+    schema_version: 8,
     roles: { developer: { agent: { client: { type: 'codex' }, model: 'local' } } },
   }));
   expect(resolveRoleTarget(workspace, 'developer', { registry: resolve }).model).toBe('local');
@@ -88,7 +88,7 @@ test('a named stage agent overrides an inline role default', () => {
     agents: { alternate: { client: { type: 'codex' }, model: 'named' } },
   });
   writeFileSync(path.join(workspace, '.migent', 'workflows', 'work.yaml'), stringifyConfig({
-    schema_version: 7, stages: [{ id: 'work', role: 'developer', agent: 'alternate' }],
+    schema_version: 8, stages: [{ id: 'work', role: 'developer', agent: 'alternate' }],
   }));
   expect(resolveStageTarget(workspace, { workflowId: 'work', stageId: 'work' }, { registry: resolve })).toMatchObject({ model: 'named' });
   expect(resolveStageTarget(workspace, { workflowId: 'work', stageId: 'work' }, { override: { client: 'grok', model: 'cli' }, registry: resolve })).toEqual({

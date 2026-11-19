@@ -1,7 +1,6 @@
 import path from 'node:path';
 
-import type { ClientRegistry, OnExpired, ResolvedResumePolicy } from '@nodeint/migent-kernel';
-import { effectiveOnExpired, evaluateResume } from '@nodeint/migent-kernel';
+import type { ClientRegistry } from '@nodeint/migent-kernel';
 import { readParsedEvents, resumeFacts } from '@nodeint/migent-session';
 
 import type { Definition, Edge, Operation } from '../runtime/operation.js';
@@ -60,13 +59,10 @@ function acceptsOutput(output: PlainData): boolean {
   return expired === null ? verdict === 'resume' : expired.action === verdict;
 }
 
-/** What the temporary core handler evaluates: the policy the frozen session selected. Removed by the cutover. */
-export type ResumeEvaluation = {
+/** What the handler reads: the workspace, and the clients that resolve a source's resume facts. */
+export type ResumeOperationDeps = {
   readonly workspace: string;
-  readonly policy: ResolvedResumePolicy;
-  readonly stageOnExpired: OnExpired | null;
   readonly clients: ClientRegistry;
-  readonly now?: Date;
 };
 
 function sessionDirectory(workspace: string, sessionId: string): string {
@@ -75,19 +71,19 @@ function sessionDirectory(workspace: string, sessionId: string): string {
 
 /**
  * `conversation.resume`: the one gate for resuming a conversation after the prompt cache may have expired. The
- * handler's own output is `resume`, unless the temporary evaluation says the resume expired. A plugin may supply
- * the output instead (`shortCircuit`), which must pass the same output check.
+ * handler's own output is always `resume`. A plugin (`prompt_cache_ttl`) may supply the output instead
+ * (`shortCircuit`), which must pass the same output check.
  */
 export function createConversationResumeOperation(
-  evaluation: ResumeEvaluation,
+  deps: ResumeOperationDeps,
 ): Operation<ResumeInput & PlainData, ResumeOutput & PlainData, GateChange> {
-  const { workspace } = evaluation;
+  const { workspace } = deps;
   return {
     id: CONVERSATION_RESUME,
     interceptable: { before: [], shortCircuit: true },
     evidence(input) {
       const { session_id: sessionId, stage_id: stageId, source_execution_id: source } = input;
-      const facts = resumeFacts(workspace, { sessionId, executionId: source }, evaluation.clients);
+      const facts = resumeFacts(workspace, { sessionId, executionId: source }, deps.clients);
       const events = readParsedEvents(path.join(sessionDirectory(workspace, sessionId), 'events.jsonl'))
         .filter((event) => event.event.startsWith('resume.')
           && event.data.stage_id === stageId && event.data.source_execution_id === source)
@@ -96,21 +92,7 @@ export function createConversationResumeOperation(
     },
     acceptsInput: (input): input is ResumeInput & PlainData => inputCheck(input),
     producesOutput: (output): output is ResumeOutput & PlainData => acceptsOutput(output),
-    handle(input) {
-      const { policy, stageOnExpired } = evaluation;
-      const facts = resumeFacts(
-        workspace, { sessionId: input.session_id, executionId: input.source_execution_id }, evaluation.clients,
-      );
-      const result = evaluateResume(policy, { ...facts, now: evaluation.now ?? new Date() });
-      if (!result.expired) return Promise.resolve({ kind: 'succeeded', output: { verdict: 'resume', expired: null }, changes: [] });
-      const { action, origin } = effectiveOnExpired({ stageOnExpired, policy });
-      if (origin === 'human') throw new Error('A human origin cannot come from a policy.');
-      const expired: ResumeExpiry = {
-        action, origin, policy: policy.name,
-        estimate: { ...result.estimate, cacheTtlSec: policy.cacheTtlSec, marginSec: policy.marginSec },
-      };
-      return Promise.resolve({ kind: 'succeeded', output: detach({ verdict: action, expired }) as ResumeOutput & PlainData, changes: [] });
-    },
+    handle: () => Promise.resolve({ kind: 'succeeded', output: { verdict: 'resume', expired: null }, changes: [] }),
   };
 }
 

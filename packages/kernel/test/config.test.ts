@@ -146,7 +146,7 @@ test('loads role instructions and rejects a non-list', () => {
   expect(loadRoleResponsibilities(config, 'reviewer')).toEqual([]);
   const bad = loadYamlMapping(
     writeConfig(
-      'schema_version: 7\nagents:\n  grok:\n    client:\n      type: grok\n    model: grok-4\n' +
+      'schema_version: 8\nagents:\n  grok:\n    client:\n      type: grok\n    model: grok-4\n' +
         'roles:\n  developer:\n    agent: grok\n    responsibilities: nope\n',
     ),
   );
@@ -155,7 +155,7 @@ test('loads role instructions and rejects a non-list', () => {
   );
   const blank = loadYamlMapping(
     writeConfig(
-      'schema_version: 7\nagents:\n  grok:\n    client:\n      type: grok\n    model: grok-4\n' +
+      'schema_version: 8\nagents:\n  grok:\n    client:\n      type: grok\n    model: grok-4\n' +
         'roles:\n  developer:\n    agent: grok\n    responsibilities:\n      - " "\n',
     ),
   );
@@ -169,7 +169,7 @@ test('rejects a non-scalar model option', () => {
   const config = path.join(workspace, '.migent', 'config.yaml');
   writeFileSync(
     config,
-    'schema_version: 7\nagents:\n  grok:\n    client:\n      type: grok\n      options:\n        reasoning-effort:\n          default: high\n' +
+    'schema_version: 8\nagents:\n  grok:\n    client:\n      type: grok\n      options:\n        reasoning-effort:\n          default: high\n' +
       '    model: grok-4\nroles:\n  developer:\n    agent: grok\n',
     'utf8',
   );
@@ -381,7 +381,7 @@ function inferenceWorkspace(agent: string): string {
   const workspace = writeRoleWorkspace();
   writeFileSync(
     path.join(workspace, '.migent', 'config.yaml'),
-    `schema_version: 7\nroles:\n  developer:\n    agent:\n${agent}`,
+    `schema_version: 8\nroles:\n  developer:\n    agent:\n${agent}`,
     'utf8',
   );
   return workspace;

@@ -6,7 +6,7 @@ import { parseWorkflowMapping } from '../src/index.ts';
 
 describe('workflow contract', () => {
   test('objects are closed', () => {
-    expect(isValid(WorkflowDocumentInput, { schema_version: 7, bogus: 1 })).toBe(false);
+    expect(isValid(WorkflowDocumentInput, { schema_version: 8, bogus: 1 })).toBe(false);
     expect(isValid(WorkflowStage, { id: 'a', produces: {} })).toBe(false);
     expect(isValid(WorkflowStage, { id: 'a', run_when: { changed_paths: ['a'], x: 1 } })).toBe(false);
   });
@@ -18,7 +18,7 @@ describe('workflow contract', () => {
   });
 
   test('stage contents are validated at document level', () => {
-    const ok = { schema_version: 7, id: 'w', stages: [{ id: 'a', role: 'r' }] };
+    const ok = { schema_version: 8, id: 'w', stages: [{ id: 'a', role: 'r' }] };
     expect(isValid(WorkflowDocumentInput, ok)).toBe(true);
     expect(isValid(WorkflowDocumentInput, { ...ok, stages: [42] })).toBe(false);
     expect(isValid(WorkflowDocumentInput, { ...ok, stages: [{ id: 'a', bogus: 1 }] })).toBe(false);
@@ -45,7 +45,7 @@ describe('workflow contract', () => {
 
   test('contract and loader agree on reviewed edge cases', () => {
     const base = (stage: Record<string, unknown>, extra: Record<string, unknown> = {}) =>
-      ({ schema_version: 7, id: 'w', stages: [{ id: 'a', role: 'r', ...stage }], ...extra });
+      ({ schema_version: 8, id: 'w', stages: [{ id: 'a', role: 'r', ...stage }], ...extra });
     const cases: Record<string, Record<string, unknown>> = {
       'run_when empty': base({ run_when: { changed_paths: [] } }),
       'downstream task leading newline': base({}, { downstream: [{ workflow: 'n', task: '\nt' }] }),

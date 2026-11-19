@@ -26,7 +26,7 @@ const CLIENT_EVENTS: [string, Record<string, unknown>][] = [
 test('client events the reporter writes validate against their registered schema', () => {
   const workspace = tempDir('migent-emitters-');
   mkdirSync(path.join(workspace, '.migent', 'workflows'), { recursive: true });
-  writeFileSync(path.join(workspace, '.migent', 'config.yaml'), ['schema_version: 7', 'roles:', '  dev:', '    agent: { client: { type: fake }, model: fake }', ''].join('\n'));
+  writeFileSync(path.join(workspace, '.migent', 'config.yaml'), ['schema_version: 8', 'roles:', '  dev:', '    agent: { client: { type: fake }, model: fake }', ''].join('\n'));
   writeFileSync(path.join(workspace, '.migent', 'workflows', 'wf.yaml'), ['schema_version: 3', 'id: wf', 'stages:', '  - { id: one, role: dev }', ''].join('\n'));
   const sessionId = createWorkflowSession(workspace, 'wf', { task: 'Do it' });
   holdSessionLock(workspace, sessionId);

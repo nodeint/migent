@@ -11,6 +11,9 @@ import { effectiveConfigSection, readParsedEvents, readRoleFreeze, readWorkflowF
 import { isRecord } from '@nodeint/migent-workflow';
 
 import { declaresAgent, defaultEnabledIds, isEnabledEntry, pluginClassifier } from './freeze.js';
+import { legacyRoleStamp } from './legacy-role.js';
+
+const PROMPT_CACHE_TTL = 'prompt_cache_ttl';
 
 /** One plugin entry that runs in a session. */
 export interface SelectedPlugin {
@@ -227,10 +230,14 @@ function targetError(
 }
 
 /** A default entry with empty options: `live` when the freeze recorded it as advisory, else `implicit`. */
-function implicitPlugin(id: string, registry: PluginRegistry, recordedLive: ReadonlySet<string>): SelectedPlugin {
+function implicitPlugin(
+  id: string,
+  registry: PluginRegistry,
+  recorded: { live: ReadonlySet<string>; legacy: Readonly<Record<string, Record<string, unknown>>> },
+): SelectedPlugin {
   const manifest = registry.get(id)?.manifest as PluginManifest;
-  const source = recordedLive.has(id) ? 'live' : 'implicit';
-  return { id, version: manifest.version, manifest, source, config: {}, target: null };
+  const source = recorded.live.has(id) ? 'live' : 'implicit';
+  return { id, version: manifest.version, manifest, source, config: { ...recorded.legacy[id] }, target: null };
 }
 
 function liveSelection(
@@ -277,6 +284,18 @@ function readFreeze(sessionDirectory: string): { freeze: ReadRoleFreeze | Workfl
 }
 
 /**
+ * A role session created before #167 has no freeze; its stamped policies run under the implicit default, which a
+ * live `enabled: false` still turns off.
+ */
+function legacySelection(workspace: string, sessionDirectory: string, registry: PluginRegistry): PluginSelection {
+  const stamp = legacyRoleStamp(sessionDirectory);
+  if (stamp === null) return NO_PLUGINS;
+  const selected = implicitDefaults(registry, readLiveConfig(workspace, false), new Set())
+    .map((id) => implicitPlugin(id, registry, { live: new Set(), legacy: { [PROMPT_CACHE_TTL]: stamp.options } }));
+  return { selected, unavailable: [], addedAfterFreeze: [] };
+}
+
+/**
  * Which plugin entries run in an existing session, computed before any dispatch. Checks the freeze against the
  * recorded `plugins.frozen`, then each enabled frozen entry against the registry, then classifies and validates
  * the live entries. Throws a `ConfigurationError` (exit 2) for a mismatch, a missing or changed plugin.
@@ -293,7 +312,7 @@ export function selectPlugins(
   },
 ): PluginSelection {
   const { freeze, role } = readFreeze(sessionDirectory);
-  if (freeze === null) return NO_PLUGINS;
+  if (freeze === null) return legacySelection(workspace, sessionDirectory, context.registry);
   const gate = resumeGate(freeze, sessionDirectory, context);
   assertExtensionOwners(gate);
   const record = freeze.config.plugins;
@@ -311,7 +330,10 @@ export function selectPlugins(
   const live = liveSelection(entries.live, { registry: context.registry, clients: context.clients, config });
   const taken = new Set([...Object.keys(entries.entries), ...entries.live.map((entry) => entry.id)]);
   const implicit = implicitDefaults(context.registry, config, taken)
-    .map((id) => implicitPlugin(id, context.registry, new Set(frozenSection?.liveEntries ?? [])));
+    .map((id) => implicitPlugin(id, context.registry, {
+      live: new Set(frozenSection?.liveEntries ?? []),
+      legacy: 'legacy' in freeze ? freeze.legacy.options : {},
+    }));
   const byId = new Map([...fromFreeze, ...live.selected, ...implicit].map((entry) => [entry.id, entry] as const));
   return {
     selected: chainOrder([...(frozen?.plugins.keys() ?? [])], byId, new Set(implicit.filter((entry) => entry.source === 'implicit').map((entry) => entry.id))),

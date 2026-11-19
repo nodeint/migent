@@ -10,7 +10,7 @@ import { cliHooks } from '../src/hooks.ts';
 import { main } from '../src/index.ts';
 import { capture, FAKE_FLOW_CONFIG, registryOf, removeWorkspace, ScriptedClient, writeFakeWorkflowWorkspace } from './support.ts';
 
-const WORKFLOW = 'schema_version: 7\nid: wf\nstages:\n  - { id: one, role: planner }\n';
+const WORKFLOW = 'schema_version: 8\nid: wf\nstages:\n  - { id: one, role: planner }\n';
 const OK = 'status: complete\n\nDone';
 const schema = { type: 'object' } as unknown as TSchema;
 
@@ -256,7 +256,7 @@ test('an old session with no plugin data shows an implicit default, and still no
   } finally { cliHooks.runner = null; removeWorkspace(root); }
 }, 30_000);
 
-const TWO_STAGES = 'schema_version: 7\nid: wf\nstages:\n  - { id: one, role: planner }\n  - { id: two, role: planner, depends_on: [one] }\n  - { id: three, role: planner, depends_on: [two] }\n  - { id: four, role: planner, depends_on: [three] }\n';
+const TWO_STAGES = 'schema_version: 8\nid: wf\nstages:\n  - { id: one, role: planner }\n  - { id: two, role: planner, depends_on: [one] }\n  - { id: three, role: planner, depends_on: [two] }\n  - { id: four, role: planner, depends_on: [three] }\n';
 const LIMIT = 5;
 const defaultDemo = (version: string): Plugin => ({
   ...plugin('core', {}), manifest: { ...plugin('core', {}).manifest, version, defaultEnabled: true },

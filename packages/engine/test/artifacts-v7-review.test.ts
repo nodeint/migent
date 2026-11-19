@@ -53,7 +53,7 @@ test('omitted downstream artifacts pass every published output under its name', 
   const workflows = path.join(base, '.migent', 'workflows');
   mkdirSync(workflows, { recursive: true });
   writeFileSync(path.join(base, '.migent', 'config.yaml'), SESSION_CONFIG);
-  writeFileSync(path.join(workflows, 'plan.yaml'), `schema_version: 7
+  writeFileSync(path.join(workflows, 'plan.yaml'), `schema_version: 8
 id: plan
 artifacts:
   plan: { file: plan.md }
@@ -65,7 +65,7 @@ downstream:
   - workflow: implement
     task: Implement the plan
 `);
-  writeFileSync(path.join(workflows, 'implement.yaml'), 'schema_version: 7\nid: implement\nstages:\n  - { id: work, role: developer }\n');
+  writeFileSync(path.join(workflows, 'implement.yaml'), 'schema_version: 8\nid: implement\nstages:\n  - { id: work, role: developer }\n');
   const prior = createWorkflowSession(base, 'plan', { task: 'Plan' });
   const directory = path.join(base, '.migent', 'sessions', prior);
   mkdirSync(path.join(directory, 'outputs'));
@@ -78,7 +78,7 @@ downstream:
   expect(Object.keys(resolveHandoff(base, 'implement', prior)?.artifacts ?? {})).toEqual(['plan']);
 });
 
-const ROUTED = `schema_version: 7
+const ROUTED = `schema_version: 8
 id: flow
 artifacts:
   work: { file: work.md, description: The work product. }
@@ -101,7 +101,7 @@ stages:
 
 // Finding 2: route-back prompts never revive a completion a skip superseded.
 test('a route back lists only the current eligible previous artifact', () => {
-  const document = parse(`schema_version: 7
+  const document = parse(`schema_version: 8
 id: gated
 artifacts:
   out: { file: out.md, required: false }
@@ -182,7 +182,7 @@ outputs:
 });
 
 // Gate cases: multiple files, a missing chosen-decision artifact, and an unselected decision's absent file.
-const GATED = `schema_version: 7
+const GATED = `schema_version: 8
 id: gated
 artifacts:
   main: { file: main.md }

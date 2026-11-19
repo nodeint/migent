@@ -66,18 +66,18 @@ function mapping(value: unknown): Record<string, unknown> {
 
 test('v0 thinking follows the legacy provider and the document version advances', () => {
   const { document: config, notes } = migrateConfig(loadYamlMapping(writeConfig(LEGACY)));
-  expect(notes[0]).toBe('schema_version -> 7');
+  expect(notes[0]).toBe('schema_version -> 8');
   expect(mapping(mapping(mapping(config.agents).grok).client).options).toEqual({ 'reasoning-effort': 'medium' });
   expect(mapping(mapping(mapping(config.agents)['gpt-terra']).client).options).toEqual({
     model_reasoning_effort: 'medium',
     temperature: '0.2',
   });
   expect(mapping(mapping(config.roles).planner).options).toEqual({ 'reasoning-effort': 'high' });
-  expect(config.schema_version).toBe(7);
+  expect(config.schema_version).toBe(8);
 });
 
 test('current version is left alone', () => {
-  const config = { schema_version: '7', agents: {}, roles: {} };
+  const config = { schema_version: '8', agents: {}, roles: {} };
   expect(migrateConfig(config).notes).toEqual([]);
   expect(documentVersion(config)).toBe(SCHEMA_VERSION);
 });
@@ -96,8 +96,8 @@ test('an unknown provider without a client fails and names the field', () => {
 });
 
 test('newer version is rejected', () => {
-  expect(() => migrateConfig({ schema_version: 8 })).toThrow(
-    new ConfigurationError('config schema_version 8 is newer than this Migent (7).'),
+  expect(() => migrateConfig({ schema_version: 9 })).toThrow(
+    new ConfigurationError('config schema_version 9 is newer than this Migent (8).'),
   );
 });
 
@@ -119,7 +119,7 @@ test('thinking moves to the provider option and keeps the file', () => {
   const rewritten = patchConfigText(LEGACY, config);
   const parsed = loadYamlMapping(writeConfig(rewritten));
   expect(parsed.version).toBe('1.0');
-  expect(parsed.schema_version).toBe(7);
+  expect(parsed.schema_version).toBe(8);
   expect(mapping(mapping(mapping(mapping(parsed.agents).grok).client).options)['reasoning-effort']).toBe('medium');
   expect(mapping(mapping(parsed.roles).reviewer).agent).toBe('gpt-terra');
   expect(rewritten).not.toContain('thinking');
@@ -143,8 +143,8 @@ test('workflow stage keeps instructions and records its version', () => {
   expect(rewritten).not.toContain('options:');
   expect(rewritten).not.toContain('model: gpt-terra');
   expect(rewritten).toContain('agent: gpt-terra');
-  expect(rewritten).toContain('schema_version: 7');
-  expect(document.schemaVersion).toBe(7);
+  expect(rewritten).toContain('schema_version: 8');
+  expect(document.schemaVersion).toBe(8);
   expect(document.completion).toBeNull();
 });
 
@@ -154,7 +154,7 @@ test('a version 0 upgrade applies the legacy thinking step and the v5 lifts in o
     models: { m: { provider: 'grok', model: 'x', options: { thinking: 'high' } } },
     roles: { dev: { default_model: 'm' } },
   });
-  expect(config.schema_version).toBe(7);
+  expect(config.schema_version).toBe(8);
   expect(mapping(mapping(mapping(config.agents).m).client).options).toEqual({ 'reasoning-effort': 'high' });
   expect(mapping(mapping(config.roles).dev).agent).toBe('m');
   expect(notes).toContain('models.m.options.thinking -> reasoning-effort');
@@ -296,17 +296,17 @@ roles:
       - Do not commit or push. Run the tests that work names and fix failures your change caused before you report complete.
 `;
 
-test('repo plan and implement workflows migrate to version 7', () => {
+test('repo plan and implement workflows migrate to version 8', () => {
   const planBefore = loadWorkflowDocument(writeConfig(PLAN_V1));
   const { document: planParsed, notes: planNotes } = migrateWorkflow(
     mapping(parseYamlDocument(PLAN_V1)),
     { models: {}, roles: {} },
   );
-  expect(planNotes).toContain('schema_version -> 7');
+  expect(planNotes).toContain('schema_version -> 8');
   expect(planNotes).toContain('completion removed');
   const planText = patchWorkflowText(PLAN_V1, planParsed);
   const planAfter = loadWorkflowDocument(writeConfig(planText));
-  expect(planAfter.schemaVersion).toBe(7);
+  expect(planAfter.schemaVersion).toBe(8);
   expect(planAfter.completion).toBeNull();
   expect(planAfter.concurrency).toBe(1);
   expect(planAfter.requires).toBeNull();
@@ -327,7 +327,7 @@ test('repo plan and implement workflows migrate to version 7', () => {
   expect(implementNotes).toContain('requires.decision removed');
   const implementText = patchWorkflowText(IMPLEMENT_V1, implementParsed);
   const implementAfter = loadWorkflowDocument(writeConfig(implementText));
-  expect(implementAfter.schemaVersion).toBe(7);
+  expect(implementAfter.schemaVersion).toBe(8);
   expect(implementAfter.completion).toBeNull();
   expect(implementAfter.requires).toBeNull();
   expect(implementAfter.artifacts?.map((item) => [item.id, item.file])).toEqual([['implementation', 'implementation.md']]);
@@ -337,10 +337,10 @@ test('repo plan and implement workflows migrate to version 7', () => {
   );
 });
 
-test('a version 1 config upgrades to version 7 and keeps its layout', () => {
+test('a version 1 config upgrades to version 8 and keeps its layout', () => {
   const { document: parsed, notes } = migrateConfig(loadYamlMapping(writeConfig(CONFIG_V1)));
   expect(notes).toEqual([
-    'schema_version -> 7',
+    'schema_version -> 8',
     'models -> agents',
     'agents.grok.options -> client.options',
     'roles.planner.default_model -> agent',
@@ -353,7 +353,7 @@ test('a version 1 config upgrades to version 7 and keeps its layout', () => {
     'agents.grok.provider grok -> client.type grok',
     'agents.sonnet.provider claude -> client.type claude-code',
   ]);
-  const expected = CONFIG_V1.replace('schema_version: 1\n', 'schema_version: 7\n')
+  const expected = CONFIG_V1.replace('schema_version: 1\n', 'schema_version: 8\n')
     .replace('models:\n', 'agents:\n')
     .replace(
       '  opus:\n    provider: claude\n    model: opus\n',
@@ -402,7 +402,7 @@ roles:
 test('a version 4 config moves models, client and options with comments intact', () => {
   const { document: parsed, notes } = migrateConfig(loadYamlMapping(writeConfig(CONFIG_V4)));
   expect(notes).toEqual([
-    'schema_version -> 7',
+    'schema_version -> 8',
     'models -> agents',
     'agents.grok.client -> client.type',
     'agents.grok.options -> client.options',
@@ -416,7 +416,7 @@ test('a version 4 config moves models, client and options with comments intact',
   ]);
   const text = patchConfigText(CONFIG_V4, parsed);
   expect(text).toBe(`\
-schema_version: 7
+schema_version: 8
 # agents live here
 agents:
   grok: # main
@@ -451,7 +451,7 @@ test('a config that cannot be edited line by line falls back to the canonical re
   const { document: parsed } = migrateConfig(loadYamlMapping(writeConfig(text)));
   const rewritten = patchConfigText(text, parsed);
   expect(parseYamlDocument(rewritten)).toEqual({
-    schema_version: 7,
+    schema_version: 8,
     agents: { fast: { model: 'gpt-5', client: { type: 'codex', options: { a: 'b' } } } },
     roles: {},
   });
@@ -460,7 +460,7 @@ test('a config that cannot be edited line by line falls back to the canonical re
 test('a local config with only roles and models migrates on its own', () => {
   const text = 'schema_version: 4\nmodels: {}\nroles:\n  dev:\n    default_model: shared # local pick\n';
   const { document: parsed } = migrateConfig(loadYamlMapping(writeConfig(text)));
-  expect(patchConfigText(text, parsed)).toBe('schema_version: 7\nagents: {}\nroles:\n  dev:\n    agent: shared # local pick\n');
+  expect(patchConfigText(text, parsed)).toBe('schema_version: 8\nagents: {}\nroles:\n  dev:\n    agent: shared # local pick\n');
 });
 
 const WORKFLOW_V4 = `\
@@ -488,7 +488,7 @@ test('a version 4 workflow renames model to agent and drops stage options with a
     roles: {},
   });
   expect(notes).toEqual([
-    'schema_version -> 7',
+    'schema_version -> 8',
     'stages.a.options.effort removed',
     'stages.a.options removed in schema_version 5; set options on an inline stages.a.agent if the stage still needs them',
     'stages.a.model -> agent',
@@ -496,7 +496,7 @@ test('a version 4 workflow renames model to agent and drops stage options with a
     'stages.b.options removed in schema_version 5; set options on an inline stages.b.agent if the stage still needs them',
   ]);
   expect(patchWorkflowText(WORKFLOW_V4, parsed)).toBe(`\
-schema_version: 7
+schema_version: 8
 id: p
 stages:
   - id: a
@@ -753,7 +753,7 @@ test('a shared placeholder stays empty while the local provider selects the clie
   expect(mapping(migrated.project.agents).shared).toEqual({});
   expect(mapping(migrated.local?.agents).shared).toEqual({ model: 'gpt-5', client: { type: 'codex' } });
   expect(mapping(migrated.effective.agents).shared).toEqual({ model: 'gpt-5', client: { type: 'codex' } });
-  expect(migrated.notes.project).toEqual(['schema_version -> 7']);
+  expect(migrated.notes.project).toEqual(['schema_version -> 8']);
   expect(migrated.notes.local).toContain('agents.shared.provider codex -> client.type codex');
 });
 
@@ -768,7 +768,7 @@ test("a client.options-only local entry leaves the shared provider's client in p
     model: 'opus',
     client: { type: 'claude-code', options: { temperature: '0.2' } },
   });
-  expect(migrated.notes.local).toEqual(['schema_version -> 7']);
+  expect(migrated.notes.local).toEqual(['schema_version -> 8']);
 });
 
 test('both layers naming a provider keep their own client and the local one wins the merge', () => {
@@ -859,8 +859,8 @@ test('locations with no provider or client in any layer are left unchanged', () 
     options_only: { client: { options: { a: 'b' } } },
   });
   expect(mapping(migrated.local?.agents)).toEqual({ placeholder: { effort: 'high' } });
-  expect(migrated.notes.project).toEqual(['schema_version -> 7']);
-  expect(migrated.notes.local).toEqual(['schema_version -> 7']);
+  expect(migrated.notes.project).toEqual(['schema_version -> 8']);
+  expect(migrated.notes.local).toEqual(['schema_version -> 8']);
 });
 
 test('the equivalence guard aborts when a rewrite would change a client', () => {
@@ -900,7 +900,7 @@ agents:
   const migrated = migrateLayers(projectDocument, localDocument);
   const rewritten = patchConfigText(projectText, migrated.project);
   expect(rewritten).toBe(`\
-schema_version: 7
+schema_version: 8
 # shared agents
 agents:
   shared: # main
@@ -930,12 +930,84 @@ test('migrateConfig and migrateWorkflow return a copy and leave their input unch
   const migratedConfig = migrateConfig(config);
   expect(config).toEqual(configBefore);
   expect(migratedConfig.document).not.toBe(config);
-  expect(migratedConfig.document.schema_version).toBe(7);
+  expect(migratedConfig.document.schema_version).toBe(8);
 
   const workflow = mapping(parseYamlDocument(WORKFLOW));
   const workflowBefore = structuredClone(workflow);
   const migratedWorkflow = migrateWorkflow(workflow, migratedConfig.document);
   expect(workflow).toEqual(workflowBefore);
   expect(migratedWorkflow.document).not.toBe(workflow);
-  expect(migratedWorkflow.document.schema_version).toBe(7);
+  expect(migratedWorkflow.document.schema_version).toBe(8);
+});
+
+test('a version 7 config moves resume policies under the plugin and reports each move', () => {
+  const result = migrateConfig({
+    schema_version: 7,
+    resume_policies: { fake: { cache_ttl: '5m' } },
+    agents: { dev: { client: { type: 'fake' }, model: 'm', resume_policy: 'fake' } },
+    roles: { r: { agent: { client: { type: 'fake' }, model: 'm', resume_policy: 'fake' } } },
+  });
+  expect(result.document).toEqual({
+    schema_version: 8,
+    plugins: { prompt_cache_ttl: { policies: { fake: { cache_ttl: '5m' } } } },
+    agents: { dev: { client: { type: 'fake' }, model: 'm', prompt_cache_ttl: { policy: 'fake' } } },
+    roles: { r: { agent: { client: { type: 'fake' }, model: 'm', prompt_cache_ttl: { policy: 'fake' } } } },
+  });
+  expect(result.notes.join('\n')).toContain('resume_policies -> plugins.prompt_cache_ttl.policies');
+});
+
+test('a new plugin key wins over the legacy one in a version 7 config, and the drop is reported', () => {
+  const result = migrateConfig({
+    schema_version: 7,
+    resume_policies: { fake: { cache_ttl: '5m' }, other: { cache_ttl: '1h' } },
+    plugins: { prompt_cache_ttl: { policies: { fake: { cache_ttl: '9m' } } } },
+    agents: { dev: { client: { type: 'fake' }, model: 'm', resume_policy: 'old', prompt_cache_ttl: { policy: 'new' } } },
+  });
+  const doc = result.document as { plugins: Record<string, unknown>; agents: Record<string, unknown> };
+  expect(doc.plugins).toEqual({
+    prompt_cache_ttl: { policies: { fake: { cache_ttl: '9m' }, other: { cache_ttl: '1h' } } },
+  });
+  expect(doc.agents.dev).toEqual({ client: { type: 'fake' }, model: 'm', prompt_cache_ttl: { policy: 'new' } });
+  expect(result.notes.join('\n')).toContain('resume_policies.fake {"cache_ttl":"5m"} dropped: plugins.prompt_cache_ttl.policies.fake {"cache_ttl":"9m"} wins');
+  expect(result.notes.join('\n')).toContain('agents.dev.resume_policy "old" dropped');
+});
+
+test('a version 7 workflow moves session.on_expired to the stage plugin key', () => {
+  const result = migrateWorkflow({
+    schema_version: 7, id: 'f',
+    stages: [
+      { id: 'a', role: 'dev' },
+      { id: 'b', role: 'dev', depends_on: ['a'], session: { resume_from: 'a', on_expired: 'fresh' } },
+      { id: 'c', role: 'dev', depends_on: ['b'], session: { on_expired: 'ask' } },
+    ],
+  }, {});
+  const {stages} = (result.document as { stages: Record<string, unknown>[] });
+  expect(stages[1]).toMatchObject({ session: { resume_from: 'a' }, prompt_cache_ttl: { on_expired: 'fresh' } });
+  expect(stages[1]).not.toHaveProperty('session.on_expired');
+  expect(stages[2]).toMatchObject({ prompt_cache_ttl: { on_expired: 'ask' } });
+  expect(stages[2]).not.toHaveProperty('session');
+  expect(result.notes.join('\n')).toContain('stages.b.session.on_expired -> stages.b.prompt_cache_ttl.on_expired');
+});
+
+test('a version 6 workflow with an artifact and a TTL override migrates through to version 8', () => {
+  const result = migrateWorkflow({
+    schema_version: 6, id: 'f',
+    stages: [{ id: 'a', role: 'dev', produces: { artifact: 'out.md' }, session: { on_expired: 'ask' } }],
+  }, {});
+  const [stage] = (result.document as { stages: Record<string, unknown>[] }).stages;
+  expect(result.document.schema_version).toBe(8);
+  expect(stage).toMatchObject({ prompt_cache_ttl: { on_expired: 'ask' } });
+  expect(stage).not.toHaveProperty('session');
+  expect(stage).not.toHaveProperty('produces');
+});
+
+test('a policy conflict note names the dropped and the kept value', () => {
+  const result = migrateConfig({
+    schema_version: 7,
+    resume_policies: { p: { cache_ttl: '5m' } },
+    plugins: { prompt_cache_ttl: { policies: { p: { cache_ttl: '1h' } } } },
+  });
+  expect(result.notes.join('\n')).toContain(
+    'resume_policies.p {"cache_ttl":"5m"} dropped: plugins.prompt_cache_ttl.policies.p {"cache_ttl":"1h"} wins',
+  );
 });

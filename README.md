@@ -266,7 +266,7 @@ from `migent get models` in place of the example IDs.
 
 ```yaml
 # .migent/config.yaml
-schema_version: 7
+schema_version: 8
 roles:
   developer:
     description: Implements the change and verifies it.
@@ -281,7 +281,7 @@ This workflow asks the developer to implement a task, then checks the result:
 
 ```yaml
 # .migent/workflows/implement.yaml
-schema_version: 7
+schema_version: 8
 stages:
   - id: implement
     role: developer
@@ -313,7 +313,7 @@ or different clients:
 
 ```yaml
 # .migent/config.yaml
-schema_version: 7
+schema_version: 8
 roles:
   planner:
     description: Designs the approach and writes the plan.
@@ -338,7 +338,7 @@ and decides whether to approve it or send it back for revision:
 
 ```yaml
 # .migent/workflows/plan.yaml
-schema_version: 7
+schema_version: 8
 artifacts:
   approved_plan:
     file: plan.md

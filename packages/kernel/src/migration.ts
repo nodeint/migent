@@ -10,6 +10,7 @@ import { conditionalStages, parseWorkflowMapping,SCHEMA_VERSION } from '@nodeint
 
 import { CONFIG_CLIENTS_LIFT_FROM } from './constants.js';
 import { ConfigurationError } from './errors.js';
+import { liftConfigCacheTtl, liftWorkflowCacheTtl } from './migration-cache-ttl.js';
 import { type ConfigLayerKind, liftConfigAgents, liftConfigClients, type Lifted, liftWorkflowClients } from './migration-config.js';
 import { migrateModels, migrateRoles, migrateStages } from './migration-legacy.js';
 import { SCHEMA_VERSION_FIELD, stagesById } from './workflow-text.js';
@@ -52,6 +53,7 @@ const WORKFLOW_REQUIRES_DROP_FROM = 3;
 const WORKFLOW_AGENTS_LIFT_FROM = 4;
 const WORKFLOW_CLIENTS_LIFT_FROM = 5;
 const WORKFLOW_ARTIFACTS_LIFT_FROM = 6;
+const CACHE_TTL_LIFT_FROM = 7;
 
 export function migrateConfig(
   config: Readonly<Record<string, unknown>>,
@@ -111,6 +113,11 @@ function migrateConfigStep(
     ({ document } = lifted);
     run.structural.push(...lifted.notes);
   }
+  if (version === CACHE_TTL_LIFT_FROM) {
+    const lifted = liftConfigCacheTtl(document);
+    ({ document } = lifted);
+    run.structural.push(...lifted.notes);
+  }
   return { ...run, document };
 }
 
@@ -130,24 +137,47 @@ export function migrateWorkflow(
   let document = deepCopyRecord(workflow);
   const semanticNotes: string[] = [];
   while (version < current) {
-    if (version === WORKFLOW_ARTIFACTS_LIFT_FROM) {
-      const lifted = liftWorkflowArtifacts(document);
-      document = lifted.document;
-      semanticNotes.push(...lifted.notes);
-    }
+    if (version === WORKFLOW_ARTIFACTS_LIFT_FROM) document = withNotes(liftWorkflowArtifacts(document), semanticNotes);
     document = migrateStages(document, config, version);
-    if (version === WORKFLOW_COMPLETION_LIFT_FROM) document = liftWorkflowCompletion(document);
-    if (version === WORKFLOW_DECISIONS_LIFT_FROM) document = liftWorkflowDecisions(document);
-    if (version === WORKFLOW_REQUIRES_DROP_FROM) document = withoutKey(document, 'requires');
-    if (version === WORKFLOW_AGENTS_LIFT_FROM) document = liftWorkflowAgents(document);
-    if (version === WORKFLOW_CLIENTS_LIFT_FROM) {
-      const lifted = liftWorkflowClients(document, config, clientIds);
-      document = lifted.document;
-    }
+    document = liftWorkflowStep(document, version, { config, clientIds, notes: semanticNotes });
     version += 1;
   }
   document = { ...document, [SCHEMA_VERSION_FIELD]: current };
   return { document, notes: [...workflowNotes(workflow, document), ...semanticNotes] };
+}
+
+type WorkflowLiftContext = {
+  readonly config: Readonly<Record<string, unknown>>;
+  readonly clientIds: readonly string[];
+  readonly notes: string[];
+};
+
+/** The lifts that follow the stage migration, by the schema version they leave. */
+type WorkflowLift = (document: Record<string, unknown>, context: WorkflowLiftContext) => Record<string, unknown>;
+
+const WORKFLOW_STEP_LIFTS: Readonly<Record<number, WorkflowLift>> = {
+  [WORKFLOW_COMPLETION_LIFT_FROM]: (document) => liftWorkflowCompletion(document),
+  [WORKFLOW_DECISIONS_LIFT_FROM]: (document) => liftWorkflowDecisions(document),
+  [WORKFLOW_REQUIRES_DROP_FROM]: (document) => withoutKey(document, 'requires'),
+  [WORKFLOW_AGENTS_LIFT_FROM]: (document) => liftWorkflowAgents(document),
+  [WORKFLOW_CLIENTS_LIFT_FROM]: (document, { config, clientIds }) => (
+    liftWorkflowClients(document, config, clientIds).document
+  ),
+  [CACHE_TTL_LIFT_FROM]: (document, { notes }) => withNotes(liftWorkflowCacheTtl(document), notes),
+};
+
+function liftWorkflowStep(
+  document: Record<string, unknown>,
+  version: number,
+  context: WorkflowLiftContext,
+): Record<string, unknown> {
+  return WORKFLOW_STEP_LIFTS[version]?.(document, context) ?? document;
+}
+
+/** The document of a lift, after its semantic notes are appended to `notes`. */
+function withNotes(lifted: MigrationResult, notes: string[]): Record<string, unknown> {
+  notes.push(...lifted.notes);
+  return lifted.document;
 }
 
 function withoutKey(record: Readonly<Record<string, unknown>>, key: string): Record<string, unknown> {
@@ -182,12 +212,24 @@ interface ArtifactAnalysis {
   aliasTarget: Map<string, string>;
 }
 
+/** The analysis probe parses with the current parser, which refuses keys the later 7 to 8 lift still has to move. */
+function withoutLegacyCacheTtl(workflow: Record<string, unknown>): Record<string, unknown> {
+  if (!Array.isArray(workflow.stages)) return workflow;
+  const stages = workflow.stages.map((stage: unknown) => {
+    if (!isRecord(stage)) return stage;
+    const session = isRecord(stage.session) ? withoutKey(stage.session, 'on_expired') : stage.session;
+    const agent = isRecord(stage.agent) ? withoutKey(stage.agent, 'resume_policy') : stage.agent;
+    return { ...stage, ...(session === undefined ? {} : { session }), ...(agent === undefined ? {} : { agent }) };
+  });
+  return { ...workflow, stages };
+}
+
 /** Analyse every stage's artifact before anything is rewritten, collecting all refusals at once. */
 function planWorkflowArtifacts(
   workflow: Readonly<Record<string, unknown>>,
   rawStages: readonly unknown[],
 ): ArtifactAnalysis {
-  const probe = { ...deepCopyRecord(workflow), [SCHEMA_VERSION_FIELD]: 6 };
+  const probe = { ...withoutLegacyCacheTtl(deepCopyRecord(workflow)), [SCHEMA_VERSION_FIELD]: 6 };
   const parsed = parseWorkflowMapping(probe, 'migrating workflow');
   const conditional = conditionalStages(parsed.stages);
   const outputs = parsed.outputs ?? [];

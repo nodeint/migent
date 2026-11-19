@@ -218,13 +218,6 @@ function checkRoleResponsibilities(config: Record<string, unknown>, stage: RoleS
   }
 }
 
-/** `session.on_expired` does nothing without a resume policy that can apply. */
-function warnUnusedOnExpired(config: Record<string, unknown>, stage: RoleStageSpec, scope: LiveScope): void {
-  const policies = config.resume_policies;
-  if (stage.onExpired === null || (isRecord(policies) && Object.keys(policies).length > 0)) return;
-  addUnique(scope.warnings, `${scope.workflowId}.${stage.id}: session.on_expired has no effect: no resume_policies are configured.`);
-}
-
 function isUnmappedAgent(config: Record<string, unknown>, key: string | null): key is string {
   return key !== null && isRecord(config.agents) && isRecord(config.agents[key])
     && Object.keys(config.agents[key]).length === 0;
@@ -246,7 +239,6 @@ function stageModelFault(config: Record<string, unknown>, stage: RoleStageSpec, 
 function checkLiveStage(config: Record<string, unknown>, stage: RoleStageSpec, scope: LiveScope): void {
   const { workflowId, options, problems, warnings, record } = scope;
   const where = `${workflowId}.${stage.id}`;
-  warnUnusedOnExpired(config, stage, scope);
   const fault = stageModelFault(config, stage, scope);
   if (fault !== null) {
     addUnique(problems, `${where}: ${fault}`);

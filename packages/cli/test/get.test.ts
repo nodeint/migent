@@ -9,7 +9,7 @@ import { main } from '../src/index.ts';
 import { capture } from './support.ts';
 
 const CONFIG = `\
-schema_version: 7
+schema_version: 8
 agents:
   shared:
     client:
@@ -29,7 +29,7 @@ roles:
 `;
 
 const WORKFLOW = `\
-schema_version: 7
+schema_version: 8
 id: plan
 stages:
   - id: implement
@@ -161,7 +161,7 @@ test("get workflow --session reads a prepared session's draft", async () => {
 test('broken workflow files stay visible in lists and named lookups', async () => {
   await withProject(async (workspace) => {
     const broken = path.join(workspace, '.migent', 'workflows', 'broken.yaml');
-    writeFileSync(broken, 'schema_version: 7\nid: [unclosed\n', 'utf8');
+    writeFileSync(broken, 'schema_version: 8\nid: [unclosed\n', 'utf8');
     const list = JSON.parse((await get(workspace, 'workflows', '-o', 'json')).stdout) as Record<string, unknown>[];
     const entry = list.find((view) => view.name === 'broken');
     expect(entry).toMatchObject({ kind: 'workflow', file: '.migent/workflows/broken.yaml' });
@@ -180,7 +180,7 @@ test('broken workflow files stay visible in lists and named lookups', async () =
 
 test('get keeps authoring warnings out of stderr', async () => {
   await withProject(async (workspace) => {
-    writeFileSync(path.join(workspace, '.migent', 'workflows', 'plan.yaml'), `extra_note: 1\n${WORKFLOW.replace('schema_version: 7', 'schema_version: 4').replace('agent: shared', 'model: shared')}`, 'utf8');
+    writeFileSync(path.join(workspace, '.migent', 'workflows', 'plan.yaml'), `extra_note: 1\n${WORKFLOW.replace('schema_version: 8', 'schema_version: 4').replace('agent: shared', 'model: shared')}`, 'utf8');
     const list = await get(workspace, 'workflows', '-o', 'json');
     expect(list.stderr).toBe('');
     const one = await get(workspace, 'workflow', 'plan', '-o', 'json');

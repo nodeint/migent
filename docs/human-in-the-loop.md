@@ -14,7 +14,7 @@ Add `ask: human` to each stage that may ask questions. The role must already be
 configured in `.migent/config.yaml`.
 
 ```yaml
-schema_version: 7
+schema_version: 8
 id: plan
 artifacts:
   plan:

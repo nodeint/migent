@@ -15,7 +15,7 @@ import { SessionStore } from '../src/session-store.ts';
 import { freezeSessionTask } from '../src/task-file.ts';
 import { tempDir, writeSessionConfig } from './support.ts';
 
-const PLAN = `schema_version: 7
+const PLAN = `schema_version: 8
 id: plan
 artifacts:
   plan: { file: plan.md }
@@ -39,7 +39,7 @@ function workspaceWithPlan(): string {
   const workflows = path.join(workspace, '.migent', 'workflows');
   mkdirSync(workflows, { recursive: true });
   writeFileSync(path.join(workflows, 'plan.yaml'), PLAN, 'utf8');
-  writeFileSync(path.join(workflows, 'implement.yaml'), 'schema_version: 7\nid: implement\nstages:\n  - { id: work, role: developer }\n');
+  writeFileSync(path.join(workflows, 'implement.yaml'), 'schema_version: 8\nid: implement\nstages:\n  - { id: work, role: developer }\n');
   writeSessionConfig(workspace);
   return workspace;
 }

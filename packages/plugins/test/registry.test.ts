@@ -25,7 +25,7 @@ test('a duplicate id is rejected', () => {
 
 test('an unsupported apiVersion is refused: another major or a greater minor', () => {
   expect(() => createPluginRegistry([plugin('a', { major: 2, minor: 0 })])).toThrow(/needs plugin API 2\.0/);
-  expect(() => createPluginRegistry([plugin('a', { major: 1, minor: 1 })])).toThrow(/needs plugin API 1\.1/);
+  expect(() => createPluginRegistry([plugin('a', { major: 1, minor: 2 })])).toThrow(/needs plugin API 1\.2/);
   expect(() => createPluginRegistry([plugin('a', { major: 0, minor: 0 })])).toThrow(/needs plugin API 0\.0/);
 });
 

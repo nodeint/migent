@@ -28,7 +28,7 @@ import { FakeClient, holdSessionLock, tempDir } from './support.ts';
 
 const WORKFLOW = ['schema_version: 3', 'id: wf', 'stages:', '  - { id: one, role: developer }', ''].join('\n');
 const CONFIG = [
-  'schema_version: 7', 'agents:', '  main:', '    client:', '      type: fake', '    model: m1',
+  'schema_version: 8', 'agents:', '  main:', '    client:', '      type: fake', '    model: m1',
   'roles:', '  developer:', '    agent: main', '',
 ].join('\n');
 const FILES: CorrectionFiles = { protocol: 1, questionFile: '/q.json', handoffFile: '/h.json' };

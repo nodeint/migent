@@ -18,7 +18,7 @@ afterEach(() => {
 
 function session(): { workspace: string; sessionId: string; directory: string } {
   const workspace = writeFakeWorkflowWorkspace({
-    plan: 'schema_version: 7\nid: plan\nstages:\n  - { id: draft, role: planner }\n',
+    plan: 'schema_version: 8\nid: plan\nstages:\n  - { id: draft, role: planner }\n',
   });
   workspaces.push(workspace);
   const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
@@ -109,7 +109,7 @@ function allFiles(directory: string): Record<string, string> {
 
 function stopped(): { workspace: string; sessionId: string; directory: string } {
   const workspace = writeFakeWorkflowWorkspace({
-    plan: 'schema_version: 7\nid: plan\nartifacts:\n  plan: { file: plan.md }\nstages:\n  - { id: draft, role: planner, artifacts: [plan] }\n  - { id: extra, role: planner, depends_on: [draft] }\n',
+    plan: 'schema_version: 8\nid: plan\nartifacts:\n  plan: { file: plan.md }\nstages:\n  - { id: draft, role: planner, artifacts: [plan] }\n  - { id: extra, role: planner, depends_on: [draft] }\n',
   });
   workspaces.push(workspace);
   const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });
@@ -202,7 +202,7 @@ test('a titleless legacy manifest drops a stale cached title when the record is 
 
 test('rename works on a prepared session and a later run still requires task.md', async () => {
   const workspace = writeFakeWorkflowWorkspace({
-    plan: 'schema_version: 7\nid: plan\nstages:\n  - { id: draft, role: planner }\n',
+    plan: 'schema_version: 8\nid: plan\nstages:\n  - { id: draft, role: planner }\n',
   });
   workspaces.push(workspace);
   const prepared = createPreparedSession(workspace, { title: 'Original', workflowId: 'plan' });

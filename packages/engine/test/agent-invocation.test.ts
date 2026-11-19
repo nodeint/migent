@@ -37,7 +37,7 @@ function writeWorkspace(config: string, workflow?: string): string {
 }
 
 const config = (model: string, effort = ''): string => [
-  'schema_version: 7', 'agents:', '  main:', '    client:', '      type: fake', `    model: ${model}`,
+  'schema_version: 8', 'agents:', '  main:', '    client:', '      type: fake', `    model: ${model}`,
   ...(effort === '' ? [] : [`    effort: ${effort}`]),
   'roles:', '  developer:', '    agent: main', '',
 ].join('\n');

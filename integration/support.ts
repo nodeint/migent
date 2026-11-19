@@ -12,7 +12,7 @@ export const GROK_SESSION = 'fake-grok-session';
 export const CODEX_THREAD = 'fake-codex-thread';
 
 export const GROK_CONFIG = `\
-schema_version: 7
+schema_version: 8
 agents:
   grok-model:
     model: grok-test
@@ -28,7 +28,7 @@ roles:
 `;
 
 export const CODEX_CONFIG = `\
-schema_version: 7
+schema_version: 8
 agents:
   codex-model:
     model: codex-test
@@ -42,7 +42,7 @@ roles:
 `;
 
 export const PLAN_REVIEW = `\
-schema_version: 7
+schema_version: 8
 id: plan
 artifacts:
   plan:
@@ -67,7 +67,7 @@ stages:
 `;
 
 export const DRAFT_NOTE = `\
-schema_version: 7
+schema_version: 8
 id: draft-note
 artifacts:
   draft:
@@ -80,7 +80,7 @@ stages:
 `;
 
 export const SOLO = `\
-schema_version: 7
+schema_version: 8
 id: solo
 artifacts:
   write:
@@ -105,7 +105,7 @@ const FAKE_ENV = ['MIGENT_FAKE_OUTCOME', 'MIGENT_FAKE_SCRIPT', 'MIGENT_FAKE_CURS
 
 export function resumedNotes(role: string): string {
   return `\
-schema_version: 7
+schema_version: 8
 id: notes
 artifacts:
   draft:
