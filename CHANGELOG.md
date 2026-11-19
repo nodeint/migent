@@ -9,6 +9,8 @@
   it. ([#174](https://github.com/nodeint/migent/issues/174))
 - The workflow parser, draft collector, and the session freeze accept, validate, and keep plugin-claimed keys on
   workflows and stages. ([#174](https://github.com/nodeint/migent/issues/174))
+- Config loading, `migent doctor`, and agent and role resolution accept, validate, and carry plugin-claimed keys on
+  named agents, inline agents, and roles. ([#174](https://github.com/nodeint/migent/issues/174))
 
 ## 0.9.0
 

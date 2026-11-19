@@ -125,6 +125,10 @@ export function workflowExtensionIssues(catalog: ExtensionCatalog, data: Record<
     const id = typeof stage.id === 'string' && stage.id.trim() !== '' ? stage.id.trim() : String(index);
     const target = { mapping: stage, label: `stages.${id}`, base: ['stages', index] };
     issues.push(...extensionIssues(catalog, 'stage', target));
+    if (isRecord(stage.agent)) {
+      const agent = { mapping: stage.agent, label: `${target.label}.agent`, base: ['stages', index, 'agent'] };
+      issues.push(...extensionIssues(catalog, 'agent', agent));
+    }
   });
   return issues;
 }

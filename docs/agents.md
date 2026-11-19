@@ -164,6 +164,22 @@ definition.
 To change a role on this machine, set its `agent` in `config.local.yaml`.
 Supply the full agent definition or a name; it replaces the shared agent.
 
+## Plugin keys
+
+A plugin can claim flat keys on a named agent, an inline agent (a role's `agent` or a stage's `agent`), and a role,
+next to the core keys. The claims are a static, core-owned catalog (`PLUGIN_EXTENSIONS` in
+`@nodeint/migent-contracts`); no plugin claims any key yet.
+
+- A claimed key is validated against the owner's schema, and an invalid value is reported at its own path.
+  `migent doctor` reports every invalid value in one run.
+- A key that no plugin claims keeps today's handling: an unknown role key is a doctor warning, and an unknown agent
+  key is accepted.
+- Agent and role keys deep-merge across `config.yaml` and `config.local.yaml` like the rest of the config. An inline
+  agent replaces wholesale, so its claimed keys travel with it. The resolved target carries the claimed keys of the
+  selected agent and of the role.
+- Keys of a plugin disabled with `plugins.<id>.enabled: false` are still validated and are then ignored.
+- `migent migrate` and the config authoring commands keep claimed keys.
+
 ## Options
 
 For the client contracts, discovery catalogs, and validation boundaries, see

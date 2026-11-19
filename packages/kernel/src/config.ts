@@ -1,10 +1,21 @@
 import { readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
 
-import { isRecord, isRoleStage, loadNamedWorkflow, parseYamlDocument, type RoleStageSpec, type StageAgent } from '@nodeint/migent-workflow';
+import { type ExtensionCatalog, PLUGIN_EXTENSIONS } from '@nodeint/migent-contracts';
+import {
+  type ExtensionValues,
+  isRecord,
+  isRoleStage,
+  loadNamedWorkflow,
+  parseYamlDocument,
+  type RoleStageSpec,
+  type StageAgent,
+} from '@nodeint/migent-workflow';
 import { stringify } from 'yaml';
 
 import type { ClientInfo, ClientRegistry } from './cli-client.js';
+import { readAgentExtensions, readRoleExtensions, withTargetExtensions } from './config-extensions.js';
+import { refuseLegacyAgentKeys, rejectLegacyConfigKeys, validateRoleKeys } from './config-legacy.js';
 import { withSectionOwners } from './config-sections.js';
 import {
   type Field,
@@ -18,6 +29,7 @@ import {
 import { ROLE_AGENT_KEY_INDEX } from './constants.js';
 import { ConfigurationError } from './errors.js';
 
+export { rejectLegacyConfigKeys, validateRoleKeys } from './config-legacy.js';
 export { documentVersion } from '@nodeint/migent-workflow';
 
 export interface StageTarget {
@@ -25,6 +37,10 @@ export interface StageTarget {
   client: string;
   model: string;
   options: Record<string, string>;
+  /** Plugin keys claimed on the selected agent definition, by owner. Absent when there are none. */
+  extensions?: ExtensionValues;
+  /** Plugin keys claimed on the merged role, by owner. Set by the role cascade; absent when there are none. */
+  roleExtensions?: ExtensionValues;
 }
 
 export interface ModelOverride {
@@ -303,6 +319,8 @@ export function resolveStageTarget(
 export interface ResolveSpecOptions {
   readonly options?: Record<string, string> | null;
   readonly registry?: ClientRegistry;
+  /** Plugin extensions to validate and carry. Defaults to `PLUGIN_EXTENSIONS`. */
+  readonly extensions?: ExtensionCatalog;
 }
 
 export function resolveStageSpec(
@@ -310,7 +328,7 @@ export function resolveStageSpec(
   stage: RoleStageSpec,
   resolve: ResolveSpecOptions = {},
 ): StageTarget {
-  const { options, registry } = resolve;
+  const { options, registry, extensions } = resolve;
   const agentField =
     stage.agent !== null ? field('stages', stage.id, 'agent') : field('roles', stage.role, 'agent');
   const declared = resolveRoleCascade(config, stage.role, {
@@ -318,8 +336,9 @@ export function resolveStageSpec(
     agentField,
     options: stage.options,
     registry,
+    ...(extensions === undefined ? {} : { extensions }),
   });
-  return stageTarget(declared.client, declared.model, mergeOptions(declared.options, options));
+  return { ...declared, options: mergeOptions(declared.options, options) };
 }
 
 export function resolveRoleTarget(workspace: string, role: string, resolve: ResolveTargetOptions = {}): StageTarget {
@@ -343,6 +362,8 @@ export function resolveRoleTarget(workspace: string, role: string, resolve: Reso
 export interface ResolveContext {
   readonly registry?: ClientRegistry;
   readonly index?: StructuralIndex;
+  /** Plugin extensions to validate and carry. Defaults to `PLUGIN_EXTENSIONS`. */
+  readonly extensions?: ExtensionCatalog;
 }
 
 export function loadAgentTarget(
@@ -362,10 +383,11 @@ export function loadAgentTarget(
  * dotted label, or a label with its literal key path when a key may itself contain dots.
  */
 export function loadAgentDefinition(value: unknown, where: string | Field, context: ResolveContext = {}): StageTarget {
-  const { registry, index } = context;
+  const { registry, index, extensions = PLUGIN_EXTENSIONS } = context;
   const here = toField(where);
   const agentConfig = mapping(value, here, index);
   refuseLegacyAgentKeys(agentConfig, here);
+  const claimed = readAgentExtensions(extensions, agentConfig, here);
   const clientField = child(here, 'client');
   let client: string | undefined;
   let options: Record<string, string> = {};
@@ -384,25 +406,20 @@ export function loadAgentDefinition(value: unknown, where: string | Field, conte
     }
     client = inferClient(registry, model, typeField);
   }
-  if (!Object.hasOwn(agentConfig, 'effort')) return stageTarget(client, model, options);
-  const [option, effort] = effortOption(agentConfig.effort, client, { here, registry, index, options });
-  return stageTarget(client, model, { ...options, [option]: effort });
+  const withEffort = Object.hasOwn(agentConfig, 'effort')
+    ? effortOptions(agentConfig.effort, client, { here, registry, index, options })
+    : options;
+  return withTargetExtensions(stageTarget(client, model, withEffort), { extensions: claimed });
 }
 
-/** Agent keys removed by earlier schema versions point at `migent migrate`. */
-function refuseLegacyAgentKeys(agentConfig: Record<string, unknown>, { label, path }: Field): void {
-  if (Object.hasOwn(agentConfig, 'options')) {
-    throw new ConfigurationError(
-      `${label}.options moved to ${label}.client.options. Run \`migent migrate\`.`,
-      { code: 'agent-options-moved', path: [...path, 'options'] },
-    );
-  }
-  if (Object.hasOwn(agentConfig, 'provider')) {
-    throw new ConfigurationError(
-      `${label}.provider was removed in schema_version 6; set ${label}.client.type. Run \`migent migrate\`.`,
-      { code: 'legacy-key', path: [...path, 'provider'] },
-    );
-  }
+/** The agent's options plus its `effort`, under the client's native option name. */
+function effortOptions(
+  value: unknown,
+  client: string,
+  context: ResolveContext & { here: Field; options: Readonly<Record<string, string>> },
+): Record<string, string> {
+  const [option, effort] = effortOption(value, client, context);
+  return { ...context.options, [option]: effort };
 }
 
 /** Resolve an agent's `effort` to the client's native option name and its value. */
@@ -468,6 +485,12 @@ export interface RoleCascadeOptions extends ResolveContext {
   readonly options?: Record<string, string> | null;
 }
 
+/** The stage agent's selection (a name or an inline mapping), else the role's own. */
+function selectedAgent(role: Record<string, unknown>, stageAgent: StageAgent | null): unknown {
+  if (stageAgent === null) return role.agent;
+  return stageAgent.kind === 'named' ? stageAgent.name : stageAgent.value;
+}
+
 export function resolveRoleCascade(
   config: Record<string, unknown>,
   roleKey: string,
@@ -479,11 +502,9 @@ export function resolveRoleCascade(
   const roles = mapping(config.roles, field('roles'), index);
   const role = mapping(roles[roleKey], field('roles', roleKey), index);
   validateRoleKeys(role, roleKey);
+  const roleExtensions = readRoleExtensions(resolve.extensions ?? PLUGIN_EXTENSIONS, role, roleKey);
   const agentField = (args?.agentField === null || args?.agentField === undefined) ? field('roles', roleKey, 'agent') : toField(args.agentField);
-  const stageAgent = args?.agent ?? null;
-  let selection: unknown;
-  if (stageAgent === null) selection = role.agent;
-  else selection = stageAgent.kind === 'named' ? stageAgent.name : stageAgent.value;
+  const selection = selectedAgent(role, args?.agent ?? null);
   let target: StageTarget;
   if (isRecord(selection)) {
     target = loadAgentDefinition(selection, agentField, resolve);
@@ -497,39 +518,11 @@ export function resolveRoleCascade(
     }
     target = loadAgentTarget(config, name, resolve);
   }
-  return stageTarget(
-    target.client,
-    target.model,
-    mergeOptions(target.options, args?.options),
+  const { extensions } = target;
+  return withTargetExtensions(
+    stageTarget(target.client, target.model, mergeOptions(target.options, args?.options)),
+    { ...(extensions === undefined ? {} : { extensions }), roleExtensions },
   );
-}
-
-/** A v4 top-level key in a current document names its v5 replacement. */
-export function rejectLegacyConfigKeys(config: Record<string, unknown>): void {
-  if (Object.hasOwn(config, 'models')) {
-    throw new ConfigurationError('models was renamed to agents in schema_version 5. Run `migent migrate`.', {
-      code: 'legacy-key',
-      path: ['models'],
-    });
-  }
-}
-
-/** Keys a role no longer accepts, each with the v5 key that replaces it. */
-export function validateRoleKeys(role: Record<string, unknown>, roleKey: string): void {
-  if (Object.hasOwn(role, 'options')) {
-    throw new ConfigurationError(
-      `roles.${roleKey}.options is no longer supported. Move options into roles.${roleKey}.agent (inline agent) or the referenced agents entry, under client.options.`,
-      { code: 'role-options-unsupported', path: ['roles', roleKey, 'options'] },
-    );
-  }
-  for (const [old, replacement] of [['default_model', 'agent'], ['instructions', 'responsibilities']] as const) {
-    if (Object.hasOwn(role, old)) {
-      throw new ConfigurationError(
-        `roles.${roleKey}.${old} was renamed to roles.${roleKey}.${replacement} in schema_version 5. Run \`migent migrate\`.`,
-        { code: 'legacy-key', path: ['roles', roleKey, old] },
-      );
-    }
-  }
 }
 
 /** Absent or null responsibilities are an empty list. A non-list is a configuration error. */

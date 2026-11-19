@@ -93,3 +93,35 @@ test('an unreadable stage id does not hide the stage extension errors', () => {
     expect(paths).toContainEqual(['stages', 0, 'fixture_stage', 'mode']);
   }
 });
+
+test('claimed agent keys on an inline stage agent are validated, with every problem collected', () => {
+  const agentCatalog: ExtensionCatalog = [
+    {
+      plugin: 'fixture',
+      version: 1,
+      fields: {
+        agent: object({ fixture_agent: object({ mode: { type: 'string' }, retries: { type: 'integer' } }, ['mode']) }, []),
+      } as unknown as Fields,
+    },
+  ];
+  const inline = (agent: Mapping): Mapping => ({ client: { type: 'codex' }, model: 'm', ...agent });
+  const data = doc([
+    stage('a', { agent: inline({ fixture_agent: { mode: 3, retries: 'bad' } }), fixture_stage: 1 }),
+    stage('b', { agent: 'named' }),
+  ]);
+  const opts = { extensions: agentCatalog };
+  const paths = collectWorkflowDraft(data, 'flow.yaml', opts).problems.map((problem) => problem.path);
+  // The unclaimed stage key is the stage's other invalid field; it does not hide the agent problems.
+  expect(paths).toEqual([
+    ['stages', 0, 'fixture_stage'],
+    ['stages', 0, 'agent', 'fixture_agent', 'mode'],
+    ['stages', 0, 'agent', 'fixture_agent', 'retries'],
+  ]);
+  const onlyAgent = doc([stage('a', { agent: inline({ fixture_agent: { mode: 3, retries: 'bad' } }) })]);
+  expect(() => parseWorkflowMapping(onlyAgent, 'flow.yaml', opts)).toThrow(
+    expect.objectContaining({ path: ['stages', 0, 'agent', 'fixture_agent', 'mode'] }) as Error,
+  );
+  const ok = doc([stage('a', { agent: inline({ fixture_agent: { mode: 'fast' }, unclaimed: 1 }) })]);
+  expect(collectWorkflowDraft(ok, 'flow.yaml', opts).problems).toEqual([]);
+  expect(parseWorkflowMapping(ok, 'flow.yaml', opts).stages.a.agent?.kind).toBe('inline');
+});
