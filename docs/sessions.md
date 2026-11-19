@@ -102,6 +102,18 @@ The session-level files have distinct purposes:
   freeze hash and the entry versions and pinned agent targets. A freeze file
   that no longer matches the last event, or a missing or upgraded plugin, stops
   the resume with exit code 2.
+- The resume gate checks extension owners first. Every plugin that owns at least one frozen extension key, whether
+  enabled, disabled, or advisory, must still be registered (`extension-unregistered`) and declare the frozen
+  extension version (`extension-version-changed`). Both errors name the plugin and the session, and say to use the
+  Migent version that started the session or to start a new session. Inspection and manual completion never run
+  the gate.
+- An enabled plugin with both a current catalog entry and a recorded extension version resumes only when the two
+  versions match and its frozen `plugins.<id>` entry still validates against the current manifest, whatever its
+  semver. A changed semver is allowed in that case, and the plugin then runs, and records events, at the current
+  version. If the entry no longer validates, the resume stops with
+  `plugin-version-changed` naming the failing field; if the extension version differs, with
+  `extension-version-changed`. A plugin with no catalog entry or no recorded extension version keeps the exact
+  semver rule.
 - Plugins run in chain order: first the registered `defaultEnabled` plugins that `plugins:` does not name, in
   registry order, with empty options; then the configured entries in declaration order. A default plugin listed
   under `plugins:` takes its declared position, and `enabled: false` turns it off. New freezes and

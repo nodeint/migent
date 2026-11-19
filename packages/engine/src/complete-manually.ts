@@ -37,7 +37,7 @@ export async function completeSessionManually(
     let pluginWarning: string | null = null;
     try {
       selection = selectPlugins(workspace, path.resolve(directory), {
-        registry: services.pluginRegistry, clients: services.clients,
+        registry: services.pluginRegistry, clients: services.clients, enforceExtensions: false,
       });
     } catch (error) {
       if (!(error instanceof ConfigurationError)) throw error;

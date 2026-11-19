@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync } from 'node:fs';
 import path from 'node:path';
 
+import type { ExtensionCatalog } from '@nodeint/migent-contracts';
 import type { ClientRegistry } from '@nodeint/migent-kernel';
 import { writeFileAtomic } from '@nodeint/migent-kernel';
 import { ConfigurationError } from '@nodeint/migent-kernel';
@@ -105,6 +106,8 @@ export interface CreateWorkflowSessionOptions {
   readonly priorSessionId?: string | null;
   readonly resolveClient?: ClientRegistry;
   readonly plugins?: PluginFreezeInput;
+  /** Plugin extensions to validate and freeze. Defaults to `PLUGIN_EXTENSIONS`. */
+  readonly extensions?: ExtensionCatalog;
 }
 
 function selectTaskSummary(task: string | null | undefined, handoffTask: string | null | undefined): string {
@@ -121,7 +124,7 @@ export function createWorkflowSession(
   workflowId: string,
   options: CreateWorkflowSessionOptions,
 ): string {
-  const { task, priorSessionId, resolveClient, plugins } = options;
+  const { task, priorSessionId, resolveClient, plugins, extensions } = options;
   const workflow = loadNamedWorkflow(workspace, workflowId);
   const resolvedId = workflow.id;
   const resolvedPrior = resolvePriorSessionId(workspace, workflow, priorSessionId);
@@ -147,7 +150,7 @@ export function createWorkflowSession(
       if (snapshot) manifestLines.push(`handoff: ${JSON.stringify(snapshot)}`);
       writeFileAtomic(path.join(sessionDirectory, 'manifest.yaml'), `${manifestLines.join('\n')}\n`);
       writeTaskFile(taskFilePath(workspace, sessionId), taskSummary);
-      const frozen = writeWorkflowFreeze(sessionDirectory, { workspace, workflow, resolveClient, plugins });
+      const frozen = writeWorkflowFreeze(sessionDirectory, { workspace, workflow, resolveClient, plugins, extensions });
       appendSessionCreated(sessionDirectory, createdAt, {
         workflow_id: resolvedId,
         workflow_path: workflowRelativePath,

@@ -2,10 +2,11 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import type { PluginManifest, PluginRegistry } from '@nodeint/migent-contracts';
+import type { ExtensionCatalog, PluginManifest, PluginRegistry } from '@nodeint/migent-contracts';
+import { PLUGIN_EXTENSIONS } from '@nodeint/migent-contracts';
 import type { ClientRegistry } from '@nodeint/migent-kernel';
 import { ConfigurationError, loadWorkspaceConfig, pluginEntryIssues, registryManifests, resolvePluginTarget } from '@nodeint/migent-kernel';
-import type { InspectedPlugin, PluginsInspection } from '@nodeint/migent-session';
+import type { FrozenExtensions, InspectedPlugin, PluginsInspection } from '@nodeint/migent-session';
 import { effectiveConfigSection, readParsedEvents, readWorkflowFreeze, WORKFLOW_FREEZE_FILE } from '@nodeint/migent-session';
 import { isRecord } from '@nodeint/migent-workflow';
 
@@ -101,11 +102,99 @@ function assertFreezeMatches(sessionDirectory: string, frozen: FrozenRecord | nu
   return frozen;
 }
 
+interface GateContext {
+  readonly registry: PluginRegistry;
+  readonly catalog: ExtensionCatalog;
+  readonly recorded: FrozenExtensions;
+  readonly sessionId: string;
+  /** False for manual completion, which never refuses on extension compatibility. */
+  readonly enforceExtensions: boolean;
+}
+
+const extensionAdvice = (sessionId: string): string =>
+  `Use the Migent version that started session ${sessionId}, or start a new session.`;
+
+function resumeGate(
+  freeze: { extensions: FrozenExtensions },
+  sessionDirectory: string,
+  context: { registry: PluginRegistry; extensions?: ExtensionCatalog; enforceExtensions?: boolean },
+): GateContext {
+  const { registry, extensions = PLUGIN_EXTENSIONS, enforceExtensions = true } = context;
+  return {
+    registry,
+    catalog: extensions,
+    recorded: freeze.extensions,
+    sessionId: path.basename(sessionDirectory),
+    enforceExtensions,
+  };
+}
+
+/**
+ * Resume gate step 1. Every plugin that owns a frozen extension key, enabled, disabled, or advisory, must still
+ * be registered and declare the extension version the session was frozen with.
+ */
+function assertExtensionOwners(context: GateContext): void {
+  const { registry, catalog, sessionId, recorded, enforceExtensions } = context;
+  if (!enforceExtensions) return;
+  for (const [id, record] of Object.entries(recorded.records)) {
+    if (!Object.values(record.keys).some((keys) => keys.length > 0)) continue;
+    if (registry.get(id) === undefined) {
+      throw new ConfigurationError(
+        `Session ${sessionId} froze extension keys owned by plugin "${id}", which is no longer registered. ${extensionAdvice(sessionId)}`,
+        { code: 'extension-unregistered', path: ['plugins', id] },
+      );
+    }
+    const current = catalog.find((entry) => entry.plugin === id)?.version;
+    if (current !== record.version) {
+      throw new ConfigurationError(
+        `Session ${sessionId} froze extension keys of plugin "${id}" at extension version ${record.version}, now ${current ?? 'none'}. ${extensionAdvice(sessionId)}`,
+        { code: 'extension-version-changed', path: ['plugins', id] },
+      );
+    }
+  }
+}
+
+/**
+ * Resume gate step 2 for an enabled frozen plugin. A plugin with both a current catalog entry and a recorded
+ * extension version is selected only when the versions agree and its frozen entry still validates, whatever its
+ * semver. Any other plugin keeps the exact-semver rule.
+ */
+function assertFrozenCompatible(
+  id: string,
+  entry: unknown,
+  context: GateContext & { manifest: PluginManifest; pinned: string | null },
+): void {
+  const { manifest, recorded, catalog, sessionId, enforceExtensions } = context;
+  const record = recorded.records[id];
+  const current = catalog.find((candidate) => candidate.plugin === id);
+  const changed = `Plugin "${id}" changed version since the session was frozen (frozen ${context.pinned ?? 'unknown'}, now ${manifest.version}).`;
+  if (record === undefined || current === undefined) {
+    if (context.pinned !== manifest.version) {
+      throw new ConfigurationError(changed, { code: 'plugin-version-changed', path: ['plugins', id] });
+    }
+    return;
+  }
+  if (enforceExtensions && record.version !== current.version) {
+    throw new ConfigurationError(
+      `Session ${sessionId} froze plugin "${id}" at extension version ${record.version}, now ${current.version}. ${extensionAdvice(sessionId)}`,
+      { code: 'extension-version-changed', path: ['plugins', id] },
+    );
+  }
+  const [issue] = pluginEntryIssues({ plugins: { [id]: entry }, manifests: new Map([[id, manifest]]) });
+  if (issue !== undefined) {
+    throw new ConfigurationError(
+      `${changed} Its frozen configuration no longer validates: ${issue.message}`,
+      { code: 'plugin-version-changed', path: issue.path ?? ['plugins', id] },
+    );
+  }
+}
+
 function frozenSelection(
   entries: Readonly<Record<string, unknown>>,
   frozen: FrozenRecord,
-  registry: PluginRegistry,
+  context: GateContext,
 ): SelectedPlugin[] {
+  const { registry } = context;
   const selected: SelectedPlugin[] = [];
   for (const [id, entry] of Object.entries(entries)) {
     if (!isEnabledEntry(entry)) continue;
@@ -114,13 +203,8 @@ function frozenSelection(
     if (manifest === undefined) {
       throw new ConfigurationError(`Plugin "${id}" is enabled in this session's freeze but is no longer registered.`, { code: 'plugin-unregistered', path: ['plugins', id] });
     }
-    if (pinned === undefined || pinned.version !== manifest.version) {
-      throw new ConfigurationError(
-        `Plugin "${id}" changed version since the session was frozen (frozen ${pinned?.version ?? 'unknown'}, now ${manifest.version}).`,
-        { code: 'plugin-version-changed', path: ['plugins', id] },
-      );
-    }
-    selected.push({ id, version: manifest.version, manifest, source: 'frozen', config: entry as Record<string, unknown>, target: pinned.target });
+    assertFrozenCompatible(id, entry, { ...context, manifest, pinned: pinned?.version ?? null });
+    selected.push({ id, version: manifest.version, manifest, source: 'frozen', config: entry as Record<string, unknown>, target: pinned?.target ?? null });
   }
   return selected;
 }
@@ -193,10 +277,17 @@ function readLiveConfig(workspace: string, required: boolean): Record<string, un
 export function selectPlugins(
   workspace: string,
   sessionDirectory: string,
-  context: { registry: PluginRegistry; clients: ClientRegistry },
+  context: {
+    registry: PluginRegistry;
+    clients: ClientRegistry;
+    extensions?: ExtensionCatalog;
+    enforceExtensions?: boolean;
+  },
 ): PluginSelection {
   const freeze = readWorkflowFreeze(sessionDirectory);
   if (freeze === null) return NO_PLUGINS;
+  const gate = resumeGate(freeze, sessionDirectory, context);
+  assertExtensionOwners(gate);
   const record = freeze.config.plugins;
   const frozenSection = record?.kind === 'per_entry' ? record : null;
   const config = readLiveConfig(workspace, frozenSection !== null);
@@ -208,8 +299,8 @@ export function selectPlugins(
   const classify = pluginClassifier(context.registry, frozenSection?.liveEntries ?? []);
   const effective = effectiveConfigSection(freeze, config, { key: 'plugins', classifiers: { plugins: classify } });
   const entries = effective?.kind === 'per_entry' ? effective : { entries: {}, live: [], addedAfterFreeze: [] };
-  const fromFreeze = frozen === null ? [] : frozenSelection(entries.entries, frozen, context.registry);
-  const live = liveSelection(entries.live, { ...context, config });
+  const fromFreeze = frozen === null ? [] : frozenSelection(entries.entries, frozen, gate);
+  const live = liveSelection(entries.live, { registry: context.registry, clients: context.clients, config });
   const taken = new Set([...Object.keys(entries.entries), ...entries.live.map((entry) => entry.id)]);
   const implicit = implicitDefaults(context.registry, config, taken)
     .map((id) => implicitPlugin(id, context.registry, new Set(frozenSection?.liveEntries ?? [])));

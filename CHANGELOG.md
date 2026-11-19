@@ -13,6 +13,9 @@
   named agents, inline agents, and roles. ([#174](https://github.com/nodeint/migent/issues/174))
 - The session freeze records plugin-claimed keys on workflows, stages, resolved agents, and roles, and reads them
   without the current extension catalog. ([#174](https://github.com/nodeint/migent/issues/174))
+- Resuming a session refuses when a plugin that owns frozen extension keys is unregistered or declares another
+  extension version, and a plugin with an extension catalog entry may change its semver when its frozen entry still
+  validates. ([#174](https://github.com/nodeint/migent/issues/174))
 
 ## 0.9.0
 
