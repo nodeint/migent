@@ -3,6 +3,7 @@ import Type, { type Static, type TSchema } from 'typebox';
 import { id, nullable } from './common.js';
 import { NonBlankString, RoleAgent } from './config.js';
 import { CONFIG_SECTION_KEY_PATTERN,type ConfigSection } from './config-sections.js';
+import type { PluginExtension } from './extension-catalog.js';
 
 /**
  * Plugin contracts: manifest, shared LLM-plugin config, hook input, proposals and the invocation contexts, plus
@@ -95,7 +96,8 @@ export const PluginManifest = Type.Object(
   },
   { $id: id('plugins/manifest'), title: 'Plugin manifest', description: 'Readable without activating the plugin. `configSchema` is a TypeBox schema.' },
 );
-export type PluginManifest = Static<typeof PluginManifest>;
+/** `extensions` is the plugin's catalog entry. It is a type-only field: the generated schema stays unchanged. */
+export type PluginManifest = Static<typeof PluginManifest> & { readonly extensions?: PluginExtension };
 
 export const LlmPluginConfig = Type.Object(
   {

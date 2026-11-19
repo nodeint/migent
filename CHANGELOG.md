@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Added
+
+- Contracts declare a static plugin extension catalog (`PLUGIN_EXTENSIONS`, empty today) that lets a plugin claim flat
+  keys on workflows, stages, agents, and roles, and `createPluginRegistry` checks a manifest's `extensions` against
+  it. ([#174](https://github.com/nodeint/migent/issues/174))
+
 ## 0.9.0
 
 ### Breaking

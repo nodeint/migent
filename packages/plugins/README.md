@@ -15,6 +15,9 @@ First-party Migent plugins and their static registry. Internal; no stable public
   handler must not assume a written file has a `plugin.decision`; `session show` reports the ones that lack it.
 - `call.session.snapshot()` and `resumeFacts()` need `uses.session`. Never cache their result across invocations: a
   changed read makes the core discard the result and re-run the handler once, then record `stale`.
+- To claim keys on workflows, stages, agents, or roles, add one entry to `PLUGIN_EXTENSIONS` in
+  `@nodeint/migent-contracts` and repeat it as the manifest's `extensions`. `createPluginRegistry` rejects a manifest
+  that differs from its catalog entry or omits it. Raise the entry's `version` only for an incompatible schema change.
 - Register a plugin in `src/registry.ts`. The `metrics` plugin is the only first-party plugin and is registered as a
   `defaultEnabled` plugin, so it replaces the former core seal.
 

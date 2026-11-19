@@ -8,6 +8,8 @@ export { DIAGNOSTICS_SCHEMA_VERSION, EXECUTION_INPUT_SCHEMA_VERSION, EXECUTION_S
 export * from './env.js';
 export * from './event-kinds.js';
 export * from './exits.js';
+export * from './extension-catalog.js';
+export * from './extensions.js';
 export * from './handoff.js';
 export * from './index-registry.js';
 export * from './known-shapes.js';
@@ -18,4 +20,4 @@ export * from './session-files.js';
 export * from './session-status.js';
 export * from './validate.js';
 export * from './workflow.js';
-export type { Static, TSchema } from 'typebox';
+export type { Static, TObject, TSchema } from 'typebox';

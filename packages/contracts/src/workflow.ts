@@ -2,6 +2,7 @@ import Type, { type Static } from 'typebox';
 
 import { id, nullable } from './common.js';
 import { NonBlankString, ResumeOnExpired, RoleAgent } from './config.js';
+import { PLUGIN_EXTENSIONS, withExtensionProperties } from './extension-catalog.js';
 
 /**
  * Structure of an authored workflow file at the current `schema_version` (7). Pure data: error
@@ -94,8 +95,7 @@ export const WorkflowRunWhen = Type.Object(
   { $id: id('workflow/run-when'), title: 'Run condition', description: 'Runs the stage only when the session changed matching files.', additionalProperties: false },
 );
 
-export const WorkflowStage = Type.Object(
-  {
+export const STAGE_CORE_PROPERTIES = {
     id: NonBlankString,
     description: Type.Optional(nullable(WorkflowLine)),
     role: Type.Optional(nullable(NonBlankString)),
@@ -111,7 +111,10 @@ export const WorkflowStage = Type.Object(
     decision: Type.Optional(nullable(WorkflowDecisionList)),
     session: Type.Optional(nullable(WorkflowSession)),
     run_when: Type.Optional(nullable(WorkflowRunWhen)),
-  },
+};
+
+export const WorkflowStage = Type.Object(
+  withExtensionProperties(STAGE_CORE_PROPERTIES, PLUGIN_EXTENSIONS, 'stage'),
   { $id: id('workflow/stage'), title: 'Workflow stage', description: 'One stage of a workflow.', additionalProperties: false },
 );
 
@@ -124,8 +127,7 @@ export const WorkflowDownstream = Type.Object(
   { $id: id('workflow/downstream'), title: 'Downstream suggestion', description: 'A workflow to suggest after this one completes.', additionalProperties: false },
 );
 
-export const WorkflowDocumentInput = Type.Object(
-  {
+export const WORKFLOW_CORE_PROPERTIES = {
     schema_version: Type.Optional(SchemaVersion),
     id: Type.Optional(nullable(NonBlankString)),
     stages: Type.Optional(Type.Array(WorkflowStage, { description: "The workflow's stages." })),
@@ -134,7 +136,10 @@ export const WorkflowDocumentInput = Type.Object(
     constraints: Type.Optional(nullable(StringList('Constraints included in every prompt.'))),
     downstream: Type.Optional(Type.Array(WorkflowDownstream, { description: 'Workflows to suggest next.' })),
     completion: Type.Optional(Type.Null({ description: 'Not allowed from schema_version 2; kept so older files report a migration hint.' })),
-  },
+};
+
+export const WorkflowDocumentInput = Type.Object(
+  withExtensionProperties(WORKFLOW_CORE_PROPERTIES, PLUGIN_EXTENSIONS, 'workflow'),
   { $id: id('workflow/document'), title: 'Workflow file', description: 'An authored workflow file at schema_version 7.', additionalProperties: false },
 );
 
