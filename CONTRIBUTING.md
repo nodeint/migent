@@ -65,33 +65,41 @@ Package tests live in `packages/<package>/test/`, cross-package suites in `integ
 
 ## Verify changes
 
-Run these checks after implementing or changing code, tests, scripts, or build configuration.
-Read-only work, planning, review, and issue triage do not require them.
-Run from the repository root and scope each check to the change.
-Full-repository test and lint runs are very slow: avoid them unless a rule below requires one.
+Run from the repository root after changing code, tests, scripts, or build configuration.
+Read-only work, planning, review, and issue triage need no checks.
 
-| Check | Scoped command |
-| --- | --- |
-| Lint | `pnpm lint -- <paths>` |
-| Unit tests | `pnpm test:unit <paths>`; add `-t "<name>"` to select tests |
-| Unit coverage | `pnpm test:coverage`; reports to `coverage/`; measures `packages/*/src` with the unit project only |
-| Integration tests | `node scripts/wrappers/run-integration.mjs --file <suite> [--case <name>]` |
-| Typecheck and build | `pnpm build` |
+### Checks
 
-- Pass unit test paths without `--`: `pnpm test:unit -- <paths>` ignores the paths and runs every test.
-- `--file` matches test file paths by substring and repeats; `--case` takes one name and requires `--file`.
-  Run `run-integration.mjs` with `node` when `--case` contains spaces:
-  `pnpm` fails on Windows when its install path contains a space.
-- A scoped check must run at least one file or test. Ignored files and empty selections do not count;
-  `run-integration.mjs` exits 1 when the selection runs no tests.
-- Documentation-only changes need only `pnpm lint:md -- <paths>`,
-  `pnpm lint:md:links -- --path <directory>` when links changed, and `git diff --check`.
-  See the `markdownlint` skill.
-- Before pushing, run changed-package checks, `pnpm gate` if available, and the
-  full suite without client CLIs: `PATH=/usr/bin:/bin:$(dirname "$(which node)") pnpm test`.
-- Required CI: Ubuntu, macOS, Windows on the current head/base; all must pass.
-  Report check failures and stop.
-- Report each command with its result, and name any check not run with the reason.
+Scope each check to the change; full test and lint runs are very slow.
+
+| Check | Command | Notes |
+| --- | --- | --- |
+| Lint | `pnpm lint -- <paths>` | |
+| Unit tests | `pnpm test:unit <paths>` | Pass paths without `--`, or every test runs. Add `-t "<name>"` to select tests. |
+| Unit coverage | `pnpm test:coverage` | Reports to `coverage/`. |
+| Integration tests | `node scripts/wrappers/run-integration.mjs --file <suite> [--case <name>]` | `--file` matches path substrings and repeats. `--case` takes one name and requires `--file`. |
+| Typecheck and build | `pnpm build` | |
+| Unused code and exports | `pnpm knip` | Whole repository, no paths. Must report nothing. |
+| Duplicate code | `pnpm jscpd` | Whole repository, no paths. Must stay under the `.jscpd.json` threshold. |
+
+- A scoped check must run at least one file or test. Ignored files and empty selections do not count.
+- Run integration tests with `node`, not `pnpm`, when `--case` contains spaces;
+  `pnpm` fails on Windows when its install path has a space.
+
+### Documentation-only changes
+
+Run only `pnpm lint:md -- <paths>`, `pnpm lint:md:links -- --path <directory>` when links changed,
+and `git diff --check`.
+
+### Before pushing
+
+- Run the changed-package checks and `pnpm gate` if available.
+- Run the full suite without client CLIs: `PATH=/usr/bin:/bin:$(dirname "$(which node)") pnpm test`.
+- CI must pass on Ubuntu, macOS, and Windows. Report failures and stop.
+
+### Reporting
+
+Report each command with its result, and name any check not run with the reason.
 
 ## CLI conventions
 

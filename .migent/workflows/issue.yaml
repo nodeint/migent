@@ -6,14 +6,15 @@ constraints:
 artifacts:
   issue:
     file: issue.md
-    description: Issue summary using the checkout-issue skill's Summary template, including the recommended next workflow with its reason.
+    description: Issue summary, including the recommended next workflow with its reason.
 
 stages:
   - id: triage
     role: operator
     ask: human
     instructions:
-      - Follow .agents/skills/checkout-issue/SKILL.md for the GitHub issue named in the task, including working branch creation; write issue.md using its Summary template.
+      - Load the checkout-issue skill.
+      - Triage the GitHub issue named in the task, including working branch creation; write issue.md.
       - Recommend the next workflow and why, citing the triage evidence - product when requirements, user scenarios, or scope need definition; design when the scope crosses contracts or packages, a bug's cause is unclear, or the solution needs structural decisions; implement when one module owns the change and its solution is obvious.
       - Base the recommendation on available evidence, explain its uncertainty, and do not present it as the human's decision. If information is insufficient to choose the next step, ask the human rather than choosing a workflow.
     artifacts: [issue]

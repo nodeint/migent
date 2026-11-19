@@ -2,7 +2,7 @@ import { SCHEMA_BASE } from '../common.js';
 import * as contracts from '../index.js';
 
 /** JSON Schema dialect written at the root of every generated file. */
-export const SCHEMA_DIALECT = 'https://json-schema.org/draft/2020-12/schema';
+const SCHEMA_DIALECT = 'https://json-schema.org/draft/2020-12/schema';
 
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 type Node = { [key: string]: unknown };

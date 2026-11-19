@@ -20,7 +20,8 @@ stages:
     max_revisions: 3
     ask: human
     instructions:
-      - Follow .agents/skills/implement/SKILL.md for the selected phase; write phase_report.md.
+      - Load the implement skill, plus the typescript, eslint, and testing skills when the work creates or changes `.ts`/`.tsx` files or tests, and the writing skill when it creates or changes Markdown.
+      - Implement the selected phase; write phase_report.md.
       - Require a prior approved plan or phase_commit with a usable original plan snapshot, no blocking decisions, phase boundaries, and runnable verification.
       - On first entry, require a clean tree. Record the branch and base HEAD in phase_report.md before editing.
       - From a plan, initialize every phase as pending. From phase_commit, validate every completed phase's commit and report against the plan and current Git history; stop on missing, inconsistent, or reordered phase evidence.
@@ -35,7 +36,8 @@ stages:
     role: reviewer
     depends_on: [implement_phase]
     instructions:
-      - Follow .agents/skills/review/SKILL.md and the implement skill against the selected phase and phase_report.md.
+      - Load the review and implement skills, plus the typescript, eslint, and testing skills when the work creates or changes `.ts`/`.tsx` files or tests, and the writing skill when the work creates or changes Markdown.
+      - Review the selected phase against phase_report.md.
       - Check the recorded branch and base HEAD, phase dependencies and boundary, and a complete outcome without later repair. Treat plan gaps as blockers.
       - In the approval response, record the branch, base HEAD, and reviewed file paths with content hashes, modes, and deletions, including new files, so commit_phase can detect any later change. Exclude session artifacts from the code diff.
     decision:
@@ -56,7 +58,7 @@ stages:
     depends_on: [review_phase]
     instructions:
       - Read phase_report.md and review_phase's approval. Before a new commit, require HEAD to equal the recorded base, on the same branch with exactly the reviewed changes and no unrelated staged, unstaged, or untracked files. Stop on differences; changed code requires another review. Use only the recovery rule below when HEAD has already advanced.
-      - Follow CONTRIBUTING.md and step 5 of .agents/skills/create-pr/SKILL.md for commit mechanics; do not run its other steps.
+      - Follow CONTRIBUTING.md for commit mechanics; do not push or open a PR. Stage files by name (never `git add -A` or `git commit -am`), inspect the staged diff, and exclude secrets and build output.
       - Make one commit for the selected phase without modifying code or amending earlier commits. If a hook changes files, stop and require another review.
       - On retry after a commit succeeded but artifact writing failed, recover that commit only if its parent is the recorded base HEAD, its contents exactly match the approval, and the tree is clean; never create a duplicate commit.
       - Verify the new commit has the recorded base HEAD as its parent, matches the approved changes, and leaves a clean tree. Only then mark this phase complete and write phase_commit.md using the fields in its artifact description; carry forward earlier phase rows and the original plan snapshot reference.

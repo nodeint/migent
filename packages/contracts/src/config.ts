@@ -140,10 +140,8 @@ export const Responsibilities = Type.Array(NonBlankString, {
   description: 'Instructions included before stage instructions in every prompt for the role.',
 });
 
-export const Description = NonBlankString;
-
 export const ROLE_CORE_PROPERTIES = {
-  description: Type.Optional(nullable(Description)),
+  description: Type.Optional(nullable(NonBlankString)),
   agent: Type.Optional(RoleAgent),
   responsibilities: Type.Optional(nullable(Responsibilities)),
 };
