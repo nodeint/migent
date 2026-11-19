@@ -2,9 +2,12 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { afterEach, expect, test } from 'vitest';
+import type { ExtensionCatalog } from '@nodeint/migent-contracts';
+import { parseWorkflowMapping } from '@nodeint/migent-workflow';
+import { afterEach, describe, expect, test } from 'vitest';
 
 import { orderedEvents, readExecutions } from '../src/session-facts.ts';
+import { writeWorkflowFreeze } from '../src/session-freeze.ts';
 import { readBasisSeq, readSessionSnapshot } from '../src/session-snapshot.ts';
 import { normalizeTurns, resolveExecutionClients } from '../src/usage-normalize.ts';
 import { FakeClient, registryOf } from './support.ts';
@@ -89,4 +92,38 @@ test('execution_clients equals resolveExecutionClients', () => {
   const resolved = resolveExecutionClients(orderedEvents(directory), readExecutions(directory), { status: 'active' });
   expect(snapshot.execution_clients).toEqual(Object.fromEntries(resolved));
   expect(snapshot.execution_clients).toEqual({ e1: 'fake' });
+});
+
+describe('the snapshot workflow carries no extension data', () => {
+  // TypeBox schemas are plain JSON Schema objects.
+  const field = (key: string): never => {
+    const schema: Record<string, unknown> = { type: 'object', properties: { [key]: { type: 'string' } }, required: [] };
+    return schema as never;
+  };
+  // The plugin is absent from the production catalog, so only the freeze's record says who owned these keys.
+  const catalog: ExtensionCatalog = [{
+    plugin: 'gone', version: 1, fields: { workflow: field('gone_flow'), stage: field('gone_stage'), agent: field('gone_agent') },
+  }];
+  const inline = { client: { type: 'fake' }, model: 'm1', gone_agent: 'x', unowned: 'kept' };
+
+  function frozen(agent: Record<string, unknown>): string {
+    const workspace = session([]);
+    const directory = path.join(workspace, '.migent', 'sessions', 's1');
+    writeFileSync(path.join(workspace, '.migent', 'config.yaml'), 'roles:\n  dev: {}\n');
+    const document = parseWorkflowMapping(
+      { schema_version: 7, id: 'flow', gone_flow: 'a', stages: [{ id: 'one', role: 'dev', depends_on: [], gone_stage: 'b', agent }] },
+      'flow.yaml',
+      { extensions: catalog },
+    );
+    writeWorkflowFreeze(directory, { workspace, workflow: document, extensions: catalog });
+    return workspace;
+  }
+
+  test('no extensions field, and an inline stage agent loses recorded keys but keeps unowned fields', () => {
+    const { workflow } = readSessionSnapshot(frozen(inline), 's1', client());
+    const stage = (workflow as { stages: Record<string, Record<string, unknown>> }).stages.one;
+    expect(workflow).not.toHaveProperty('extensions');
+    expect(stage).not.toHaveProperty('extensions');
+    expect(stage.agent).toEqual({ kind: 'inline', value: { client: { type: 'fake' }, model: 'm1', unowned: 'kept' } });
+  });
 });

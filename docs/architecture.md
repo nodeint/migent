@@ -61,6 +61,11 @@ the `plugins` section is the one registered config section.
   A seam passes detached, frozen data; operation inputs and outputs are plain data.
 - Session events are recorded only through the event log, and `status.json` is derived from them by the fold.
   Both run under the session lock. Other session files are written by their owning `session` functions.
+- Every plugin read removes plugin-owned extension keys. The only path to extension data is `config.extensions`,
+  which returns the calling plugin's own frozen keys. `call.session.snapshot().workflow` drops `extensions` and the
+  owned agent keys of inline stage agents, and `config.core('agents' | 'roles')` drops the catalog's agent and role
+  keys, both through `withoutOwnedKeys`. A field no plugin owns is returned unchanged. A new plugin read that returns
+  workflow or config data must do the same.
 - Resume reads the frozen core workflow, `roles`, `targets`, and `resume_policies`, not live files. A registered
   config section follows its own freeze policy (`frozen`, `live`, or `per_entry`).
 

@@ -16,6 +16,9 @@
 - Resuming a session refuses when a plugin that owns frozen extension keys is unregistered or declares another
   extension version, and a plugin with an extension catalog entry may change its semver when its frozen entry still
   validates. ([#174](https://github.com/nodeint/migent/issues/174))
+- Plugins read their own frozen extension keys through `config.extensions` (`workflow()`, `stage(id)`, `agent(id)`,
+  `role(name)`), and no other plugin read, including `call.session.snapshot()` and `config.core`, exposes
+  plugin-owned keys. ([#174](https://github.com/nodeint/migent/issues/174))
 
 ## 0.9.0
 

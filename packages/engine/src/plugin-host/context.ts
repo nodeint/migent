@@ -3,6 +3,7 @@ import {
   type PluginCallContext,
   PluginContextClosed,
   type PluginEventProposal,
+  type PluginExtensionReads,
   type PluginHandler,
   type PluginHook,
   type PluginInterceptor,
@@ -29,6 +30,8 @@ interface ContextSources {
   readonly options: Readonly<Record<string, unknown>>;
   /** Reads one core config key. Called only for keys the manifest declares. */
   readonly readCore: (key: string) => unknown;
+  /** The calling plugin's frozen extension keys. */
+  readonly extensionReads: PluginExtensionReads;
   /** The core's session reads. Absent means `call.session` rejects. */
   readonly reads?: SessionReads;
 }
@@ -44,7 +47,11 @@ function deepFreeze<T>(value: T): T {
 const detached = <T>(value: T): T => (value === undefined ? value : deepFreeze(JSON.parse(JSON.stringify(value)) as T));
 
 function sharedMembers(sources: ContextSources, invocation: InvocationState) {
-  const { manifest, options, readCore } = sources;
+  const { manifest, options, readCore, extensionReads } = sources;
+  const open = <T>(member: string, read: () => T): T => {
+    if (!invocation.open) throw new PluginContextClosed(member);
+    return detached(read());
+  };
   const frozenOptions = detached(options);
   return {
     config: Object.freeze({
@@ -55,6 +62,12 @@ function sharedMembers(sources: ContextSources, invocation: InvocationState) {
         }
         return detached(readCore(key));
       },
+      extensions: Object.freeze({
+        workflow: () => open('config.extensions.workflow', () => extensionReads.workflow()),
+        stage: (stageId: string) => open('config.extensions.stage', () => extensionReads.stage(stageId)),
+        agent: (stageId: string) => open('config.extensions.agent', () => extensionReads.agent(stageId)),
+        role: (name: string) => open('config.extensions.role', () => extensionReads.role(name)),
+      }),
     }),
     log: Object.freeze({
       info: (text: string): void => { invocation.note('info', text); },

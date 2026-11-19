@@ -210,6 +210,15 @@ export class PluginContextClosed extends Error {
   }
 }
 
+/** `config.extensions`: frozen reads of the calling plugin's keys. Each throws `PluginContextClosed` once closed. */
+export interface PluginExtensionReads {
+  readonly workflow: () => Readonly<Record<string, unknown>> | null;
+  readonly stage: (stageId: string) => Readonly<Record<string, unknown>> | null;
+  /** The keys on the agent resolved for the stage. */
+  readonly agent: (stageId: string) => Readonly<Record<string, unknown>> | null;
+  readonly role: (name: string) => Readonly<Record<string, unknown>> | null;
+}
+
 /** Members both contexts share. */
 export interface PluginSharedContext {
   readonly config: {
@@ -217,6 +226,11 @@ export interface PluginSharedContext {
     readonly options: Readonly<Record<string, unknown>>;
     /** A declared core config key, frozen. */
     readonly core: (key: string) => unknown;
+    /**
+     * The calling plugin's own extension keys, as frozen when the session started. Each member returns a detached,
+     * deeply frozen mapping, or `null` when the plugin has no keys there. A plugin never sees another plugin's keys.
+     */
+    readonly extensions: PluginExtensionReads;
   };
   /** Recorded as notes on the invocation's terminal event while the invocation is open; dropped afterwards. */
   readonly log: {
