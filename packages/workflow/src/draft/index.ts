@@ -315,14 +315,14 @@ function collectStageReferenceProblems(
   }
 }
 
-export interface DraftCatalogParts {
+interface DraftCatalogParts {
   readonly id: DraftUnit<string>;
   readonly stagesDeclared: boolean;
   readonly requires: DraftUnit<WorkflowRequires | null>;
   readonly downstream: readonly DraftDownstreamEntry[];
 }
 
-export function catalogEntryOfDraft(file: string, parts: DraftCatalogParts): WorkflowCatalogEntry {
+function catalogEntryOfDraft(file: string, parts: DraftCatalogParts): WorkflowCatalogEntry {
   const { id, stagesDeclared, requires, downstream } = parts;
   return {
     file,

@@ -100,7 +100,7 @@ function readDiagnostics(directory: string): Record<string, unknown> | null {
   }
 }
 
-export function verifyFailureReport(
+function verifyFailureReport(
   directory: string,
   metadata: Record<string, unknown>,
   failureReason: string | null,

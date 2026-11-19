@@ -54,7 +54,7 @@ const TERMINAL_EXECUTION_EVENTS: ReadonlySet<string> = new Set([
 type Outcome = { readonly kind: 'ok'; readonly value: unknown } | Failure;
 
 /** The `on_error` applied to a plugin: config, manifest default, core default. Advisory is always `ignore`. */
-export function resolveOnError(plugin: SelectedPlugin): PluginOnError {
+function resolveOnError(plugin: SelectedPlugin): PluginOnError {
   if (plugin.manifest.advisory) return 'ignore';
   const configured = plugin.config.on_error;
   if (configured === 'ignore' || configured === 'stop' || configured === 'fail') return configured;
@@ -62,7 +62,7 @@ export function resolveOnError(plugin: SelectedPlugin): PluginOnError {
 }
 
 /** The invocation deadline in seconds: config, then manifest default, then core default. */
-export function resolveTimeoutSec(plugin: SelectedPlugin): number {
+function resolveTimeoutSec(plugin: SelectedPlugin): number {
   const configured = plugin.config.timeout_sec;
   if (typeof configured === 'number' && configured > 0) return configured;
   return plugin.manifest.defaults?.timeout_sec ?? PLUGIN_DEFAULT_TIMEOUT_SEC;

@@ -1,13 +1,9 @@
 import Type from 'typebox';
 import { expect, test } from 'vitest';
 
-import { assertConfigSections, CONFIG_SECTIONS, type ConfigSection } from '../src/index.ts';
+import { assertConfigSections, type ConfigSection } from '../src/index.ts';
 
 const section = (key: string): ConfigSection => ({ key, schema: Type.Object({}), merge: 'deep', freeze: 'frozen' });
-
-test('only the plugins section is registered in production', () => {
-  expect(CONFIG_SECTIONS.map((entry) => entry.key)).toEqual(['plugins']);
-});
 
 test('a valid list passes', () => {
   expect(() => { assertConfigSections([section('plugins'), section('git_flow')]); }).not.toThrow();

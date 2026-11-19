@@ -39,7 +39,7 @@ export type { StartFailure, StartResult } from './wrapper-protocol.js';
 export const DEFAULT_TIMEOUT_SEC: number | null = null;
 export const PROGRESS_INTERVAL_SEC = 30;
 /** How long a client may exit by itself after its server-side turn was interrupted. */
-export const INTERRUPT_EXIT_GRACE_MS = 3000;
+const INTERRUPT_EXIT_GRACE_MS = 3000;
 
 /** A wrapper-level failure of one provider turn, for the caller to record. */
 export interface ExecutionFailure {

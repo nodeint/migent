@@ -10,9 +10,9 @@ import { isRecord, parseYamlDocument } from '@nodeint/migent-workflow';
  * Leaf module: owns a session's display title. It imports no session, fold, query, or lock module,
  * so the fold, the readers, and the store can all depend on it.
  */
-export const TITLE_FILENAME = 'title.json';
+const TITLE_FILENAME = 'title.json';
 
-export interface TitleHistoryEntry {
+interface TitleHistoryEntry {
   title: string;
   changed_at: string;
 }
@@ -77,7 +77,7 @@ export function readTitleRecord(sessionDirectory: string): TitleRecord | null {
 }
 
 /** The creation title in manifest.yaml, or null. Never throws. */
-export function readManifestTitle(sessionDirectory: string): string | null {
+function readManifestTitle(sessionDirectory: string): string | null {
   try {
     const parsed = parseYamlDocument(readFileSync(path.join(sessionDirectory, 'manifest.yaml'), 'utf8'));
     return isRecord(parsed) && typeof parsed.title === 'string' && parsed.title !== '' ? parsed.title : null;

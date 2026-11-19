@@ -34,7 +34,7 @@ export interface Field {
 }
 
 /** Keys a client mapping accepts, derived from the contract. */
-export const CLIENT_KEYS: readonly string[] = Object.keys(ClientSelection.properties);
+const CLIENT_KEYS: readonly string[] = Object.keys(ClientSelection.properties);
 /** Keys a role accepts, derived from the contract. */
 export const ROLE_KEYS: readonly string[] = Object.keys(RoleEntry.properties);
 
@@ -191,7 +191,7 @@ export function requiredString(value: unknown, where: Field, index?: StructuralI
   return (value as string).trim();
 }
 
-export function optionalString(value: unknown, where: Field, index?: StructuralIndex): string | undefined {
+function optionalString(value: unknown, where: Field, index?: StructuralIndex): string | undefined {
   return (value === null || value === undefined) ? undefined : requiredString(value, where, index);
 }
 
@@ -231,7 +231,7 @@ export function readClient(value: unknown, clientField: Field, index?: Structura
 }
 
 /** A non-null `client.options` mapping, validated against `ClientOptions` and trimmed. */
-export function readOptions(value: unknown, where: Field, index?: StructuralIndex): Record<string, string> {
+function readOptions(value: unknown, where: Field, index?: StructuralIndex): Record<string, string> {
   verdict({ index, where }, () => checkMapping(value, where));
   const raw = value as Record<string, unknown>;
   const known = index === undefined ? undefined : new Map<string, ConfigurationError>();

@@ -1,7 +1,5 @@
 import {
   type PluginActivationContext,
-  type PluginAfterProposal,
-  type PluginBeforeProposal,
   type PluginCallContext,
   PluginContextClosed,
   type PluginEventProposal,
@@ -25,7 +23,6 @@ export interface PluginRegistrations {
 
 export const emptyRegistrations = (): PluginRegistrations => ({ events: new Map(), interceptors: [] });
 
-export type { PluginAfterProposal, PluginBeforeProposal };
 
 interface ContextSources {
   readonly manifest: PluginManifest;

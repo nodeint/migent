@@ -20,8 +20,8 @@ import { monotonic } from './time.js';
 // The child serves only after "published". If the channel closes first, the parent died before
 // publishing and the child exits without ever being reachable through service.json.
 
-export const READY = 'ready';
-export const PUBLISHED = 'published';
+const READY = 'ready';
+const PUBLISHED = 'published';
 const ACK_TIMEOUT_SEC = 5;
 
 export interface SpawnedChild {
@@ -51,7 +51,7 @@ export function childInvocation(script: string): { execPath: string; args: strin
   return { execPath: process.execPath, args: [], script };
 }
 
-export function childEntryScript(): string {
+function childEntryScript(): string {
   const directory = path.dirname(fileURLToPath(import.meta.url));
   if (import.meta.url.includes('.ts')) return path.join(directory, 'main.ts');
   return path.join(directory, 'main.js');
@@ -196,7 +196,7 @@ function waitForAck(deadline: number, stop: AbortSignal): Promise<boolean> {
 /** Interval at which the child checks for an abort signal. */
 const CHILD_POLL_MS = 50;
 
-export async function serveChild(home: string, port: number): Promise<number> {
+async function serveChild(home: string, port: number): Promise<number> {
   if (!process.send || !process.connected) return EXIT_USAGE;
   const send = process.send.bind(process);
   const directory = ensureRegistryHome(home);
@@ -329,10 +329,4 @@ function parseChildArgs(argv: string[]): { home: string; port: number } | null {
   const { home, port, sawChild } = state;
   if (!sawChild || home === null || port === null) return null;
   return { home, port };
-}
-
-export function isDirectChildEntry(): boolean {
-  const [, entry] = process.argv;
-  if (!entry) return false;
-  return import.meta.url === pathToFileURL(entry).href;
 }

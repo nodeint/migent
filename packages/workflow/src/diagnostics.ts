@@ -31,7 +31,7 @@ const DECISION_ENTRY_KEYS = keysOf(WorkflowDecisionEntry);
 /** From this schema version on, unknown keys are errors instead of warnings. */
 export const UNKNOWN_KEYS_ERROR_SCHEMA_VERSION = SCHEMA_V5;
 
-export function distance(a: string, b: string): number {
+function distance(a: string, b: string): number {
   const row = Array.from({ length: b.length + 1 }, (_, index) => index);
   for (let i = 1; i <= a.length; i += 1) {
     let [diagonal] = row;

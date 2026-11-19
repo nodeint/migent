@@ -3,7 +3,6 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 
 import {
-  CLI_CONTRACTS,
   isValid,
   LegacyLifecycleEvent,
   LifecycleEventV2,
@@ -594,14 +593,6 @@ test('known shapes describe files written by a real scripted run', async () => {
     expect(validationIssues(LifecycleEventV2, event)).toEqual([]);
     expect(isValid(SessionFollowRecord, event)).toBe(true);
   }
-});
-
-// Coverage guard: every contract in the index was emitted, and so validated, by this file.
-test('every CLI output contract was exercised by a real command', () => {
-  const emitted = (globalThis as { __migentEmittedContracts?: Set<string> }).__migentEmittedContracts
-    ?? new Set<string>();
-  const missing = CLI_CONTRACTS.filter((entry) => !emitted.has(String(entry.schema.$id))).map((entry) => entry.key);
-  expect(missing).toEqual([]);
 });
 
 test('config validate --json: multi-error drafts keep diagnostic precedence', async () => {

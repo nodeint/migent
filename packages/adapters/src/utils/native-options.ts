@@ -18,7 +18,7 @@ export interface NativeOptionOverlay {
 
 const CANONICAL_KEY = /^[a-z][a-z0-9]*(?:_[a-z0-9]+)*$/;
 
-export function flagOfKey(key: string): string {
+function flagOfKey(key: string): string {
   return `--${key.replaceAll('_', '-')}`;
 }
 

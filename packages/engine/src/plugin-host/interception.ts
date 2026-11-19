@@ -19,7 +19,7 @@ export type InterceptorOutcome =
 
 
 /** The host's verdict on one interceptor's raw result, recorded as `plugin.decision`. */
-export type InterceptorVerdict<T> =
+type InterceptorVerdict<T> =
   | { readonly kind: 'accepted'; readonly value: T; readonly proposed: Record<string, unknown>[]; readonly result: Record<string, unknown> }
   | { readonly kind: 'rejected'; readonly reason: string; readonly proposed: Record<string, unknown>[]; readonly result: Record<string, unknown> };
 

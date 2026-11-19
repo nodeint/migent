@@ -257,7 +257,7 @@ function withClientType(body: Readonly<Record<string, unknown>>, client: string)
 }
 
 /** The client a v5 body selects: explicit `client.type`, else the provider's fixed default. */
-export function effectiveClientValue(body: unknown): string | null {
+function effectiveClientValue(body: unknown): string | null {
   if (!isRecord(body)) return null;
   const explicit = explicitClient(body);
   if (explicit !== null) return explicit;

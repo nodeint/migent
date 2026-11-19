@@ -9,7 +9,7 @@ import { MIGENT_DIRNAME, SESSIONS_DIRNAME, utcNow } from '@nodeint/migent-kernel
 import { sessionEventLog } from './event-log.js';
 import { corruptStatusMessage, readStatusFileState } from './query.js';
 
-export const TASK_FILENAME = 'task.md';
+const TASK_FILENAME = 'task.md';
 
 export function assertSingleLineTask(task: string): void {
   if (task.includes('\n') || task.includes('\r')) {
@@ -19,7 +19,7 @@ export function assertSingleLineTask(task: string): void {
   }
 }
 
-export function sessionTaskDirectory(workspace: string, sessionId: string): string {
+function sessionTaskDirectory(workspace: string, sessionId: string): string {
   return path.join(workspace, MIGENT_DIRNAME, SESSIONS_DIRNAME, sessionId);
 }
 

@@ -27,7 +27,7 @@ export interface SelectedPlugin {
 }
 
 /** A live entry that cannot run. The host records one `unavailable` failure for it at its first trigger. */
-export interface UnavailablePlugin {
+interface UnavailablePlugin {
   readonly id: string;
   readonly error: string;
 }
@@ -62,7 +62,7 @@ function lastFrozenRecord(sessionDirectory: string): FrozenRecord | null {
  * Chain order (design D5). Defaults the freeze never recorded come first, then the recorded order of
  * `plugins.frozen`, which is the configuration order and includes advisory entries, then anything else.
  */
-export function chainOrder<T>(
+function chainOrder<T>(
   recorded: readonly string[],
   byId: ReadonlyMap<string, T>,
   implicit: ReadonlySet<string>,

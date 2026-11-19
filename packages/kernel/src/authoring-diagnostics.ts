@@ -19,8 +19,3 @@ export function unknownRoleKeyEntries(config: Record<string, unknown>): UnknownK
       ? unknownKeyEntries(role, { valid: ROLE_KEYS, location: `roles.${name}`, base: ['roles', name], renamed: ROLE_V4_RENAMED })
       : []);
 }
-
-/** Unknown keys under each role of a config document. */
-export function unknownRoleKeys(config: Record<string, unknown>): string[] {
-  return unknownRoleKeyEntries(config).map((entry) => entry.message);
-}

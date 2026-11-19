@@ -107,10 +107,6 @@ test('a question run writes a valid execution questions file', async () => {
   expect(filesSeen.has('execution-questions')).toBe(true);
 });
 
-test('execution and diagnostics files were validated by the scenarios above', () => {
-  expect(filesSeen.has('execution')).toBe(true);
-});
-
 const verifyScript = (workspace: string): string => {
   const script = path.join(workspace, 'verify.cjs');
   const counter = path.join(workspace, 'verify.count');

@@ -12,7 +12,7 @@ import type { PlainData } from '../runtime/plain-data.js';
 import type { Policy } from '../runtime/policy.js';
 
 /** The one operation a plugin agent call runs as. */
-export const INVOKE_AGENT_OPERATION = 'plugin.invoke_agent';
+const INVOKE_AGENT_OPERATION = 'plugin.invoke_agent';
 
 /** The only change a call proposes: store the raw response. The host applier is its single writer. */
 interface StoreResponse {

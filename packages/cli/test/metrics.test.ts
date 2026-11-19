@@ -616,16 +616,6 @@ test('a blocked session has no sealed metrics and is omitted from the list', asy
   expect(existsSync(sealedMetricsPath(workspace, result.sessionId))).toBe(false);
 });
 
-test('a corrupt metrics file is reported and left in place', () => {
-  const workspace = tempDir('migent-metrics-corrupt-');
-  const sessions = path.join(workspace, '.migent', 'sessions', 'kept');
-  mkdirSync(sessions, { recursive: true });
-  writeFileSync(path.join(sessions, 'status.json'), JSON.stringify({ workflow_id: 'once', status: 'completed', updated_at: at(1) }));
-  const file = path.join(sessions, 'metrics.json');
-  writeFileSync(file, 'not-json');
-  expect(readFileSync(file, 'utf8')).toBe('not-json');
-});
-
 test('mixed legacy CLI turns use their own parsers without inventing an execution client', () => {
   const workspace = tempDir('migent-metrics-mixed-');
   try {

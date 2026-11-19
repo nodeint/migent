@@ -13,7 +13,7 @@ export interface NormalizedTurn {
   captured: boolean;
 }
 
-export function blankUsage(): TurnUsage {
+function blankUsage(): TurnUsage {
   return {
     input_tokens: null,
     output_tokens: null,
@@ -24,7 +24,7 @@ export function blankUsage(): TurnUsage {
   };
 }
 
-export function coerceUsage(value: TurnUsage): TurnUsage {
+function coerceUsage(value: TurnUsage): TurnUsage {
   return {
     input_tokens: coerceNumber(value?.input_tokens),
     output_tokens: coerceNumber(value?.output_tokens),

@@ -42,7 +42,7 @@ export function foldStatus(inputs: FoldInputs): Record<string, unknown> {
  * The last human `session.completed` (`data.manual: true`, no execution). It is terminal: the fold
  * derives it from the log, so status.json survives a repair.
  */
-export function manualCompletionEvent(events: readonly ParsedEvent[]): ParsedEvent | null {
+function manualCompletionEvent(events: readonly ParsedEvent[]): ParsedEvent | null {
   let found: ParsedEvent | null = null;
   for (const event of events) {
     if (event.event === 'session.completed' && event.executionId === null && event.data.manual === true) found = event;
@@ -511,7 +511,7 @@ function initialStatus(manifest: SessionManifest, schemaVersion: number): Status
   return draft;
 }
 
-export { readExecutions, readSessionManifest } from './session-fold-read.js';
+export { readSessionManifest } from './session-fold-read.js';
 export type { FoldExecution, FoldInputs, SessionManifest } from './session-fold-types.js';
 
 function executionBlocker(executions: readonly FoldExecution[], executionId: string): string | null {

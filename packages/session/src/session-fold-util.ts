@@ -16,11 +16,11 @@ export function differingKeys(left: Record<string, unknown>, right: Record<strin
   return different;
 }
 
-export function canonical(value: unknown): string {
+function canonical(value: unknown): string {
   return JSON.stringify(sortValue(value));
 }
 
-export function sortValue(value: unknown): unknown {
+function sortValue(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(sortValue);
   if (!isRecord(value)) return value;
   const sorted: Record<string, unknown> = {};

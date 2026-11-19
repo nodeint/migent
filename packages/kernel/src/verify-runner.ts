@@ -20,10 +20,10 @@ import { wrapperEndpoint } from './process-wrapper.js';
 import type { CommandSpec } from './wrapper-launch.js';
 import { WRAPPER_START } from './wrapper-protocol.js';
 
-export const VERIFY_TAIL_LINES = 200;
+const VERIFY_TAIL_LINES = 200;
 const OUTPUT_DRAIN_MS = 1000;
 
-export type VerifyCommandStatus = 'pass' | 'fail' | 'timed_out' | 'skipped';
+type VerifyCommandStatus = 'pass' | 'fail' | 'timed_out' | 'skipped';
 
 export interface VerifyCommandResult {
   command: string;
@@ -58,13 +58,13 @@ export interface VerifyRunInput {
 const WINDOWS_DEFAULT_COMSPEC = 'C:\\Windows\\System32\\cmd.exe';
 
 /** The operating system's own shell: `%ComSpec%` (cmd.exe) on Windows, `/bin/sh` elsewhere. */
-export function defaultVerifyShell(): string {
+function defaultVerifyShell(): string {
   if (process.platform === 'win32') return platformComSpec() ?? WINDOWS_DEFAULT_COMSPEC;
   return '/bin/sh';
 }
 
 /** The shell invocation for one command, with stderr merged into stdout in arrival order. */
-export function verifyShellSpec(
+function verifyShellSpec(
   shell: string,
   command: string,
   platform: NodeJS.Platform = process.platform,

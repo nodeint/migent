@@ -87,7 +87,7 @@ export class StreamSummarizer {
   }
 }
 
-export type GateResult =
+type GateResult =
   | { state: 'passed'; status?: string }
   | { state: 'failed'; reason: string }
   | { state: 'not-evaluated' }
@@ -151,14 +151,14 @@ function observeArtifact(artifactPath: string | null): ObservedTurn['artifact'] 
   }
 }
 
-export interface ResultState {
+interface ResultState {
   observed: ObservedTurn;
   gates: Gates;
   turn_verdict: 'accepted' | 'failed';
   reason: string | null;
 }
 
-export type DiagnosticsOrigin = 'start' | 'provider-error' | 'exit-only';
+type DiagnosticsOrigin = 'start' | 'provider-error' | 'exit-only';
 
 export interface TurnDiagnosticsInput {
   turn: number;
@@ -262,7 +262,7 @@ function record(value: unknown): Record<string, unknown> {
 }
 
 /** One sentence on what the recorded evidence suggests. Pure. */
-export function providerVerdictLine(diagnostics: Record<string, unknown>): string {
+function providerVerdictLine(diagnostics: Record<string, unknown>): string {
   const failure = record(diagnostics.failure);
   const state = record(diagnostics.result_state);
   const observed = record(state.observed);

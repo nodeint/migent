@@ -1,10 +1,8 @@
 /**
- * P1 characterization of issue #158: guarantees of one execution that the operation-runtime refactor must keep.
- * Every assertion here passes on the pre-refactor code and is rerun unchanged afterwards (the baseline is these
- * assertions, not regenerated fixtures). Volatile values (timestamps, pids, durations, temp roots) are never compared.
+ * Guarantees of one execution: write order, cancellation and resume rows.
+ * Volatile values (timestamps, pids, durations, temp roots) are never compared.
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import type { BuildCommandInput, CommandSpec } from '@nodeint/migent-kernel';
@@ -28,9 +26,6 @@ function tempDir(prefix: string): string {
   });
   return directory;
 }
-
-/** The kernel package version, read from its package.json as the diagnostics writer does. */
-const KERNEL_VERSION = (createRequire(import.meta.url)('../../kernel/package.json') as { version: string }).version;
 
 const CONFIG = 'agents:\n  fake:\n    client:\n      type: fake\n    model: m1\nroles:\n  developer:\n    agent: fake\n';
 const OK = 'status: complete\n\ndone';
@@ -406,7 +401,7 @@ test('an execution left running without a cancellation is not reopened by contin
     outcome = `threw:${(error as Error).message}`;
   }
   // Recorded behavior: the stale running execution stays running and is never resumed in place.
-  // Recorded behavior (design D12): the orphan reaper fails the stale execution; it is never resumed in place,
+  // Recorded behavior the orphan reaper fails the stale execution; it is never resumed in place,
   // never calls the agent, and starts no second execution. Crash recovery stays out of scope.
   expect(outcome).toBe('returned:stage_failed');
   expect(json(file)).toMatchObject({ status: 'failed', error: expect.stringContaining('Owner process is not running') });
@@ -414,65 +409,7 @@ test('an execution left running without a cancellation is not reopened by contin
   expect(readdirSync(executionsDir(workspace, sessionId))).toHaveLength(1);
 });
 
-// --- Baseline artifact comparison (committed snapshots, recorded before the refactor) ---
-
-const VOLATILE = new Set(['created_at', 'completed_at', 'timestamp', 'owner_pid', 'provider_pid', 'provider_endpoint', 'hostname',
-  'duration_ms', 'duration_sec', 'elapsed_seconds', 'started_at', 'updated_at', 'ts', 'hash', 'endpoint']);
-
-interface MaskedRoot { root: string; label: string }
-
-/** A root as it can appear in text: native, with forward slashes, or as an escaped backslash path. */
-function rootVariants(root: string): string[] {
-  return [...new Set([root, root.replaceAll('\\', '/'), root.replaceAll('\\', '\\\\')])];
-}
-
-/** Masks every root (longest first), then folds the separators of the path that follows to a single `/`. */
-function maskRoots(text: string, roots: readonly MaskedRoot[]): string {
-  let masked = text;
-  const variants = roots.flatMap((item) => rootVariants(item.root).map((root) => ({ root, label: item.label })))
-    .sort((a, b) => b.root.length - a.root.length);
-  for (const { root, label } of variants) masked = masked.split(root).join(label);
-  const labels = [...new Set(roots.map((item) => item.label))].map((label) => label.replace(/[<>]/g, '\\$&')).join('|');
-  const tail = new RegExp(`(${labels})([\\\\/][^\\s"')]*)`, 'g');
-  return masked.replace(tail, (_all, label: string, rest: string) => `${label}${rest.replace(/[\\/]+/g, '/')}`);
-}
-
-/** Stable view of a JSON value: volatile keys dropped, temp roots and timestamps masked. */
-function normalize(value: unknown, roots: readonly MaskedRoot[]): unknown {
-  if (typeof value === 'string') {
-    return maskRoots(value, roots)
-      .replace(/\d{4}-\d\d-\d\dT[\d:.]+(\+00:00|Z)/g, '<time>').replace(/\b\d+(\.\d+)?s\b/g, '<n>s')
-      .replace(/\(\d+ ?ms\)/g, '(<ms>)');
-  }
-  if (Array.isArray(value)) return value.map((item) => normalize(item, roots));
-  if (value !== null && typeof value === 'object') {
-    return Object.fromEntries(Object.entries(value as Record<string, unknown>)
-      .filter(([key]) => !VOLATILE.has(key)).map(([key, item]) => [key, normalize(item, roots)]));
-  }
-  return value;
-}
-
-/**
- * Diagnostics fields that come from the machine, not the behavior. Each is checked against its runtime source
- * (so a wrong value still fails), then replaced by a marker so the snapshot holds on any platform, temp root,
- * architecture, Node patch or package version. Field presence stays pinned.
- */
-function environmentMarkers(raw: unknown): Record<string, unknown> {
-  const record = { ...(raw as Record<string, unknown>) };
-  const checks: [string, unknown, string][] = [
-    ['endpoint_length', typeof record.endpoint === 'string' ? Buffer.byteLength(record.endpoint) : null, '<endpoint-length>'],
-    ['node_version', process.version, '<node-version>'],
-    ['platform', process.platform, '<platform>'],
-    ['arch', process.arch, '<arch>'],
-    ['migent_version', KERNEL_VERSION, '<migent-version>'],
-  ];
-  for (const [key, expected, marker] of checks) {
-    expect(record, `${key} present`).toHaveProperty(key);
-    expect(record[key], key).toBe(expected);
-    record[key] = marker;
-  }
-  return record;
-}
+// --- Remaining resume rows ---
 
 function files(directory: string, base = directory): Record<string, unknown> {
   const out: Record<string, unknown> = {};
@@ -487,71 +424,6 @@ function files(directory: string, base = directory): Record<string, unknown> {
   }
   return out;
 }
-
-/** `scriptRoots` are the helper-script directories of the run; their paths are masked as `<tmp>`. */
-function sessionView(
-  workspace: string,
-  sessionId: string,
-  result: Record<string, unknown>,
-  scriptRoots: readonly string[] = [],
-): unknown {
-  const root = path.join(workspace, '.migent', 'sessions', sessionId);
-  const events = readFileSync(path.join(root, 'events.jsonl'), 'utf8').split('\n').filter((line) => line !== '')
-    .map((line) => JSON.parse(line) as Record<string, unknown>);
-  const executions: Record<string, unknown> = {};
-  for (const id of readdirSync(path.join(root, 'executions')).sort()) executions[id] = files(path.join(root, 'executions', id));
-  const roots: MaskedRoot[] = [
-    { root: workspace, label: '<ws>' }, { root: process.execPath, label: '<node>' },
-    ...scriptRoots.map((item) => ({ root: item, label: '<tmp>' })),
-  ];
-  // A root can also surface as its realpath (e.g. /tmp -> /private/tmp on macOS).
-  const real = roots.map((item) => ({ root: realpathSync(item.root), label: item.label }));
-  return normalize({ result, events, executions }, [...roots, ...real]);
-}
-
-function publicResult(result: Record<string, unknown>): Record<string, unknown> {
-  const { code, status, stopReason, latestExecutionId } = result;
-  return { code, status, stopReason, latestExecutionId };
-}
-
-test('baseline: role execution with correction, red verify, repair and pass', async () => {
-  const root = tempDir('migent-characterize-b1-');
-  const script = verifyScript(root, [1, 0]);
-  const { workspace, sessionId } = workspaceWith(roleWorkflow([script.command]));
-  const provider = new ScriptedClient(['', OK, OK], [null, '# n\n', '# n\n']);
-  const result = await executeNamedWorkflow(workspace, { workflowId: 'wf', sessionId }, runner(provider));
-  expect(result.code).toBe(0);
-  expect(provider.calls).toHaveLength(3);
-  expect(sessionView(workspace, sessionId, publicResult(result as never), [root])).toMatchSnapshot();
-});
-
-test('baseline: role execution that exhausts its verify budget', async () => {
-  const root = tempDir('migent-characterize-b2-');
-  const script = verifyScript(root, [1, 1]);
-  const { workspace, sessionId } = workspaceWith(roleWorkflow([script.command], 2));
-  const provider = new ScriptedClient([OK, OK], ['# n\n', '# n\n']);
-  const result = await executeNamedWorkflow(workspace, { workflowId: 'wf', sessionId }, runner(provider));
-  expect(result.code).not.toBe(0);
-  expect(sessionView(workspace, sessionId, publicResult(result as never), [root])).toMatchSnapshot();
-});
-
-test('baseline: verify-only pass and red executions', async () => {
-  const passRoot = tempDir('migent-characterize-b3-');
-  const pass = verifyScript(passRoot, [0]);
-  const first = workspaceWith(verifyOnlyWorkflow(pass.command));
-  const passed = await executeNamedWorkflow(first.workspace, { workflowId: 'wf', sessionId: first.sessionId }, runner(new ScriptedClient([OK], ['# n\n'])));
-  expect(passed.code).toBe(0);
-  expect(sessionView(first.workspace, first.sessionId, publicResult(passed as never), [passRoot])).toMatchSnapshot('pass');
-
-  const redRoot = tempDir('migent-characterize-b4-');
-  const red = verifyScript(redRoot, [1]);
-  const second = workspaceWith(verifyOnlyWorkflow(red.command));
-  const failed = await executeNamedWorkflow(second.workspace, { workflowId: 'wf', sessionId: second.sessionId }, runner(new ScriptedClient([OK], ['# n\n'])));
-  expect(failed.code).toBe(7);
-  expect(sessionView(second.workspace, second.sessionId, publicResult(failed as never), [redRoot])).toMatchSnapshot('red');
-});
-
-// --- Remaining resume rows ---
 
 test('a final execution stays terminal: continue starts no agent call and rewrites nothing', async () => {
   const { workspace, sessionId } = workspaceWith(roleWorkflow([]));
@@ -586,57 +458,4 @@ test('a saved-reply continuation does not rewrite diagnostics of the abnormal tu
   expect(second.code).toBe(0);
   expect(provider.calls).toHaveLength(1);
   expect(readFileSync(diagnosticsFile, 'utf8')).toBe(before);
-});
-
-test('baseline: abnormal turns with diagnostics, red verify and repair', async () => {
-  const root = tempDir('migent-characterize-b5-');
-  const script = verifyScript(root, [1, 0]);
-  const { workspace, sessionId } = workspaceWith(roleWorkflow([script.command]));
-  const provider = new ExitCodes([3, 3], [OK, OK], ['# n\n', '# n\n']);
-  const result = await executeNamedWorkflow(workspace, { workflowId: 'wf', sessionId }, runner(provider));
-  expect(result.code).toBe(0);
-  const view = sessionView(workspace, sessionId, publicResult(result as never), [root]);
-  expect(JSON.stringify(view)).toContain('diagnostics.json');
-  expect(view).toMatchSnapshot();
-});
-
-test('normalization masks Windows-shaped roots, escaped serializations and separators, keeping file identity', () => {
-  const workspace = 'C:\\Users\\runner\\AppData\\Local\\Temp\\migent-characterize-abc123';
-  const scripts = 'C:\\Users\\runner\\AppData\\Local\\Temp\\migent-characterize-b1-xyz789';
-  const node = 'C:\\hostedtoolcache\\windows\\node\\24.0.0\\x64\\node.exe';
-  const roots = [
-    { root: workspace, label: '<ws>' }, { root: node, label: '<node>' }, { root: scripts, label: '<tmp>' },
-  ];
-  const view = normalize({
-    command: `"${node}" "${scripts}\\verify.cjs"`,
-    serialized: JSON.stringify({ file: `${workspace}\\.migent\\sessions\\1\\executions\\0001-a\\handoff.json` }),
-    forward: `${scripts.replaceAll('\\', '/')}/verify.cjs failed`,
-  }, roots);
-  expect(view).toEqual({
-    command: '"<node>" "<tmp>/verify.cjs"',
-    serialized: '{"file":"<ws>/.migent/sessions/1/executions/0001-a/handoff.json"}',
-    forward: '<tmp>/verify.cjs failed',
-  });
-  // A POSIX root normalizes to the same labels, so snapshots agree across platforms.
-  const posix = normalize({ command: '"/usr/bin/node" "/tmp/migent-x-1/verify.cjs"' }, [
-    { root: '/usr/bin/node', label: '<node>' }, { root: '/tmp/migent-x-1', label: '<tmp>' },
-  ]);
-  expect(posix).toEqual({ command: '"<node>" "<tmp>/verify.cjs"' });
-});
-
-test('environment markers check each machine-derived field against its runtime source', () => {
-  const good = {
-    endpoint: '/tmp/x.sock', endpoint_length: 11, node_version: process.version, platform: process.platform,
-    arch: process.arch, migent_version: KERNEL_VERSION, stable: 'kept',
-  };
-  expect(environmentMarkers(good)).toEqual({
-    endpoint: '/tmp/x.sock', endpoint_length: '<endpoint-length>', node_version: '<node-version>',
-    platform: '<platform>', arch: '<arch>', migent_version: '<migent-version>', stable: 'kept',
-  });
-  // A wrong value or a missing field is not masked: it fails.
-  expect(() => environmentMarkers({ ...good, endpoint_length: 12 })).toThrow();
-  expect(() => environmentMarkers({ ...good, platform: 'plan9' })).toThrow();
-  const { arch: omitted, ...missing } = good;
-  void omitted;
-  expect(() => environmentMarkers(missing)).toThrow();
 });

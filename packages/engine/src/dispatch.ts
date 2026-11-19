@@ -34,8 +34,8 @@ import { roleStartLine, stageFinishLine } from './stage-lines.js';
 import { runVerifyOnlyStage } from './verify-only.js';
 
 export { EXECUTE_EXIT_CODES, type ExecuteResult, PendingStageReply } from './execute-state.js';
-export { blockResumes, executeFinal, optionalText, resumeInputs, selectedStage, text } from './execute-state.js';
-export { roleStartLine, stageFinishLine } from './stage-lines.js';
+export { executeFinal, resumeInputs, selectedStage, text } from './execute-state.js';
+export { stageFinishLine } from './stage-lines.js';
 
 export interface StageDispatchRequest {
   workflowId: string;
@@ -128,7 +128,7 @@ export class StageDispatchResult {
 /** `execution_status` of the stage result of a resume that stopped for a decision. */
 export const RESUME_EXPIRED_STAGE = 'resume_expired';
 
-export interface NamedStageRun {
+interface NamedStageRun {
   readonly runner: AgentToolRunner;
   /** An expired resume the gate turned into a fresh conversation: the source it would have resumed. */
   readonly freshFrom?: string | null;
@@ -514,12 +514,12 @@ function interruptedExecutionId(snapshots: readonly ExecutionSnapshot[], stageId
   return latest?.status === 'cancelled' ? latest.executionId : undefined;
 }
 
-export function storedPriorSessionId(status: Record<string, unknown>): string | null {
+function storedPriorSessionId(status: Record<string, unknown>): string | null {
   const prior = status.prior_session_id;
   return typeof prior === 'string' && prior ? prior : null;
 }
 
-export function priorSessionOutputs(
+function priorSessionOutputs(
   workspace: string,
   priorSessionId: string | null,
   sessionId?: string,

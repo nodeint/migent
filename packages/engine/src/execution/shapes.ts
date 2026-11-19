@@ -17,13 +17,13 @@ const question: Check = shape({
   recommended: optional(arrayOf(isString)),
 });
 
-export const outcomeData: Check = shape({
+const outcomeData: Check = shape({
   status: oneOf('complete', 'blocked', 'question'),
   blocker: nullable(isString), decision: nullable(isString), question: nullable(isString),
   questions: arrayOf(question),
 });
 
-export const gateFailureData: Check = shape({
+const gateFailureData: Check = shape({
   kind: oneOf(...CORRECTION_KINDS), errorKind: isString, detail: isString,
 });
 

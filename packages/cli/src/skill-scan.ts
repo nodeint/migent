@@ -30,7 +30,7 @@ export function skillDigest(directory: string): string {
   return hash.digest('hex');
 }
 
-export function isMigentSkill(directory: string): boolean {
+function isMigentSkill(directory: string): boolean {
   const skillPath = path.join(directory, 'SKILL.md');
   if (!isFile(skillPath)) return false;
   const match = /^---\r?\n([\s\S]*?)\r?\n---/.exec(readFileSync(skillPath, 'utf8'));

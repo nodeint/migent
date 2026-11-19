@@ -6,7 +6,7 @@ import { ConfigurationError, EXECUTIONS_DIRNAME, isAtomicTempName } from '@nodei
 import { isRecord, loadNamedWorkflow, loadWorkflowDocument, parseYamlDocument, type WorkflowDocument } from '@nodeint/migent-workflow';
 
 import { executionClientReader } from './legacy-execution-client.js';
-import { readStatusFileState, type StatusFileState } from './query.js';
+import { readStatusFileState } from './query.js';
 import { readParsedEvents } from './session-events.js';
 import type { FoldExecution, FoldInputs, SessionManifest } from './session-fold-types.js';
 import { asInt, identityText, textOr } from './session-fold-util.js';
@@ -55,7 +55,7 @@ export function readExecutions(sessionDirectory: string): FoldExecution[] {
   return executions;
 }
 
-export function executionFromRecord(
+function executionFromRecord(
   sessionDirectory: string,
   record: { executionId: string; metadata: Record<string, unknown>; client: string | null },
 ): FoldExecution {
@@ -81,13 +81,13 @@ export function executionFromRecord(
 }
 
 /** Finder, Explorer, and editor backups are not published artifacts. */
-export function isIgnoredOutputName(name: string): boolean {
+function isIgnoredOutputName(name: string): boolean {
   if (name.startsWith('.') || name.endsWith('~')) return true;
   const lower = name.toLowerCase();
   return lower === 'thumbs.db' || lower === 'desktop.ini';
 }
 
-export function listOutputFiles(sessionDirectory: string): string[] {
+function listOutputFiles(sessionDirectory: string): string[] {
   const directory = path.join(sessionDirectory, 'outputs');
   let entries;
   try {
@@ -117,7 +117,7 @@ function loadRecordedWorkflowPath(workspace: string, workflowPath: unknown): Wor
   }
 }
 
-export function loadSessionWorkflow(
+function loadSessionWorkflow(
   workspace: string,
   sessionDirectory: string,
   status: Record<string, unknown>,
@@ -137,7 +137,7 @@ export function loadSessionWorkflow(
   }
 }
 
-export function isReadableFile(filePath: string): boolean {
+function isReadableFile(filePath: string): boolean {
   try {
     return statSync(filePath).isFile();
   } catch {
@@ -203,11 +203,7 @@ export function loadFoldInputs(workspace: string, sessionDirectory: string): Fol
   };
 }
 
-export function statusFileState(sessionDirectory: string): StatusFileState {
-  return readStatusFileState(path.join(sessionDirectory, 'status.json'));
-}
-
-export function statusIdentity(
+function statusIdentity(
   manifest: SessionManifest,
   previous: Record<string, unknown> | null,
 ): Record<string, unknown> {
@@ -217,7 +213,7 @@ export function statusIdentity(
   };
 }
 
-export function emptyManifest(sessionId: string): SessionManifest {
+function emptyManifest(sessionId: string): SessionManifest {
   return {
     sessionId,
     title: null,

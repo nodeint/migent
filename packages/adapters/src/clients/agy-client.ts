@@ -18,7 +18,7 @@ import { parseHelpOptions } from '../utils/parse-help-options.js';
 import { compact, emptyUsage, finite, isRecord, labelOf, parseJsonObject, picked } from './json.js';
 
 // `agy models` lists slugs, not effort levels. `--help` fixes the enum.
-export const AGY_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
+const AGY_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max'] as const;
 const NATIVE = new NativeOptions({
   label: 'agy',
   reserved: [

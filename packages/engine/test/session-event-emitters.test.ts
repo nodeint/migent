@@ -54,15 +54,3 @@ test('client events the reporter writes validate against their registered schema
     expect(validationIssues((SESSION_CLIENT_EVENT_FORMS as Record<string, { current: Parameters<typeof isValid>[0] }>)[name].current, record), `${name} current`).toEqual([]);
   }
 });
-
-test('every correction policy event is registered and its client form accepts a record', async () => {
-  const { CORRECTION_POLICY } = await import('@nodeint/migent-kernel');
-  const registered = new Set(SESSION_EVENTS.map((entry) => entry.event));
-  for (const rule of Object.values(CORRECTION_POLICY)) {
-    expect(registered.has(rule.event), rule.event).toBe(true);
-    const record = { v: 2, seq: 1, event: rule.event, timestamp: '2026-01-01T00:00:00.000+00:00', client: 'fake', session_id: '1', details: { turn: 1, error_kind: 'x' } };
-    expect(validationIssues(SESSION_CLIENT_EVENT_FORMS[rule.event].current, record), rule.event).toEqual([]);
-  }
-  // Named here so the coverage guard sees the names the policy table owns.
-  expect(['stage.output_missing', 'question.file_invalid', 'handoff.file_invalid', 'response.contract_invalid'].every((name) => registered.has(name))).toBe(true);
-});

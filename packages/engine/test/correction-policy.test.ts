@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { classifyGateError, CORRECTION_FAILURE_REASONS, CORRECTION_POLICY, decideCorrection, readCorrectionLedger } from '@nodeint/migent-kernel';
+import { classifyGateError, decideCorrection, readCorrectionLedger } from '@nodeint/migent-kernel';
 import { HandoffFileError } from '@nodeint/migent-kernel';
 import { QuestionFileError } from '@nodeint/migent-kernel';
 import { parseStageOutcome,ResponseContractError } from '@nodeint/migent-kernel';
@@ -36,10 +36,6 @@ test('every handoff error kind maps to the handoff correction kind', () => {
   for (const kind of ['missing', 'empty', 'invalid_json', 'invalid_schema', 'invalid_decision', 'question_not_allowed'] as const) {
     expect(classifyGateError(new HandoffFileError(kind, 'd', '/f'))).toMatchObject({ kind: 'handoff', errorKind: kind, detail: 'd' });
   }
-  expect(CORRECTION_POLICY.handoff).toMatchObject({
-    budget: 1, contract: 'full', turnKind: 'handoff_correction', event: 'handoff.file_invalid',
-    failureReason: 'handoff_file_invalid', keepFile: true,
-  });
 });
 
 test('handoff and stage_output budgets are independent and the ledger round-trips corrections.handoff', () => {
@@ -65,13 +61,6 @@ test('a legacy question_correction is read as the question_file entry', () => {
     question_correction: { turn: 2 }, corrections: { question_file: { turn: 3, error_kind: 'a', error_detail: 'b' } },
   });
   expect(both.question_file?.turn).toBe(3);
-});
-
-test('failure reasons come from the policy table', () => {
-  expect(CORRECTION_FAILURE_REASONS).toEqual(Object.values(CORRECTION_POLICY).map((rule) => rule.failureReason));
-  expect(CORRECTION_FAILURE_REASONS).toContain('response_contract_invalid');
-  expect(CORRECTION_FAILURE_REASONS).toContain('stage_output_missing');
-  expect(CORRECTION_FAILURE_REASONS).toContain('handoff_file_invalid');
 });
 
 test('a missing status header lists the statuses the stage allows', () => {

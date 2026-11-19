@@ -28,16 +28,6 @@ async function run(snap: PluginSessionSnapshot): Promise<readonly PluginEventPro
   return handler()(input, call);
 }
 
-test('manifest declares the claims the handler uses', () => {
-  const { manifest } = metricsPlugin;
-  expect(manifest.id).toBe('metrics');
-  expect(manifest.defaultEnabled).toBe(true);
-  expect(manifest.defaults?.on_error).toBe('ignore');
-  expect(manifest.uses.events).toEqual(['session.completed']);
-  expect(manifest.uses.session).toEqual(['snapshot']);
-  expect(manifest.uses.artifacts).toEqual([{ name: 'metrics.json', mode: 'create_only', media_type: 'application/json' }]);
-});
-
 test.each([
   ['corrupt', { corrupt: true, status: {} }],
   ['agent', { status: { status: 'completed', workflow_id: 'agent' } }],

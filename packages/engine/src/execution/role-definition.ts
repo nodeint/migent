@@ -19,7 +19,7 @@ import {
   AGENT_TURN, type GateFailureData, type GateOutput, REPLY_GATE, type TurnOutput, VERIFY_RUN, type VerifyOutput,
 } from './types.js';
 
-export const ROLE_EDGES: readonly Edge[] = [
+const ROLE_EDGES: readonly Edge[] = [
   { from: AGENT_TURN, outcome: 'succeeded', to: { kind: 'next', operationId: AGENT_TURN } },
   { from: AGENT_TURN, outcome: 'succeeded', to: { kind: 'next', operationId: VERIFY_RUN } },
   { from: AGENT_TURN, outcome: 'succeeded', to: { kind: 'end' } },

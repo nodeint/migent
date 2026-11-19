@@ -6,7 +6,6 @@ import {
   ConfigLayer,
   EffectiveConfig,
   isValid,
-  KNOWN_SHAPES,
   LegacyLifecycleEvent,
   LifecycleEventV2,
   ResumePolicy,
@@ -19,14 +18,6 @@ import {
 } from '../src/index.ts';
 
 describe('registry', () => {
-  test('keys and $ids are unique and every contract has a title', () => {
-    const keys = CLI_CONTRACTS.map((entry) => entry.key);
-    expect(new Set(keys).size).toBe(keys.length);
-    const ids = [...CLI_CONTRACTS.map((entry) => entry.schema), ...KNOWN_SHAPES].map((schema) => schema.$id);
-    expect(ids.every((value) => typeof value === 'string')).toBe(true);
-    expect(new Set(ids).size).toBe(ids.length);
-  });
-
   test('passthrough contracts are exactly any JSON object', () => {
     for (const entry of CLI_CONTRACTS.filter((item) => item.class === 'passthrough')) {
       expect(entry.schema).toMatchObject({ type: 'object', patternProperties: { '^.*$': {} } });

@@ -91,7 +91,7 @@ export function classifyGateError(error: unknown): GateFailure | null {
   return null;
 }
 
-export interface CorrectionEntry {
+interface CorrectionEntry {
   turn: number;
   error_kind: string;
   error_detail: string;

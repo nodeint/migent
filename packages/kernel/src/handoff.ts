@@ -8,7 +8,7 @@ import type { AskTarget } from './stage-outcome.js';
 const text = z.string().trim().min(1);
 
 /** The handoff document an agent writes under response protocol 3. */
-export const handoffSchema = z.discriminatedUnion('status', [
+const handoffSchema = z.discriminatedUnion('status', [
   z.object({
     schema_version: z.literal(1), status: z.literal('complete'),
     decision: text.optional(), summary: z.string().optional(),
@@ -16,8 +16,6 @@ export const handoffSchema = z.discriminatedUnion('status', [
   z.object({ schema_version: z.literal(1), status: z.literal('blocked'), blocker: text }).strict(),
   z.object({ schema_version: z.literal(1), status: z.literal('question'), questions: questionBatchSchema }).strict(),
 ]);
-
-export type Handoff = z.output<typeof handoffSchema>;
 
 export type HandoffFileErrorKind =
   'missing' | 'empty' | 'invalid_json' | 'invalid_schema' | 'invalid_decision' | 'question_not_allowed';

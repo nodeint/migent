@@ -162,12 +162,6 @@ function clientTypeOf(model: unknown): string | null {
   return typeof clientType === 'string' ? clientType : null;
 }
 
-/** Directory the client reads project skills from, for prompt text. */
-export function projectSkillPath(client: string | null): string {
-  const target = (client === null ? undefined : findTarget(client)) ?? findTarget('codex');
-  return `${target?.project ?? '.agents/skills'}/migent`;
-}
-
 export function buildSkillsArgv(scope: SkillScope, targets: readonly SkillTarget[], yes: boolean): string[] {
   const argv = ['-y', 'skills', 'add', skillSourceDirectory(), '-s', 'migent', '--copy'];
   if (scope === 'global') argv.push('-g');

@@ -24,13 +24,9 @@ export {
   optionsDict,
   recordEqual,
   roleOptionMap,
-  scalarText,
-  sortedKeys,
-  stringMap,
-  stringValue,
 } from './config-values.js';
 
-export interface Block {
+interface Block {
   key: string;
   indent: number;
   line: number;
@@ -364,7 +360,7 @@ function roleLines(key: string, body: Record<string, unknown>, layout: Layout): 
   return lines;
 }
 
-export function parseBlocks(lines: string[], unit: number): Block[] {
+function parseBlocks(lines: string[], unit: number): Block[] {
   return parseLevel(lines, { start: 0, end: lines.length, indent: 0 }, unit);
 }
 

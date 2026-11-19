@@ -65,7 +65,7 @@ export function eventRecord(seq: number, draft: EventDraft): Record<string, unkn
 }
 
 /** One session-wide sequence. A parseable line counts, including v1. A trailing partial line does not. */
-export function nextEventSequence(sessionDirectory: string): number {
+function nextEventSequence(sessionDirectory: string): number {
   let count = countCompleteLines(path.join(sessionDirectory, 'events.jsonl'));
   for (const stream of streamFiles(sessionDirectory)) count += countCompleteLines(stream);
   return count + 1;
@@ -269,7 +269,7 @@ function countCompleteLines(filePath: string): number {
 }
 
 /** Drop a trailing fragment that has no newline. Blank lines are not events. */
-export function completeLines(text: string): string[] {
+function completeLines(text: string): string[] {
   if (!text.includes('\n')) return [];
   const pieces = text.split('\n');
   if (!text.endsWith('\n')) pieces.pop();

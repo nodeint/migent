@@ -19,7 +19,7 @@ import { findWorkspace, invocationCwdPath, resolvePrompt } from '../workspace.js
 import { continueState, continueTurn } from './agent-continue.js';
 import { answersInput, freshRolePrompt, gateRole, judgeRoleCancelled, newRolePolicy, recordAnswer, resumeSource, rolePrompt, roleResumeExpired, runFreshAttempt } from './agent-resume.js';
 
-export const CLIENT_MAPPING = 'claude→claude-code, codex→codex, grok→grok, agy→agy, opencode→opencode';
+const CLIENT_MAPPING = 'claude→claude-code, codex→codex, grok→grok, agy→agy, opencode→opencode';
 
 export type AgentProfile = { client: string; model: string; options: Record<string, string> };
 

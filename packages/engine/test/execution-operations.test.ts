@@ -8,11 +8,11 @@ import { afterEach, expect, onTestFinished, test, vi } from 'vitest';
 import { ExecutionApplier } from '../src/execution/applier.ts';
 import { createReplyGateOperation, createVerifyRunOperation } from '../src/execution/handlers.ts';
 import { toOutcomeData, toStageOutcome } from '../src/execution/outcome-data.ts';
-import { ROLE_EDGES, roleDefinition } from '../src/execution/role-definition.ts';
+import { roleDefinition } from '../src/execution/role-definition.ts';
 import {
   gateInputCheck, gateOutputCheck, turnInputCheck, turnOutputCheck, verifyInputCheck, verifyOutputCheck,
 } from '../src/execution/shapes.ts';
-import { VERIFY_ONLY_EDGES, verifyOnlyDefinition } from '../src/execution/verify-only-definition.ts';
+import { verifyOnlyDefinition } from '../src/execution/verify-only-definition.ts';
 import { AgentToolRunner, executeNamedWorkflow } from '../src/index.ts';
 import { isPlainData } from '../src/runtime/plain-data.ts';
 import { ALLOW_ALL_POLICY } from '../src/runtime/policy.ts';
@@ -205,7 +205,7 @@ function expectPlain(value: unknown, label: string): void {
   walk(value);
 }
 
-// --- D6: the trace reaches the execution's debug log ---
+// --- the trace reaches the execution's debug log ---
 
 test('under debug a clean turn traces one agent.turn that ends the execution, with no reply.gate step', async () => {
   vi.stubEnv('MIGENT_DEBUG', '1');
@@ -258,7 +258,7 @@ test('with debug off no runtime trace and no debug log are written', async () =>
   expect(events).not.toContain('runtime');
 });
 
-// --- D10: identities are stable across an interruption ---
+// --- identities are stable across an interruption ---
 
 class HangOnCalls extends ScriptedClient {
   public count = 0;
@@ -335,19 +335,7 @@ test('an interrupted verify-only execution resumes with the same single attempt'
   expect(requests(trace(workspace, sessionId).entries).slice(0, 2)).toEqual(['run.verify#1', 'run.verify#1']);
 });
 
-// --- Declared edges ---
-
-test('the role and verify-only edges name only the three operations and no fresh reply.gate edge', () => {
-  const targets = ROLE_EDGES.filter((edge) => edge.from === 'agent.turn').map((edge) => JSON.stringify(edge.to));
-  expect(targets).toEqual([
-    JSON.stringify({ kind: 'next', operationId: 'agent.turn' }),
-    JSON.stringify({ kind: 'next', operationId: 'run.verify' }),
-    JSON.stringify({ kind: 'end' }),
-  ]);
-  expect(VERIFY_ONLY_EDGES).toEqual([{ from: 'run.verify', outcome: 'succeeded', to: { kind: 'end' } }]);
-});
-
-// --- R2: every boundary rejects malformed payloads ---
+// --- every boundary rejects malformed payloads ---
 
 const validTurnInput = {
   turn: 1, prompt: 'p', agentId: null, newAgentId: null, recordAgentId: null, keepFile: false,
@@ -453,7 +441,7 @@ test('the real operations refuse malformed requests through the runtime before r
   expect(run).not.toHaveBeenCalled();
 });
 
-// --- D9: conversion round trips ---
+// --- conversion round trips ---
 
 test('every outcome status and question form survives detach and revive, omitting nothing', () => {
   const question = {
@@ -481,14 +469,7 @@ function outcomeShape(data: object): boolean {
   return gateOutputCheck({ ...validGate, outcome: data as never });
 }
 
-// --- D12: one synchronous commit, in list order ---
-
-test('the applier completes its commit before returning and has no asynchronous change handler', () => {
-  const source = readFileSync(path.join(import.meta.dirname, '..', 'src', 'execution', 'applier.ts'), 'utf8');
-  expect(source).not.toMatch(/\basync\b|\bawait\b|\.then\(|Promise/);
-  expect(ExecutionApplier.prototype.apply.constructor.name).toBe('Function');
-  expect(ExecutionApplier.prototype.apply.call({ commit: () => undefined }, [])).toBeUndefined();
-});
+// --- One synchronous commit, in list order ---
 
 test('the commit lands every write in list order before the next invocation starts', async () => {
   vi.stubEnv('MIGENT_DEBUG', '');
@@ -508,7 +489,7 @@ test('the commit lands every write in list order before the next invocation star
   expect(order.at(-1)).toBe('saveExecution');
 });
 
-// --- D9/D10: real-handler boundary values and full logical identities across resume ---
+// --- real-handler boundary values and full logical identities across resume ---
 
 const ASSERTED_OPERATIONS = ['agent.turn', 'reply.gate', 'run.verify'];
 

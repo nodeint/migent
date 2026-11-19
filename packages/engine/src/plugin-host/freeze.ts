@@ -34,7 +34,7 @@ export function defaultEnabledIds(registry: PluginRegistry): string[] {
  * The config with every default plugin the `plugins` section does not name added first with empty options, so the
  * chain order is unlisted defaults, then the configured entries (design D5). A listed default keeps its position.
  */
-export function withDefaultEntries(config: Record<string, unknown>, registry: PluginRegistry): Record<string, unknown> {
+function withDefaultEntries(config: Record<string, unknown>, registry: PluginRegistry): Record<string, unknown> {
   const configured = config.plugins === undefined ? {} : config.plugins;
   if (typeof configured !== 'object' || configured === null || Array.isArray(configured)) return config;
   const unlisted = defaultEnabledIds(registry).filter((id) => !Object.hasOwn(configured, id));
@@ -43,7 +43,7 @@ export function withDefaultEntries(config: Record<string, unknown>, registry: Pl
 }
 
 /** Validates the merged `plugins` section and throws the first issue, so a freeze write fails with exit 2. */
-export function assertPluginsValid(config: Record<string, unknown>, registry: PluginRegistry): void {
+function assertPluginsValid(config: Record<string, unknown>, registry: PluginRegistry): void {
   const [first] = pluginEntryIssues({ plugins: config.plugins, manifests: registryManifests(registry) });
   if (first !== undefined) throw first;
 }

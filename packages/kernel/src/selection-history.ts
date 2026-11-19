@@ -4,7 +4,7 @@ import { conditionalReach, dependencyClosure, isWorkflowV2, routeListsStage, typ
 import { type ExecutionSnapshot } from './outputs.js';
 
 /** Highest-order skip snapshot of each stage. Only run_when stages have any. */
-export function latestSkipByStage(snapshots: readonly ExecutionSnapshot[]): Record<string, ExecutionSnapshot> {
+function latestSkipByStage(snapshots: readonly ExecutionSnapshot[]): Record<string, ExecutionSnapshot> {
   const latest: Record<string, ExecutionSnapshot> = {};
   for (const snapshot of snapshots) {
     if (snapshot.status !== 'skipped') continue;
@@ -23,7 +23,7 @@ export function supersedingSkip(
   return supersedingSkipFrom(workflow, latestSkipByStage(snapshots), stageId);
 }
 
-export function supersedingSkipFrom(
+function supersedingSkipFrom(
   workflow: WorkflowDocument,
   skips: Readonly<Record<string, ExecutionSnapshot>>,
   stageId: string,
@@ -268,7 +268,7 @@ export function routersCompletedSince(
   return relevant;
 }
 
-export function latestRouteTo(
+function latestRouteTo(
   workflow: WorkflowDocument,
   snapshots: readonly ExecutionSnapshot[],
   stageId: string,

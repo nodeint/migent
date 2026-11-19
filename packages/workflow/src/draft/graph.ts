@@ -24,7 +24,7 @@ export function draftConditionalStages(
 }
 
 /** A stage view carrying only the fields the cross-stage rules read. */
-export function graphStageOf(stage: DraftStage): StageSpec {
+function graphStageOf(stage: DraftStage): StageSpec {
   return {
     kind: 'verify',
     role: null,
@@ -49,7 +49,7 @@ export function graphStageOf(stage: DraftStage): StageSpec {
 }
 
 /** True when every stage `stageId` depends on, transitively, was collected with a readable list. */
-export function dependencyClosureKnown(
+function dependencyClosureKnown(
   stagesById: ReadonlyMap<string, DraftStage>,
   declaredIds: ReadonlySet<string>,
   stageId: string,
@@ -76,7 +76,7 @@ type ReachScope = {
 };
 
 /** Stages a skip of `stageId` definitely leaves unreached, using only edges the draft made readable. */
-export function definiteConditionalReach(scope: ReachScope, stageId: string): Set<string> {
+function definiteConditionalReach(scope: ReachScope, stageId: string): Set<string> {
   const byId = new Map(scope.stages.map((stage) => [stage.id, stage]));
   const reach = new Set<string>([stageId]);
   const pending = [stageId];

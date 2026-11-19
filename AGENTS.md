@@ -44,6 +44,7 @@ Explicit user instructions take precedence over skill guidance.
 | `migent` | Setting up Migent, or configuring, running, inspecting, or resuming its workflows, roles, models, sessions, stages, or outputs |
 | [`writing`](.agents/skills/writing/SKILL.md) | Creating, changing, splitting, merging, or reviewing Markdown content or file structure |
 | [`eslint`](.agents/skills/eslint/SKILL.md) | Creating or changing `.ts` or `.tsx`, reviewing those files against repository lint rules, or validating ESLint |
+| [`testing`](.agents/skills/testing/SKILL.md) | Writing, changing, reviewing, or deleting tests, or deciding what a test should cover |
 | [`typescript`](.agents/skills/typescript/SKILL.md) | Creating, changing, or reviewing `.ts` or `.tsx` files against TypeScript coding standards |
 | [`create-issue`](.agents/skills/create-issue/SKILL.md) | Creating or rewriting a repository GitHub issue |
 | [`checkout-issue`](.agents/skills/checkout-issue/SKILL.md) | Reading or starting work on a repository GitHub issue |

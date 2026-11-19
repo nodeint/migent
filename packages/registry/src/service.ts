@@ -38,12 +38,12 @@ const READY_KEYS = new Set(['pid', 'port', 'instance_id', 'token']);
 /** Timeout of the authenticated identity probe during status checks, in seconds. */
 const AUTH_PROBE_SEC = 2;
 
-export const START_LOCK_TIMEOUT_SEC = 8;
-export const IDENTITY_TIMEOUT_SEC = 5;
-export const READY_TIMEOUT_SEC = 5;
-export const HEALTH_TIMEOUT_SEC = 5;
-export const TERM_GRACE_SEC = 5;
-export const KILL_GRACE_SEC = 5;
+const START_LOCK_TIMEOUT_SEC = 8;
+const IDENTITY_TIMEOUT_SEC = 5;
+const READY_TIMEOUT_SEC = 5;
+const HEALTH_TIMEOUT_SEC = 5;
+const TERM_GRACE_SEC = 5;
+const KILL_GRACE_SEC = 5;
 
 const UNVERIFIED = 'Service identity is unverified.';
 
@@ -84,11 +84,11 @@ export interface StopEvent {
   isSet(): boolean;
 }
 
-export function beforeServiceJsonPublish(_home: string, _record: ServiceRecord | Record<string, unknown>): void {
+function beforeServiceJsonPublish(_home: string, _record: ServiceRecord | Record<string, unknown>): void {
   return undefined;
 }
 
-export function beforeServiceJsonUnlink(_home: string, _instanceId: string): void | Promise<void> {
+function beforeServiceJsonUnlink(_home: string, _instanceId: string): void | Promise<void> {
   return undefined;
 }
 
@@ -141,14 +141,6 @@ export function publishServiceJson(home: string, record: ServiceRecord | Record<
 
 export function unlinkServiceJsonIfUnchanged(home: string, instanceId: string): Promise<string> {
   return Promise.resolve(svc.unlinkServiceJsonIfUnchanged(home, instanceId));
-}
-
-export function holdStartLock<T>(home: string, timeoutSec: number, body: () => Promise<T> | T): Promise<T> {
-  return svc.holdStartLock(home, timeoutSec, body);
-}
-
-export function launchChild(home: string, port: number): Promise<SpawnedChild> {
-  return svc.launchChild(home, port);
 }
 
 export function authenticatedInstanceId(port: number, token: string, timeoutSec: number): Promise<string | null> {
@@ -323,7 +315,7 @@ export async function stop(
   }
 }
 
-export async function serveUntilSignal(
+async function serveUntilSignal(
   { server, lifetime }: { server: RegistryHTTPServer; lifetime: ServiceEndpointServer },
   options: { stopEvent?: StopEvent | null; stopRequested?: AbortSignal } = {},
 ): Promise<void> {
@@ -559,7 +551,7 @@ function endpointFrom(record: ServiceRecord): ServiceEndpoint {
   );
 }
 
-export { CORRUPT, readService, serviceJsonPath, startLockPath, writeServiceJson };
+export { serviceJsonPath, startLockPath };
 
 /** Serves one request. An error after a stop request, or an EINTR, is not a failure. */
 async function handleOneRequest(server: RegistryHTTPServer, stopping: () => boolean): Promise<void> {

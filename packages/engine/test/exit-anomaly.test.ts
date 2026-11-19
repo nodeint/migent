@@ -129,7 +129,7 @@ function responseFile(artifactDirectory: string): string {
   return path.join(artifactDirectory, '..', 'response.md');
 }
 
-test('AC1/AC7: an exit-1 turn with a valid reply and artifact is completed and logged once', async () => {
+test('an exit-1 turn with a valid reply and artifact is completed and logged once', async () => {
   const { workspace, sessionId } = setup(workflowText());
   const provider = new ExitProvider([{ reply: OK, artifact: '# notes\n', exit: 1, source: 'model' }]);
   const result = await runStage(provider, workspace, sessionId);
@@ -150,7 +150,7 @@ test('AC1/AC7: an exit-1 turn with a valid reply and artifact is completed and l
   expect(existsSync(path.join(result.artifact_directory, 'notes.md'))).toBe(true);
 });
 
-test('AC2: a provider error with a reply persists nothing and logs no anomaly', async () => {
+test('a provider error with a reply persists nothing and logs no anomaly', async () => {
   const { workspace, sessionId } = setup(workflowText());
   const provider = new ExitProvider([
     { reply: OK, artifact: '# notes\n', exit: 1, origin: 'provider-error', source: 'model' },
@@ -165,7 +165,7 @@ test('AC2: a provider error with a reply persists nothing and logs no anomaly', 
   expect(named(list, 'execution.failed')).toHaveLength(1);
 });
 
-test('AC3: an exit-1 reply with no outcome fails with the model text and is logged as rejected', async () => {
+test('an exit-1 reply with no outcome fails with the model text and is logged as rejected', async () => {
   const { workspace, sessionId } = setup(workflowText());
   const text = 'I finished but forgot the header';
   const provider = new ExitProvider([{ reply: text, exit: 1, source: 'model' }, { reply: text, exit: 1, source: 'model' }]);
@@ -182,7 +182,7 @@ test('AC3: an exit-1 reply with no outcome fails with the model text and is logg
   expect(typeof anomaly.reason).toBe('string');
 });
 
-test('AC3: an exit-only turn whose text is not model output fails with that text and no response', async () => {
+test('an exit-only turn whose text is not model output fails with that text and no response', async () => {
   const { workspace, sessionId } = setup(workflowText());
   const provider = new ExitProvider([{ reply: 'segfault', exit: 2, source: 'error' }]);
   const result = await runStage(provider, workspace, sessionId);
@@ -200,7 +200,7 @@ test('a provider that does not attest its source is never accepted after a faile
   expect(existsSync(responseFile(result.artifact_directory))).toBe(false);
 });
 
-test('AC4: a complete reply with a missing artifact is rejected', async () => {
+test('a complete reply with a missing artifact is rejected', async () => {
   const { workspace, sessionId } = setup(workflowText());
   const provider = new ExitProvider([{ reply: OK, artifact: null, exit: 1, source: 'model' }, { reply: OK, artifact: null, exit: 0, source: 'model' }]);
   const result = await runStage(provider, workspace, sessionId);
@@ -210,7 +210,7 @@ test('AC4: a complete reply with a missing artifact is rejected', async () => {
   expect(String(anomaly.reason)).toContain('notes.md');
 });
 
-test('AC4: an exit-only blocked reply is accepted like an exit-0 one', async () => {
+test('an exit-only blocked reply is accepted like an exit-0 one', async () => {
   const { workspace, sessionId } = setup(workflowText());
   const provider = new ExitProvider([
     { reply: 'status: blocked\nblocker: missing design', exit: 1, source: 'model' },
@@ -221,7 +221,7 @@ test('AC4: an exit-only blocked reply is accepted like an exit-0 one', async () 
   expect(details(named(events(workspace, sessionId), 'provider.exit_anomaly')[0]).accepted).toBe(true);
 });
 
-test('AC4: an unusable question file after an exit-only turn gets the single correction turn', async () => {
+test('an unusable question file after an exit-only turn gets the single correction turn', async () => {
   const { workspace, sessionId } = setup(workflowText(null, true));
   const bad = 'status: question\n\nasking\n<<FILE>>not json';
   const provider = new ExitProvider([
@@ -238,7 +238,7 @@ test('AC4: an unusable question file after an exit-only turn gets the single cor
   expect(String(details(anomalies[0]).reason)).toContain('invalid_json');
 });
 
-test('AC9: an accepted exit-only turn followed by a red verify keeps one anomaly and one verdict per turn', async () => {
+test('an accepted exit-only turn followed by a red verify keeps one anomaly and one verdict per turn', async () => {
   const workspace0 = tempDir('migent-anomaly-c-');
   const script = path.join(workspace0, 'check.cjs');
   const counter = path.join(workspace0, 'check.count');
@@ -306,7 +306,7 @@ completion:
   stage: review
 `;
 
-test('AC9, real codex: turn.failed yields one turn verdict plus a diagnostic error event', async () => {
+test('real codex: turn.failed yields one turn verdict plus a diagnostic error event', async () => {
   const { workspace, sessionId } = setup(SOLO);
   const fixture = '{"type":"turn.failed","error":{"message":"stream broke"}}\n';
   class FailingCodex extends CodexClient {
@@ -324,7 +324,7 @@ test('AC9, real codex: turn.failed yields one turn verdict plus a diagnostic err
   expect(named(list, 'provider.exit_anomaly')).toHaveLength(0);
 });
 
-test('AC9, real claude: an exit-1 reply is one completed verdict and one anomaly', async () => {
+test('real claude: an exit-1 reply is one completed verdict and one anomaly', async () => {
   const { workspace, sessionId } = setup(SOLO);
   const fixture = '{"type":"result","is_error":false,"result":"status: complete\\n\\ndone","session_id":"s1"}\n';
   class ExitOneClaude extends ClaudeCodeClient {

@@ -2,7 +2,7 @@
 const TENTH_SCALE = 10;
 const MS_PER_SECOND = 1000;
 
-export const USAGE_FIELDS = [
+const USAGE_FIELDS = [
   'input_tokens',
   'output_tokens',
   'reasoning_tokens',

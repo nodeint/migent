@@ -11,7 +11,7 @@ import { isRecord, pyRepr } from './record.js';
 import type { DecisionBodyProblem } from './structure.js';
 import { decisionBodyProblems, decisionEntryProblem, decisionListProblem, requireContainer, requireValid, RUN_WHEN_KEYS, runWhenPathsMissing, STAGE_FIELD_SCHEMAS, stageField } from './structure.js';
 
-export const optionKey = /^[A-Za-z][A-Za-z0-9_.-]*$/;
+const optionKey = /^[A-Za-z][A-Za-z0-9_.-]*$/;
 
 export interface StageRunWhenContext {
   readonly version2: boolean;
@@ -386,7 +386,7 @@ export function readOptionMap(
   return parsed;
 }
 
-export function optionalStageString(
+function optionalStageString(
   stage: Record<string, unknown>,
   key: string,
   stageId: string,
@@ -410,7 +410,7 @@ export function fail(message: string): never {
   throw new ConfigurationError(message);
 }
 
-export const VERIFY_LINE: TSchema = WorkflowLine;
+const VERIFY_LINE: TSchema = WorkflowLine;
 
 /** Reads `session.resume_from` without the dependency rule, for stages whose depends_on is unreadable. */
 export function stageResumeFromUnchecked(stage: Record<string, unknown>, stageId: string): string | null {
@@ -439,5 +439,3 @@ export function stageOnExpired(stage: Record<string, unknown>, stageId: string):
   }
   return value as OnExpired;
 }
-
-export const stageOnExpiredUnchecked = stageOnExpired;

@@ -112,7 +112,7 @@ function checkExternalEntry(external: WorkflowCatalogEntry, context: EntryRefere
   checkEntryReferences(external, workflowId, context);
 }
 
-export interface EntryReferenceContext {
+interface EntryReferenceContext {
   readonly entries: readonly WorkflowCatalogEntry[];
   readonly documents: Record<string, WorkflowDocument>;
   readonly failed: Set<string>;
@@ -120,7 +120,7 @@ export interface EntryReferenceContext {
   readonly external: boolean;
 }
 
-export function checkEntryReferences(
+function checkEntryReferences(
   entry: WorkflowCatalogEntry,
   workflowId: string,
   context: EntryReferenceContext,
@@ -146,11 +146,11 @@ export function checkEntryReferences(
 }
 
 /** True when `workflowId` names an entry the catalog could not fully parse (for example the draft). */
-export function isDraftEntry(entries: readonly WorkflowCatalogEntry[], workflowId: string): boolean {
+function isDraftEntry(entries: readonly WorkflowCatalogEntry[], workflowId: string): boolean {
   return entries.some((entry) => entry.document === null && entry.id.known && entry.id.value === workflowId);
 }
 
-export function checkRequires(
+function checkRequires(
   workflowId: string,
   requires: WorkflowRequires,
   lookup: { readonly documents: Record<string, WorkflowDocument>; readonly failedIds: Set<string> },

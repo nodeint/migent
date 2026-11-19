@@ -79,7 +79,7 @@ function toolDetails(block: Record<string, unknown>): Record<string, unknown> {
 }
 
 /** The message a failed `result` event carries. */
-export function claudeResultError(payload: Record<string, unknown>): string | null {
+function claudeResultError(payload: Record<string, unknown>): string | null {
   const {result} = payload;
   if (typeof result === 'string' && result.trim()) return result.trim();
   const {errors} = payload;

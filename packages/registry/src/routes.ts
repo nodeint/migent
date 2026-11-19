@@ -16,7 +16,7 @@ import { locateWorkspace,WorkspaceLocationError } from './workspace.js';
 
 export type Auth = 'required' | 'health';
 
-export class HttpError extends Error {
+class HttpError extends Error {
   public readonly status: number;
   public readonly code: string;
 
@@ -187,7 +187,7 @@ function failureForStore(error: unknown): Result | null {
   return null;
 }
 
-export function matchPath(pattern: string, requestPath: string): Record<string, string> | null {
+function matchPath(pattern: string, requestPath: string): Record<string, string> | null {
   const marker = pattern.lastIndexOf('{');
   if (marker === -1) return pattern === requestPath ? {} : null;
   const prefix = pattern.slice(0, marker);
@@ -214,7 +214,7 @@ function checkPattern(pattern: string): void {
   }
 }
 
-export function authState(authorization: string | null, token: string): 'ok' | 'absent' | 'bad' {
+function authState(authorization: string | null, token: string): 'ok' | 'absent' | 'bad' {
   if (authorization === null) return 'absent';
   const splitAt = authorization.indexOf(' ');
   const scheme = splitAt === -1 ? authorization : authorization.slice(0, splitAt);

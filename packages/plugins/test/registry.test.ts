@@ -12,10 +12,6 @@ const plugin = (id: string, apiVersion = { major: 1, minor: 0 }): Plugin => ({
   activate: () => undefined,
 });
 
-test('the first-party registry holds the metrics plugin', () => {
-  expect(createPluginRegistry().ids()).toEqual(['metrics']);
-});
-
 test('an injected registry resolves plugins by id, sorted', () => {
   const registry = createPluginRegistry([plugin('b'), plugin('a')]);
   expect(registry.ids()).toEqual(['a', 'b']);

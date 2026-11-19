@@ -71,9 +71,9 @@ export function loadWorkflowDocument(filePath: string, options: LoadWorkflowOpti
   return document;
 }
 
-export const reportedWarnings = new Set<string>();
+const reportedWarnings = new Set<string>();
 
-export function warnOnce(message: string): void {
+function warnOnce(message: string): void {
   if (reportedWarnings.has(message)) return;
   reportedWarnings.add(message);
   process.stderr.write(`warning: ${message}\n`);
@@ -103,12 +103,12 @@ export function stageArtifactName(
   return stage === null ? null : (stage.artifacts[0]?.file ?? null);
 }
 
-export interface LoadedWorkflow {
+interface LoadedWorkflow {
   path: string;
   document: WorkflowDocument;
 }
 
-export function readWorkflowDirectory(
+function readWorkflowDirectory(
   workspace: string,
   options: LoadWorkflowOptions = {},
 ): { loaded: LoadedWorkflow[]; problems: string[] } {
@@ -137,7 +137,7 @@ export function readWorkflowDirectory(
   return { loaded, problems };
 }
 
-export function unreadableWorkflowIds(problems: readonly string[]): Set<string> {
+function unreadableWorkflowIds(problems: readonly string[]): Set<string> {
   const found = new Set<string>();
   for (const problem of problems) {
     const name = problem.split(':', 1)[0] ?? '';
@@ -146,12 +146,12 @@ export function unreadableWorkflowIds(problems: readonly string[]): Set<string> 
   return found;
 }
 
-export function requireStages(document: WorkflowDocument): WorkflowDocument {
+function requireStages(document: WorkflowDocument): WorkflowDocument {
   if (Object.keys(document.stages).length === 0) fail(`${document.id}: declares no stages.`);
   return document;
 }
 
-export function resolveWorkflowPath(workspace: string, reference: string): string | null {
+function resolveWorkflowPath(workspace: string, reference: string): string | null {
   if (path.isAbsolute(reference)) return isFile(reference) ? reference : null;
   const relative = path.join(workspace, reference);
   if (isFile(relative)) return relative;
@@ -162,7 +162,7 @@ export function resolveWorkflowPath(workspace: string, reference: string): strin
   return null;
 }
 
-export function isFile(filePath: string): boolean {
+function isFile(filePath: string): boolean {
   try {
     return statSync(filePath).isFile();
   } catch {
@@ -170,7 +170,7 @@ export function isFile(filePath: string): boolean {
   }
 }
 
-export function isDir(filePath: string): boolean {
+function isDir(filePath: string): boolean {
   try {
     return statSync(filePath).isDirectory();
   } catch {

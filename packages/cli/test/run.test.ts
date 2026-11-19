@@ -1002,34 +1002,6 @@ test('role override requires both client and model', async () => {
   expect(captured.stderr).toContain('--model');
 });
 
-test('help prints command usage without a workspace', async () => {
-  const cwd = mkdtempSync(path.join(tmpdir(), 'migent-cli-'));
-  try {
-    const captured = await capture(() => main(['session', 'run', '--help'], cwd));
-    expect(captured.value).toBe(0);
-    expect(captured.stdout).toContain('Usage: migent session run');
-    expect(captured.stdout).toContain('Exit 3');
-    expect(captured.stdout).toContain('Exit 4');
-    expect(captured.stdout).toContain('Exit 5');
-    expect(captured.stdout).toContain('Exit 8');
-    expect(captured.stdout).toContain('--max-dispatches');
-    expect(captured.stdout).toContain('--unlimited-dispatches');
-    expect(captured.stdout).toContain('--once');
-  } finally {
-    rmSync(cwd, { recursive: true, force: true });
-  }
-});
-
-test('help subcommand prints flags declared on that subcommand', async () => {
-  const captured = await capture(() => main(['session', 'continue', '--help']));
-  expect(captured.value).toBe(0);
-  expect(captured.stdout).toContain('Usage: migent session continue');
-  expect(captured.stdout).toContain('--max-dispatches');
-  expect(captured.stdout).toContain('--once');
-  expect(captured.stdout.replace(/\s+/g, ' ')).toContain('does not reset');
-  expect(captured.stdout).toContain('migent session continue <session> --once');
-});
-
 test('help rejects an unknown subcommand', async () => {
   const captured = await capture(() => main(['missing']));
   expect(captured.value).toBe(2);

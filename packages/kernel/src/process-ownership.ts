@@ -3,7 +3,7 @@ import path from 'node:path';
 import { Worker } from 'node:worker_threads';
 
 import { INT32_BYTES, PROBE_SLACK_MS } from './constants.js';
-import { wrapperEndpoint, wrapperEntry } from './process-wrapper.js';
+import { wrapperEntry } from './process-wrapper.js';
 
 export const PID_PRESENT = 'present';
 export const PID_GONE = 'gone';
@@ -140,8 +140,6 @@ export function wrapperArgv(
   ];
 }
 
-export { wrapperEndpoint };
-
 export function collectProcessStartInfo(providerPid: number, endpoint: string): ProcessStartInfo {
   return {
     hostname: osHostname(),
@@ -151,7 +149,7 @@ export function collectProcessStartInfo(providerPid: number, endpoint: string): 
   };
 }
 
-export function stillRunningMessage(
+function stillRunningMessage(
   sessionId: string,
   executionId: string,
   ownerPid: number,
@@ -159,7 +157,7 @@ export function stillRunningMessage(
   return `Session ${sessionId} execution ${executionId} is still running under owner pid ${ownerPid}.`;
 }
 
-export function unverifiedProcessMessage(sessionId: string, executionId: string): string {
+function unverifiedProcessMessage(sessionId: string, executionId: string): string {
   return `Session ${sessionId} execution ${executionId} has an unverified live provider process.`;
 }
 

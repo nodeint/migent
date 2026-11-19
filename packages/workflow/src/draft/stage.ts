@@ -13,7 +13,7 @@ import { stageSpecSchema } from '../schema.js';
 import { legacyStageModel, positiveInteger, requiredString, ROLE_ONLY_KEYS, routeTarget, stageAgent, stageArtifact, stageAsk, stageDecisionValues, stageDependsOn, stageDescription, stageHasRole, stageMaxRevisions, stageMaxVerify, stageOnExpired, stageOptions, stageResumeFrom, stageResumeFromUnchecked, stageRoutes, stageRunWhen, stageVerify, stageVerifyTimeout, stringItems } from '../stage-fields.js';
 import { decisionBodyProblems, decisionEntryProblem, decisionListProblem, stageMappingProblem } from '../structure.js';
 
-export interface CollectedDecision {
+interface CollectedDecision {
   values: DraftUnit<string[]>;
   instructions: Record<string, string>;
   routes: DraftUnit<Record<string, string | string[]>>;
@@ -30,7 +30,7 @@ export interface DraftStageContext {
 }
 
 /** Reads the schema >= 3 decision list entry by entry, then resolves its routes one by one. */
-export function collectDecisionV3(
+function collectDecisionV3(
   item: Record<string, unknown>,
   at: { readonly stageId: string; readonly index: number },
   context: Pick<DraftStageContext, 'declaredIds' | 'problems' | 'version7'>,
@@ -151,7 +151,7 @@ function reportDecisionBodyProblem(
 }
 
 /** Resolves each route on its own, so one bad target does not hide the others. */
-export interface RouteTargetsInput {
+interface RouteTargetsInput {
   readonly field: string;
   readonly routes: Record<string, unknown>;
   readonly entryIndexByName: ReadonlyMap<string, number>;
@@ -159,7 +159,7 @@ export interface RouteTargetsInput {
   readonly index: number;
 }
 
-export function collectRouteTargets(
+function collectRouteTargets(
   { field, routes, entryIndexByName, rawNameByName, index }: RouteTargetsInput,
   { declaredIds, problems }: Pick<DraftStageContext, 'declaredIds' | 'problems'>,
 ): DraftUnit<Record<string, string | string[]>> {

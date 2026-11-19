@@ -37,7 +37,7 @@ export function findTarget(client: string): SkillTarget | undefined {
 }
 
 /** Absolute `<skills dir>/migent` for a target. */
-export function resolveDirectory(target: SkillTarget, scope: SkillScope, roots: SkillRoots): string {
+function resolveDirectory(target: SkillTarget, scope: SkillScope, roots: SkillRoots): string {
   const base = scope === 'project' ? roots.workspace : (roots.home ?? homedir());
   return path.join(base, ...(scope === 'project' ? target.project : target.global).split('/'), 'migent');
 }

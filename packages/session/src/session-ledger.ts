@@ -27,7 +27,7 @@ export interface LedgerOutput {
   published_by_execution_id: string;
 }
 
-export interface LedgerSessionEvent {
+interface LedgerSessionEvent {
   data: Record<string, unknown>;
   outcomeTopLevel: Record<string, unknown> | null;
 }
@@ -54,7 +54,7 @@ export interface StatusExecution {
 }
 
 /** Session status for one execution. The session status is the reduction over each stage's latest. */
-export function sessionStatusForExecution(input: SessionStatusInput): SessionStatusName {
+function sessionStatusForExecution(input: SessionStatusInput): SessionStatusName {
   return sessionStatusAfterExecution(input);
 }
 
@@ -66,15 +66,6 @@ export function latestPerStage(executions: readonly StatusExecution[]): StatusEx
     if (current === undefined || laterStatusExecution(execution, current)) byStage.set(execution.stageId, execution);
   }
   return [...byStage.values()];
-}
-
-/** Version 1 reduces each stage; version 2 replaces that completion arm with quiescence. */
-export function sessionStatusFromExecutions(
-  executions: readonly StatusExecution[],
-  previousStatus: Readonly<Record<string, unknown>>,
-  workflow: WorkflowDocument | null,
-): string {
-  return sessionStatusWithPending(executions, previousStatus, { workflow, pending: [] });
 }
 
 /** The same reduction when the session also waits for resume decisions, each a stop of its target stage. */
@@ -112,7 +103,7 @@ function sessionStopStatus(statuses: readonly SessionStatusName[]): SessionStatu
 }
 
 /** Version 2: a stop does not hold the session while another branch can still start. */
-export function hasStartableOutsideStops(
+function hasStartableOutsideStops(
   rows: {
     executions: readonly StatusExecution[];
     latest: readonly StatusExecution[];
@@ -253,7 +244,7 @@ export function decisionOfOutcome(outcome: Record<string, unknown> | null): stri
 }
 
 /** A stopped execution that names the terminal state of the session. */
-export interface TerminalSource {
+interface TerminalSource {
   executionId: string;
   stageId: string;
   blocker: string | null;

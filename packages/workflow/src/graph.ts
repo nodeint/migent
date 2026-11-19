@@ -3,7 +3,7 @@ import type { StageSpec, WorkflowOutput } from './model.js';
 import { isRoleStage } from './model.js';
 import { pyRepr } from './record.js';
 
-export const reachCache = new WeakMap<Record<string, StageSpec>, Map<string, Set<string>>>();
+const reachCache = new WeakMap<Record<string, StageSpec>, Map<string, Set<string>>>();
 
 /**
  * Stages a skip of `stageId` can leave without a current completion: the stage itself, its dependents,

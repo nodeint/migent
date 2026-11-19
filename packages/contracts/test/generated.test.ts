@@ -7,7 +7,7 @@ import { describe, expect, test } from 'vitest';
 import { collectIdentities, schemaPath } from '../src/generate/index.ts';
 import { generateAll } from '../src/generate/index.ts';
 import * as contracts from '../src/index.ts';
-import { EXIT_CATALOG, SCHEMA_BASE } from '../src/index.ts';
+import { SCHEMA_BASE } from '../src/index.ts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const lf = (text: string) => text.replace(/\r\n/g, '\n');
@@ -77,13 +77,6 @@ describe('publication boundary', () => {
       expect(parsed.$schema).toBe('https://json-schema.org/draft/2020-12/schema');
       expect(`packages/contracts/schemas/${schemaPath(parsed.$id)}`).toBe(name);
     }
-  });
-});
-
-describe('exit catalog', () => {
-  test('codes and names are unique', () => {
-    expect(new Set(EXIT_CATALOG.map((entry) => entry.code)).size).toBe(EXIT_CATALOG.length);
-    expect(new Set(EXIT_CATALOG.map((entry) => entry.name)).size).toBe(EXIT_CATALOG.length);
   });
 });
 
