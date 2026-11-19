@@ -16,7 +16,9 @@ Dependencies point down. A package imports only packages below it.
 | Parsing | `workflow` |
 | Leaf | `contracts`, `prompts`, `adapters` |
 
-Leaf packages import no other Migent package. `cli` is the only package that imports `adapters`.
+`contracts` and `prompts` import no other Migent package. `adapters` imports only `contracts`.
+`cli` is the only package that imports `adapters`.
+The client contract types (`CliClient` and its companions) live in `contracts`; `kernel` re-exports them.
 Each package README states its own rules.
 
 ## Core-only mechanisms

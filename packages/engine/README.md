@@ -40,6 +40,6 @@ and session. Internal; no stable public API.
 | `PluginHost` | `src/plugin-host/dispatch.ts` | Run plugin hooks for one run: triggers, deadline, activation, proposal application, failure policy |
 | `completeSessionManually` | `src/complete-manually.ts` | `session complete`: take the lock, select plugins (none, with a warning, when selection fails), complete inside a plugin scope |
 | `withPluginScope` | `src/plugin-host/scope.ts` | Start, run an action that holds the session lock, then drain and close the host before the caller releases the lock |
-| `classifyProviderError`, `ProviderEventReporter` | `src/provider-events.ts` | Provider events |
+| `ProviderEventReporter` | `src/provider-events.ts` | Provider events |
 | `getWorkflowView`, `getConfigView` | `src/views.ts` | Read-only views |
 | `evaluateRunWhen`, `runVerifyOnlyStage` | `src/run-when.ts`, `src/verify-only.ts` | `run_when` conditions, verify-only stages |

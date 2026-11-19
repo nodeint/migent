@@ -1,14 +1,12 @@
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
 
 import { ConfigurationError } from '@nodeint/migent-kernel';
-import { isRecord } from '@nodeint/migent-workflow';
 import {
   loadNamedWorkflow,
-  parseWorkflowMapping,
+  loadWorkflowDocument,
   type WorkflowDocument,
 } from '@nodeint/migent-workflow';
-import { parseYamlDocument } from '@nodeint/migent-workflow';
 import { ZodError } from 'zod';
 
 import { readStatusFileState } from './query.js';
@@ -112,7 +110,7 @@ function selectRecordedFile(
     sessionId: selection.sessionId, workflowId: manifest.workflowId, kind, path: display(workspace, filePath),
   };
   try {
-    return { source, document: loadSessionFile(filePath), freeze: null };
+    return { source, document: loadWorkflowDocument(filePath, { quiet: true }), freeze: null };
   } catch (error) {
     selection.problems.push(authoringMessage(error));
     return { source, document: null, freeze: null };
@@ -268,20 +266,6 @@ export function selectRunWorkflow(workspace: string, workflowId: string): Sessio
     path: document.source === null ? `.migent/workflows (${document.id})` : display(workspace, document.source),
   };
   return selection;
-}
-
-/** Same parsing as `loadWorkflowDocument`, without its stderr warnings, plus the empty-workflow rule. */
-function loadSessionFile(filePath: string): WorkflowDocument {
-  let text: string;
-  try {
-    text = readFileSync(filePath, 'utf8');
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    throw new ConfigurationError(`Unable to read workflow: ${filePath} (${reason})`);
-  }
-  const data = parseYamlDocument(text);
-  if (!isRecord(data)) throw new ConfigurationError(`Workflow must be a mapping: ${filePath}`);
-  return parseWorkflowMapping(data, filePath);
 }
 
 /** Message of a workflow loading failure; rethrows anything that is not an authoring error. */

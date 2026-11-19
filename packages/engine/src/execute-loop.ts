@@ -3,7 +3,7 @@ import path from 'node:path';
 
 import { exitCode } from '@nodeint/migent-contracts';
 import { cancellationSignal, ConfigurationError, endsScheduling, type ExecutionSnapshot, exitFor, type PendingResumeStop, stageStopStatus, stopReasonFor } from '@nodeint/migent-kernel';
-import { readyStages, revisionStop, runnableNow, schedulableStageIds, Stop, VERIFY_EXHAUSTED, VERIFY_FAILED, version2IdleReason, writeJsonAtomic } from '@nodeint/migent-kernel';
+import { latestStageSnapshot, readyStages, revisionStop, runnableNow, schedulableStageIds, Stop, VERIFY_EXHAUSTED, VERIFY_FAILED, version2IdleReason, writeJsonAtomic } from '@nodeint/migent-kernel';
 import { clearInFlightExecution, noteInFlightExecution } from '@nodeint/migent-session';
 import { isRecord, isWorkflowV2 } from '@nodeint/migent-workflow';
 
@@ -152,7 +152,7 @@ function idleResult(
 
 // True when the stage's latest execution failed (not by verify) and was never resumed from failure.
 function unresumedFailure(snapshots: readonly ExecutionSnapshot[], resumes: Resumes, stageId: string): boolean {
-  const latest = latestSnapshotForStage(snapshots, stageId);
+  const latest = latestStageSnapshot(snapshots, stageId);
   if (latest?.status !== 'failed') return false;
   if (latest.failureReason === VERIFY_EXHAUSTED || latest.failureReason === VERIFY_FAILED) return false;
   return !resumes.some(
@@ -415,18 +415,6 @@ function revisionBaselines(status: Record<string, unknown>): Record<string, numb
     if (typeof value === 'number') baselines[key] = value;
   }
   return baselines;
-}
-
-function latestSnapshotForStage(
-  snapshots: readonly ExecutionSnapshot[],
-  stageId: string,
-): ExecutionSnapshot | null {
-  let latest: ExecutionSnapshot | null = null;
-  for (const snapshot of snapshots) {
-    if (snapshot.stageId !== stageId) continue;
-    if (latest === null || snapshot.executionOrder > latest.executionOrder) latest = snapshot;
-  }
-  return latest;
 }
 
 export function trackDispatch(

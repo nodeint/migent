@@ -180,6 +180,29 @@ export interface PluginSessionEvent {
   readonly raw: Readonly<Record<string, unknown>>;
 }
 
+/** An execution row as a plugin reads it from `PluginSessionSnapshot.executions`. */
+export interface PluginExecutionRow {
+  id: string;
+  order: number | null;
+  stageId: string;
+  attempt: number | null;
+  provider: string | null;
+  model: string | null;
+  agentId: string | null;
+  resumes: string | null;
+  status: string | null;
+  outcomeStatus: string | null;
+  decision: string | null;
+  blocker: string | null;
+  error: string | null;
+  failureReason: string | null;
+  createdAt: string | null;
+  completedAt: string | null;
+  skip: Record<string, unknown> | null;
+  /** Why this execution started a new conversation instead of resuming (`expired`), from `resume_skipped`. */
+  freshReason: string | null;
+}
+
 /** Detached facts about one session at one moment. `basis_seq` is the last non-`plugin.*` event seq. */
 export interface PluginSessionSnapshot {
   readonly basis_seq: number | null;

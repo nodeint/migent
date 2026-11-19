@@ -12,7 +12,7 @@ import { isWorkflowV2, loadNamedWorkflow, type WorkflowDocument } from '@nodeint
 import { SCHEMA_V4_DOWNSTREAM } from '@nodeint/migent-workflow';
 import { stringify } from 'yaml';
 
-import { FIRST_SESSION_SUFFIX, MANIFEST_SCHEMA_EVENT_LOG, TURN_PAD_WIDTH } from './constants.js';
+import { FIRST_SESSION_SUFFIX, TURN_PAD_WIDTH } from './constants.js';
 import { sessionEventLog } from './event-log.js';
 import { type PluginFreezeInput, recordPluginsFrozen } from './freeze-plugins.js';
 import { completedPriorStatus, resolveHandoff, snapshotHandoff } from './next-handoff.js';
@@ -22,6 +22,7 @@ import { renderWorkflowSource, requireLiveWorkflow, writeWorkflowFreeze } from '
 import { createNumericSessionDirectory, quotedSessionId } from './session-id.js';
 import { SessionLock, sessionLockHeldLocally } from './session-lock.js';
 import { SessionStore } from './session-store.js';
+import { rewriteManifestStatus } from './session-store-core.js';
 import { assertSessionTitle } from './session-title.js';
 import { assertSingleLineTask, requireTaskBody, taskFilePath,writeTaskFile } from './task-file.js';
 
@@ -266,7 +267,7 @@ export function activatePreparedSession(
       data: { from: 'prepared' },
     });
     sessionEventLog.commit(workspace, sessionDirectory);
-    replaceManifestStatus(sessionDirectory, 'running');
+    rewriteManifestStatus(sessionDirectory, 'running');
   });
 }
 
@@ -403,20 +404,6 @@ function pyLiteral(value: unknown): string {
   if (typeof value === 'boolean') return value ? 'True' : 'False';
   if (typeof value === 'number' && Number.isFinite(value)) return String(value);
   return 'None';
-}
-
-function replaceManifestStatus(sessionDirectory: string, status: string): void {
-  if (readSessionManifest(sessionDirectory).schemaVersion >= MANIFEST_SCHEMA_EVENT_LOG) return;
-  const manifestPath = path.join(sessionDirectory, 'manifest.yaml');
-  try {
-    if (!statSync(manifestPath).isFile()) return;
-  } catch {
-    return;
-  }
-  const text = readFileSync(manifestPath, 'utf8');
-  const pattern = /^status: \S+\s*$/m;
-  if (!pattern.test(text)) return;
-  writeFileAtomic(manifestPath, text.replace(pattern, `status: ${status}`));
 }
 
 function exists(filePath: string): boolean {

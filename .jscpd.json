@@ -1,0 +1,12 @@
+{
+  "path": ["packages"],
+  "pattern": "*/src/**/*.ts",
+  "format": ["typescript"],
+  "ignore": ["**/*.d.ts", "**/dist/**"],
+  "minLines": 8,
+  "minTokens": 70,
+  "threshold": 0.1,
+  "reporters": ["console"],
+  "gitignore": true,
+  "silent": true
+}

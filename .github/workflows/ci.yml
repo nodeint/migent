@@ -21,7 +21,7 @@ jobs:
           node-version: 24
       - run: node scripts/git-flow.mjs pr
 
-  lint:
+  static-checks:
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
@@ -35,6 +35,8 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
+      - run: pnpm knip
+      - run: pnpm jscpd
       - run: pnpm lint:md
       - run: pnpm lint:md:links
 

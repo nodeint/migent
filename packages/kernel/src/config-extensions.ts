@@ -10,12 +10,12 @@ import {
 import { ConfigurationError } from './errors.js';
 
 /** A claimed-key problem in the vocabulary of the structural config errors. */
-export function extensionError(issue: ExtensionIssue): ConfigurationError {
+function extensionError(issue: ExtensionIssue): ConfigurationError {
   return new ConfigurationError(issue.message, { code: issue.code, path: issue.path });
 }
 
 /** Every invalid claimed key of one config mapping (role, named agent, or inline agent), as errors. */
-export function extensionConfigErrors(
+function extensionConfigErrors(
   catalog: ExtensionCatalog,
   level: ExtensionLevel,
   target: ExtensionTarget,
@@ -24,7 +24,7 @@ export function extensionConfigErrors(
 }
 
 /** Throws the first invalid claimed key of one config mapping. Plugin enablement plays no part (AC8). */
-export function throwFirstExtensionIssue(
+function throwFirstExtensionIssue(
   catalog: ExtensionCatalog,
   level: ExtensionLevel,
   target: ExtensionTarget,

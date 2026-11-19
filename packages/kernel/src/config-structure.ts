@@ -3,7 +3,6 @@ import {
   ClientOptions,
   ClientSelection,
   ConfigMapping,
-  Description,
   EffectiveConfig,
   isValid,
   NonBlankString,
@@ -203,7 +202,7 @@ export function stringItems(raw: unknown, where: Field, index?: StructuralIndex)
 }
 
 export function roleDescription(value: unknown, where: Field, index?: StructuralIndex): string {
-  verdict({ index, where }, () => first(Description, value, where), value);
+  verdict({ index, where }, () => first(NonBlankString, value, where), value);
   return (value as string).trim();
 }
 

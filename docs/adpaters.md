@@ -28,7 +28,7 @@ workflow stages or execute subprocesses themselves.
 
 | Location | Responsibility |
 | --- | --- |
-| `src/types.ts` | Adapter contracts and normalized data types (a structural mirror of the kernel contract) |
+| `src/types.ts` | Adapter-only types and helpers plus the extended `CliClient` |
 | `src/clients/` | Client command builders, protocol parsers, and the client registry |
 | `src/utils/` | Reusable parsing helpers without client selection logic |
 | `src/options/` | Captured headless help samples |
@@ -36,11 +36,10 @@ workflow stages or execute subprocesses themselves.
 | `src/index.ts` | Exports and `clientIds()` / `createClient()` |
 | `test/` | Contract tests and protocol fixtures |
 
-The kernel defines the runner-facing client contract in
-`packages/kernel/src/cli-client.ts`. Changes to shared contract shapes must
-remain structurally compatible across these packages. The adapter
-`CliClient` keeps the adapter-only discovery methods `optionsCommand` and
-`parseOptions`. The doctor loads model catalogs; the CLI orchestrates headless
+The shared client contract lives in `packages/contracts/src/cli-client.ts`;
+the kernel re-exports it. The adapter `CliClient` extends it and adds the
+adapter-only discovery methods `optionsCommand` and `parseOptions`. The doctor loads model
+catalogs; the CLI orchestrates headless
 option discovery. Neither operation belongs inside a pure text parser.
 
 ## Client selection

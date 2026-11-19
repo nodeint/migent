@@ -12,7 +12,8 @@ stages:
     max_revisions: 3
     ask: human
     instructions:
-      - Follow .agents/skills/implement/SKILL.md; write implement_summary.md.
+      - Load the implement skill, plus the typescript, eslint, and testing skills when the work creates or changes `.ts`/`.tsx` files or tests, and the writing skill when it creates or changes Markdown.
+      - Implement the task; write implement_summary.md.
       - If the prior handoff rules out direct implementation, ask the human how to proceed.
       - With a plan, implement its phases in order and report each outcome.
     artifacts: [implement_summary]
@@ -24,7 +25,8 @@ stages:
     depends_on:
       - implement
     instructions:
-      - Follow .agents/skills/review/SKILL.md and the implement skill against the task and implement_summary.md.
+      - Load the review and implement skills, plus the typescript, eslint, and testing skills when the work creates or changes `.ts`/`.tsx` files or tests, and the writing skill when the work creates or changes Markdown.
+      - Review the work against the task and implement_summary.md.
     decision:
       - approved:
           when: The change meets the task, and the design and plan when provided, has no required fixes, and verification evidence passes.

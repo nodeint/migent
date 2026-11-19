@@ -16,7 +16,7 @@ import {
   type Which,
 } from './catalog.js';
 import type { ModelEffortCheck } from './check.js';
-import { agentClientType } from './client-type.js';
+import { agentClientType, clientUnusable, isRecord } from './client-type.js';
 
 /** Catalog lookup is asynchronous and needs the machine, so it stays out of the static checks. */
 export interface EffortCheckOptions {
@@ -116,16 +116,4 @@ async function effortValues(
 function validValuesText(values: readonly string[] | null): string {
   if (values === null) return 'unavailable (could not verify)';
   return values.length === 0 ? 'none (omit effort)' : values.join(', ');
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-/** True when `client` is present but is not a mapping with a usable `type`: the structural check explains it. */
-function clientUnusable(definition: Record<string, unknown>): boolean {
-  const {client} = definition;
-  if ((client === null || client === undefined)) return false;
-  if (!isRecord(client)) return true;
-  return (client.type !== null && client.type !== undefined) && (typeof client.type !== 'string' || client.type.trim() === '');
 }

@@ -1,3 +1,4 @@
+export * from './cli-client.js';
 export * from './cli-output.js';
 export * from './common.js';
 export * from './config.js';

@@ -10,6 +10,9 @@ exit codes, and environment variables.
 
 - This is the only stable API. Additive changes ship in minor releases; a breaking wire change needs a
   major release.
+- Contracts also holds type-only internal seams: the client contract in `src/cli-client.ts` and
+  `PluginExecutionRow`. They are not wire contracts and carry no stability guarantee beyond the packages'
+  "no stable public API" status.
 - Leaf package: the only runtime dependency is `typebox`. Import no other Migent package.
 - Output objects stay open; consumers ignore unknown fields. Workflow input objects are closed; config is
   closed only where the schema says so. Structure only; semantic rules stay in the kernel.

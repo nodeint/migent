@@ -12,16 +12,14 @@ artifacts:
     file: release.md
     description: Version, tag, run and Release URLs, npm and main verification.
 
-constraints:
-  - Follow .agents/skills/release/SKILL.md for release rules and step requirements.
-
 stages:
   - id: prepare
     role: operator
     max_revisions: 3
     ask: human
     instructions:
-      - Follow only Prepare and review in the release skill; write release_notes.md.
+      - Load the release skill; run only Prepare and review.
+      - Prepare the release version and notes; write release_notes.md.
       - On revisions, use review_notes findings to update the notes and local changelog.
     artifacts: [release_notes]
 
@@ -29,7 +27,8 @@ stages:
     role: reviewer
     depends_on: [prepare]
     instructions:
-      - Follow .agents/skills/review/SKILL.md and Prepare and review in the release skill to review release_notes.md and the local changelog diff against the source history.
+      - Load the review and release skills; review only Prepare and review.
+      - Review release_notes.md and the local changelog diff against the source history.
       - Review content only; no release commit, PR, or CI is required yet.
     decision:
       - approved:
@@ -45,7 +44,8 @@ stages:
     session:
       resume_from: prepare
     instructions:
-      - Follow only Open PR and pass CI in the release skill using the approved version and notes; write release_pr.md.
+      - Load the release skill; run only Open PR and pass CI.
+      - Open the release PR and pass CI using the approved version and notes; write release_pr.md.
       - If source history or reviewed content changes, stop and request a return to notes preparation and review before proceeding.
       - Stop before merging.
     artifacts: [release_pr]
@@ -57,5 +57,6 @@ stages:
     session:
       resume_from: open_pr
     instructions:
-      - Follow Prerequisites and Merge and verify in the release skill using release_pr.md and the approved notes; write release.md.
+      - Load the release skill; run only Prerequisites and Merge and verify.
+      - Merge and verify the release using release_pr.md and the approved notes; write release.md.
     artifacts: [release]

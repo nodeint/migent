@@ -233,6 +233,7 @@ export {
 export {
   failedStageCount,
   latestCompleteByStage,
+  latestStageSnapshot,
   type RevisionQuery,
   revisionResumeExecution,
   revisionStop,

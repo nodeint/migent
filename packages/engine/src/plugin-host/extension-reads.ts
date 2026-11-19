@@ -8,7 +8,7 @@ import { isRecord, withoutOwnedKeys } from '@nodeint/migent-workflow';
  * The frozen extension keys of one plugin, read from the session freeze at call time and never from live files.
  * A missing freeze reads as having no keys; a corrupt one throws.
  */
-export function frozenExtensionReads(sessionDirectory: string, plugin: string): PluginExtensionReads {
+function frozenExtensionReads(sessionDirectory: string, plugin: string): PluginExtensionReads {
   const read = <T>(pick: (freeze: NonNullable<ReturnType<typeof readWorkflowFreeze>>) => T): T | null => {
     const freeze = readWorkflowFreeze(sessionDirectory);
     return freeze === null ? null : pick(freeze);

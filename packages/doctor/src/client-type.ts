@@ -1,6 +1,6 @@
 import type { ClientRegistry } from '@nodeint/migent-kernel';
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
@@ -21,4 +21,12 @@ export function agentClientType(definition: Record<string, unknown>, clients: Cl
   } catch {
     return undefined;
   }
+}
+
+/** True when `client` is present but is not a mapping with a usable `type`: the structural check explains it. */
+export function clientUnusable(definition: Record<string, unknown>): boolean {
+  const {client} = definition;
+  if ((client === null || client === undefined)) return false;
+  if (!isRecord(client)) return true;
+  return (client.type !== null && client.type !== undefined) && (typeof client.type !== 'string' || client.type.trim() === '');
 }

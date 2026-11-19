@@ -23,6 +23,21 @@ import { AgentSessionRecord, ExecutionContext } from './session-store-types.js';
 import { asInt, compareSortKey, isFile, verifyReportPath } from './session-store-util.js';
 import { readJsonObject, textField } from './session-store-util.js';
 
+/** Rewrites the legacy manifest's `status:` line; event-log manifests derive status from events. */
+export function rewriteManifestStatus(sessionDirectory: string, status: string): void {
+  if (readSessionManifest(sessionDirectory).schemaVersion >= MANIFEST_SCHEMA_EVENT_LOG) return;
+  const manifestPath = path.join(sessionDirectory, 'manifest.yaml');
+  try {
+    if (!statSync(manifestPath).isFile()) return;
+  } catch {
+    return;
+  }
+  const text = readFileSync(manifestPath, 'utf8');
+  const pattern = /^status: \S+\s*$/m;
+  if (!pattern.test(text)) return;
+  writeFileAtomic(manifestPath, text.replace(pattern, `status: ${status}`));
+}
+
 function outcomeFields(outcome: unknown): { outcomeStatus: string | null; outcomeDecision: string | null } {
   if (!isRecord(outcome)) return { outcomeStatus: null, outcomeDecision: null };
   return {
@@ -115,17 +130,7 @@ export class SessionStoreCore {
   }
 
   protected rewriteManifestStatus(sessionDirectory: string, status: string): void {
-    if (readSessionManifest(sessionDirectory).schemaVersion >= MANIFEST_SCHEMA_EVENT_LOG) return;
-    const manifestPath = path.join(sessionDirectory, 'manifest.yaml');
-    try {
-      if (!statSync(manifestPath).isFile()) return;
-    } catch {
-      return;
-    }
-    const text = readFileSync(manifestPath, 'utf8');
-    const pattern = /^status: \S+\s*$/m;
-    if (!pattern.test(text)) return;
-    writeFileAtomic(manifestPath, text.replace(pattern, `status: ${status}`));
+    rewriteManifestStatus(sessionDirectory, status);
   }
 
   private loadWorkflowAtPath(workflowPath: unknown): WorkflowDocument | null {

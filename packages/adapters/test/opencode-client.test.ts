@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-import { classifyProviderError } from '@nodeint/migent-engine';
 import { classifyFailure, loadAgentTarget, normalizeUsage, sessionOptions } from '@nodeint/migent-kernel';
 import { expect, test } from 'vitest';
 
@@ -198,9 +197,10 @@ test('createEventParser falls back to the tool name and handles other events', (
     summary: 'tool started',
     details: {},
   });
-  expect(parseEvent(JSON.stringify({ type: 'error', message: 'boom' }))).toEqual(
-    classifyProviderError('boom'),
-  );
+  expect(parseEvent(JSON.stringify({ type: 'error', message: 'boom' }))).toEqual({
+    event: 'provider.error',
+    summary: 'boom',
+  });
   for (const type of ['text', 'step_start', 'step_finish']) {
     expect(parseEvent(JSON.stringify({ type, part: {} }))).toBeNull();
   }

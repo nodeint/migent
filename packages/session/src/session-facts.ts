@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
+import type { PluginExecutionRow } from '@nodeint/migent-contracts';
 import { ConfigurationError, EXECUTIONS_DIRNAME, isAtomicTempName } from '@nodeint/migent-kernel';
 import { isRecord } from '@nodeint/migent-workflow';
 import { loadNamedWorkflow, loadWorkflowDocument, type WorkflowDocument } from '@nodeint/migent-workflow';
@@ -10,27 +11,8 @@ import { readStatusFileState } from './query.js';
 import { type ParsedEvent,readParsedEvents, streamFiles } from './session-events.js';
 import { loadFrozenWorkflow } from './session-freeze.js';
 
-export interface ExecutionRow {
-  id: string;
-  order: number | null;
-  stageId: string;
-  attempt: number | null;
+export interface ExecutionRow extends PluginExecutionRow {
   client: string | null;
-  provider: string | null;
-  model: string | null;
-  agentId: string | null;
-  resumes: string | null;
-  status: string | null;
-  outcomeStatus: string | null;
-  decision: string | null;
-  blocker: string | null;
-  error: string | null;
-  failureReason: string | null;
-  createdAt: string | null;
-  completedAt: string | null;
-  skip: Record<string, unknown> | null;
-  /** Why this execution started a new conversation instead of resuming (`expired`), from `resume_skipped`. */
-  freshReason: string | null;
 }
 
 export function sessionIsCorrupt(sessionDirectory: string): boolean {
