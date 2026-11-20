@@ -33,7 +33,7 @@ test('classify maps typed gate errors to a kind and leaves other errors alone', 
 });
 
 test('every handoff error kind maps to the handoff correction kind', () => {
-  for (const kind of ['missing', 'empty', 'invalid_json', 'invalid_schema', 'invalid_decision', 'question_not_allowed'] as const) {
+  for (const kind of ['missing', 'empty', 'invalid_json', 'invalid_schema', 'invalid_decision', 'question_not_allowed', 'invalid_extension'] as const) {
     expect(classifyGateError(new HandoffFileError(kind, 'd', '/f'))).toMatchObject({ kind: 'handoff', errorKind: kind, detail: 'd' });
   }
 });

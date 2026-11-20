@@ -18,4 +18,5 @@ Prompt templates and renderers for Migent. Internal; no stable public API.
 | `renderProviderPrompt`, `addStageOutcomeContract` | `src/index.ts` | Outcome contract wrapping |
 | `render*Correction`, `renderVerifyRepair` | `src/index.ts` | Correction and repair turns |
 | `CURRENT_RESPONSE_PROTOCOL` | `src/index.ts` | Protocol stamped on new conversations |
+| `RESPONSE_EXTENSIONS_PROTOCOL` | `src/index.ts` | First protocol that carries plugin response extensions |
 | `renderPrompt` | `src/renderer.ts` | Template renderer |

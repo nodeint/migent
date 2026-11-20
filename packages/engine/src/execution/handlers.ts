@@ -1,7 +1,8 @@
 import { rmSync } from 'node:fs';
 
 import {
-  type CliClient, type CorrectionFiles, formatVerifyReport, type Gates, type NewSession, type StageOutcome,
+  type CliClient, type CorrectionFiles, type ExtensionRule, formatVerifyReport, type Gates, type NewSession,
+  type StageOutcome,
   type VerifyRunner,
   type VerifyRunResult,
 } from '@nodeint/migent-kernel';
@@ -123,6 +124,8 @@ export type GateServices = {
   readonly artifactName: string | null;
   readonly ask: 'human' | null;
   readonly protocol: number;
+  /** Active response extensions of the stage, from its frozen contracts. */
+  readonly extensions: readonly ExtensionRule[];
   readonly files: CorrectionFiles;
   readonly store: SessionStore;
   readonly context: ExecutionContext;
@@ -145,7 +148,7 @@ export function createReplyGateOperation(services: GateServices): ReplyGateOpera
 }
 
 function gateFresh(services: GateServices, input: TurnAssessment): GateOutput {
-  const { sessionId, decisionValues, ask, protocol, files, artifactName } = services;
+  const { sessionId, decisionValues, ask, protocol, files, artifactName, extensions } = services;
   const it: Iteration = {
     responseText: input.responseText, outcome: null, invokeError: input.invokeError, gateFailure: null,
     eligible: input.eligible, pendingGate: false, needsVerify: false,
@@ -154,7 +157,8 @@ function gateFresh(services: GateServices, input: TurnAssessment): GateOutput {
     gates: NOT_EVALUATED, candidate: input.candidate, anomalyReason: input.anomalyReason, turnError: input.turnError,
   };
   const loop = {
-    sessionId, decisionValues, ask, protocol, questionFile: files.questionFile, handoffFile: files.handoffFile,
+    sessionId, decisionValues, ask, protocol, extensions,
+    questionFile: files.questionFile, handoffFile: files.handoffFile,
     artifactName, checkOutputs: (reply: StageOutcome): OutputCheck => outputCheck(services, reply),
   };
   const evaluated = evaluateGates(loop, it, seed);

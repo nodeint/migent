@@ -20,6 +20,7 @@ export interface StageOutcomeInit {
   decision?: string | null;
   question?: string | null;
   questions?: Question[];
+  extensions?: Readonly<Record<string, unknown>>;
 }
 
 export class StageOutcome {
@@ -27,12 +28,15 @@ export class StageOutcome {
   public readonly decision: string | null;
   public readonly question: string | null;
   public readonly questions: Question[];
+  /** Response extension payloads as written. Never part of `toJson`. */
+  public readonly extensions: Readonly<Record<string, unknown>>;
 
   constructor(public readonly status: StageOutcomeStatus, init: StageOutcomeInit = {}) {
     this.blocker = init.blocker ?? null;
     this.decision = init.decision ?? null;
     this.question = init.question ?? null;
     this.questions = init.questions ?? [];
+    this.extensions = init.extensions ?? {};
   }
 
   public toJson(): Record<string, unknown> {

@@ -218,6 +218,7 @@ export const SessionExecution = Type.Object(
     error: opt(str()),
     failure_reason: opt(nullable(str())),
     outcome: opt(obj()),
+    response_extensions: opt(obj()),
     final_turn: opt(num()),
     turns: opt(Type.Unknown()),
     verify: opt(Type.Unknown()),

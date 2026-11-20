@@ -19,6 +19,7 @@ import { bindTarget } from './agent-invocation.js';
 import { runRoleExecution } from './execution/run-role.js';
 import { EMPTY_PLUGIN_REGISTRY } from './plugin-host/freeze.js';
 import { ProviderEventReporter } from './provider-events.js';
+import { stageExtensions } from './response-extensions.js';
 import {
   type ContinuedDrive,
   driveBase,
@@ -208,6 +209,7 @@ export class AgentToolRunner {
     const pendingVerify = savedVerdict({ store, context, turn, last }, {
       required: sessionId !== null, decisionValues: facts.decisionValues, ask: facts.ask, protocol,
       questionFile: questionRequestPath(context), handoffFile: handoffPath(context),
+      extensions: stageExtensions(context, store.stageId(context), protocol).rules,
     });
     return this.driveTurns({
       ...common,

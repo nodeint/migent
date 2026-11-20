@@ -15,6 +15,7 @@ import { LEGACY_RESPONSE_PROTOCOL, renderProtocolUpdate, renderProviderPrompt } 
 import { AgentSessionRecord, type ExecutionContext, type SessionStore } from '@nodeint/migent-session';
 import { isRecord, type StageSpec } from '@nodeint/migent-workflow';
 
+import { stageExtensions } from './response-extensions.js';
 import { savedOutcome, savedResponse, storedTurn } from './run-facts.js';
 import { stageFacts } from './run-setup.js';
 import {
@@ -108,6 +109,8 @@ function renderedPendingPrompt(run: PendingPromptRun, last: string): { currentPr
   const currentPrompt = renderProviderPrompt(base, {
     ...sessionPaths(context, sessionId), contract, turn: storedTurn(metadata), decisionValues,
     decisionInstructions: stage?.decisionInstructions, ask, protocol,
+    responseExtensions: sessionId === null
+      ? [] : stageExtensions(context, run.store.stageId(context), protocol).prompts,
     questionFile: questionRequestPath(context), handoffFile: handoffPath(context),
     artifactDirectory: context.artifactDirectory, artifactName, artifactFiles: promptArtifactFiles(artifactFiles),
   });

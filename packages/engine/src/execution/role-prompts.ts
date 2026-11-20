@@ -35,6 +35,7 @@ function renderFor(state: RoleState, rendering: Rendering): string {
     decisionInstructions: stage?.decisionInstructions,
     ask: facts.ask,
     protocol: facts.protocol,
+    responseExtensions: facts.extensions?.prompts ?? [],
     questionFile: files.questionFile,
     handoffFile: files.handoffFile,
     artifactDirectory: context.artifactDirectory,

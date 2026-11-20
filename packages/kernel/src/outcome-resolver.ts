@@ -1,6 +1,6 @@
 import { HANDOFF_FILE_PROTOCOL } from '@nodeint/migent-prompts';
 
-import { loadHandoffFile } from './handoff.js';
+import { type ExtensionRule, loadHandoffFile } from './handoff.js';
 import { loadQuestionFile } from './questions.js';
 import { type AskTarget,parseStageOutcome, StageOutcome } from './stage-outcome.js';
 
@@ -15,6 +15,8 @@ export interface OutcomeContext {
   questionFile: string;
   /** Absolute path of the handoff file for this execution (protocol 3). */
   handoffFile: string;
+  /** Active response extensions (protocol 4 only). Omitted or empty gives the closed core contract. */
+  extensions?: readonly ExtensionRule[];
 }
 
 /**
@@ -25,11 +27,15 @@ export interface OutcomeContext {
 export function resolveStageOutcome(response: string, context: OutcomeContext): StageOutcome | null {
   if (context.protocol >= HANDOFF_FILE_PROTOCOL) {
     if (!context.required) return null;
-    const handoff = loadHandoffFile(context.handoffFile, { decisionValues: context.decisionValues, ask: context.ask });
+    const handoff = loadHandoffFile(context.handoffFile, {
+      decisionValues: context.decisionValues, ask: context.ask, extensions: context.extensions ?? [],
+    });
     if (handoff.status === 'question') {
       return new StageOutcome('question', { question: handoff.questions[0].question, questions: handoff.questions });
     }
-    return new StageOutcome(handoff.status, { blocker: handoff.blocker, decision: handoff.decision });
+    return new StageOutcome(handoff.status, {
+      blocker: handoff.blocker, decision: handoff.decision, extensions: handoff.extensions,
+    });
   }
   const outcome = parseStageOutcome(
     response,

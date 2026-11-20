@@ -256,6 +256,9 @@ Each execution directory contains:
   are recorded as `corrections.handoff`. `execution.json` records `response_protocol` (4 for a
   new conversation; a continued conversation keeps its source execution's value, and a missing
   or legacy value is read as protocol 1). Protocol 2 conversations use `question-request.json`.
+  A valid response extension payload is stored as `response_extensions` in `execution.json`, a mapping from plugin id
+  to the payload as written. It is written in the same commit as the terminal `outcome`, only when non-empty, and
+  `outcome`, events, and `status.json` never carry it.
 - `conversation.json`: client conversation checkpoint used when resuming a
   client session. It stores the client and model, native agent ID, options
   setting, lifecycle status, and fallback message history. A stage with no

@@ -2,7 +2,7 @@ import type { StageOutcomeStatus } from '@nodeint/migent-contracts';
 import { type Question, StageOutcome } from '@nodeint/migent-kernel';
 
 import type { PlainData } from '../runtime/plain-data.js';
-import { detach, revive } from './plain.js';
+import { detach, detachRecord, revive } from './plain.js';
 
 /** The detached form of a `StageOutcome` (D9): every member present, so it is plain data. */
 export type OutcomeData = {
@@ -11,6 +11,8 @@ export type OutcomeData = {
   readonly decision: string | null;
   readonly question: string | null;
   readonly questions: readonly PlainData[];
+  /** Response extension payloads as written. Carried so they survive the verify path to the saving commit. */
+  readonly extensions: { readonly [key: string]: PlainData };
 };
 
 /** Runs inside handlers, where the kernel or session hands back a live `StageOutcome`. */
@@ -21,6 +23,7 @@ export function toOutcomeData(outcome: StageOutcome): OutcomeData {
     decision: outcome.decision,
     question: outcome.question,
     questions: revive<PlainData[]>(detach(outcome.questions)),
+    extensions: detachRecord(outcome.extensions),
   };
 }
 
@@ -31,5 +34,6 @@ export function toStageOutcome(data: OutcomeData): StageOutcome {
     decision: data.decision,
     question: data.question,
     questions: structuredClone(revive<Question[]>([...data.questions])),
+    extensions: structuredClone(data.extensions),
   });
 }

@@ -2,6 +2,7 @@ import type { CorrectionFiles, CorrectionLedger } from '@nodeint/migent-kernel';
 import type { ExecutionContext } from '@nodeint/migent-session';
 import type { StageSpec } from '@nodeint/migent-workflow';
 
+import type { StageExtensions } from '../response-extensions.js';
 import type { OperationRequest } from '../runtime/operation.js';
 import type { Change } from './changes.js';
 import type { OutcomeData } from './outcome-data.js';
@@ -20,6 +21,8 @@ export type RoleFacts = {
   readonly artifactName: string | null;
   readonly ask: 'human' | null;
   readonly protocol: number;
+  /** Active response extensions from the stage's frozen contracts; empty before protocol 4. */
+  readonly extensions?: StageExtensions;
   readonly files: CorrectionFiles;
   readonly verifyCommands: readonly string[];
   readonly maxVerify: number;

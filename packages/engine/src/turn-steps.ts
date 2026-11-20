@@ -6,7 +6,8 @@ import { statSync } from 'node:fs';
 import path from 'node:path';
 
 import {
-  buildVerifyRepairPrompt, classifyGateError, CORRECTION_FAILURE_REASONS, type FailureClassification, type GateFailure,
+  buildVerifyRepairPrompt, classifyGateError, CORRECTION_FAILURE_REASONS, type ExtensionRule,
+  type FailureClassification, type GateFailure,
   type Gates, HandoffFileError, nonemptyArtifact, QuestionFileError, resolveStageOutcome,
   type ResponseSource, type StageOutcome, truncateText,
 } from '@nodeint/migent-kernel';
@@ -84,7 +85,7 @@ export function checkOutputs(
 export function evaluateGates(
   loop: {
     sessionId: string | null; decisionValues: string[]; ask: 'human' | null; protocol: number;
-    questionFile: string; handoffFile: string; artifactName: string | null;
+    extensions?: readonly ExtensionRule[]; questionFile: string; handoffFile: string; artifactName: string | null;
     checkOutputs: (reply: StageOutcome) => OutputCheck;
   },
   it: Iteration,
@@ -112,6 +113,7 @@ function resolveOutcomeGate(
     const outcome = resolveStageOutcome(it.responseText, {
       required: loop.sessionId !== null, decisionValues: loop.decisionValues, ask: loop.ask,
       protocol: loop.protocol, questionFile: loop.questionFile, handoffFile: loop.handoffFile,
+      extensions: loop.extensions ?? [],
     });
     const outcomeGate: Gates['outcome'] = { state: 'passed', ...(outcome === null ? {} : { status: outcome.status }) };
     return { outcome, invokeError: it.invokeError, gateFailure: it.gateFailure, outcomeGate };

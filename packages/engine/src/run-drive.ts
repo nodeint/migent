@@ -4,6 +4,7 @@ import type { ExecutionSnapshot } from '@nodeint/migent-kernel';
 import { flattenHistory } from '@nodeint/migent-kernel';
 import { renderProviderPrompt } from '@nodeint/migent-prompts';
 
+import { stageExtensions } from './response-extensions.js';
 import type { verifyProgress } from './run-facts.js';
 import type { RunRequest, StageFacts } from './run-setup.js';
 import { handoffPath, promptArtifactFiles, questionRequestPath, sessionPaths, type TurnDrive } from './turn-types.js';
@@ -69,7 +70,9 @@ export function renderFirstPrompt(run: {
     contract: sessionId === null ? false : conversationContract, turn: request.turn ?? null,
     decisionValues: facts.decisionValues,
     decisionInstructions: stage?.decisionInstructions, ask: facts.ask,
-    protocol: prior.protocol, questionFile: questionRequestPath(context), handoffFile: handoffPath(context),
+    protocol: prior.protocol,
+    responseExtensions: sessionId === null ? [] : stageExtensions(context, opened.stageId, prior.protocol).prompts,
+    questionFile: questionRequestPath(context), handoffFile: handoffPath(context),
     artifactDirectory: context.artifactDirectory, artifactName: facts.artifactName,
     artifactFiles: promptArtifactFiles(facts.artifactFiles),
     previousArtifactDirectory: prior.previous?.artifactDirectory ?? null,

@@ -137,6 +137,7 @@ Type: object
 | `error` | string | no | | |
 | `failure_reason` | string \| null | no | | |
 | `outcome` | map of any | no | | |
+| `response_extensions` | map of any | no | | |
 | `final_turn` | number | no | | |
 | `turns` | any | no | | |
 | `verify` | any | no | | |

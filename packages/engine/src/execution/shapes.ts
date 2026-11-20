@@ -20,7 +20,7 @@ const question: Check = shape({
 const outcomeData: Check = shape({
   status: oneOf('complete', 'blocked', 'question'),
   blocker: nullable(isString), decision: nullable(isString), question: nullable(isString),
-  questions: arrayOf(question),
+  questions: arrayOf(question), extensions: isRecord,
 });
 
 const gateFailureData: Check = shape({
