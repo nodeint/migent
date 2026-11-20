@@ -53,7 +53,7 @@ function workspaceWith(extra: string): string {
 
 function freeze(workspace: string, withClassifiers: Record<string, (id: string, value: unknown) => 'frozen' | 'live'> = classifiers): void {
   const workflow = parseWorkflowMapping(
-    { schema_version: 7, id: 'flow', stages: [{ id: 'a', role: 'developer', depends_on: [] }] },
+    { schema_version: 8, id: 'flow', stages: [{ id: 'a', role: 'developer', depends_on: [] }] },
     'flow.yaml',
   );
   writeWorkflowFreeze(workspace, { workspace, workflow, classifiers: withClassifiers });

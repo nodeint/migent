@@ -3,12 +3,14 @@ import path from 'node:path';
 
 import type { BuildCommandInput, CommandSpec } from '@nodeint/migent-kernel';
 import { raiseCancellation, resetCancellation } from '@nodeint/migent-kernel';
+import { createPluginRegistry } from '@nodeint/migent-plugins';
 import { createWorkflowSession, SessionLock, SessionStore } from '@nodeint/migent-session';
 import { afterEach, describe, expect, test } from 'vitest';
 
-import { AgentToolRunner, executeNamedWorkflow } from '../src/index.ts';
+import { executeNamedWorkflow } from '../src/index.ts';
+import { pluginFreezeInput } from '../src/plugin-host/freeze.ts';
 import { assertEventsValid } from './event-validation.ts';
-import { ageProviderEvents,registryOf, ScriptedClient, tempDir as makeTempDir } from './support.ts';
+import { ageProviderEvents,FakeClient, registryOf, runnerWithPlugins,ScriptedClient, tempDir as makeTempDir  } from './support.ts';
 
 const roots: string[] = [];
 
@@ -22,7 +24,7 @@ function tempDir(prefix: string): string {
   return root;
 }
 
-const CONFIG = (onExpired: string) => `\
+const CONFIG = (onExpired: string, enabled = true) => `\
 agents:
   fake:
     client:
@@ -31,11 +33,13 @@ agents:
 roles:
   developer:
     agent: fake
-resume_policies:
-  fake:
-    match: { client: fake }
-    cache_ttl: 1s
-    on_expired: ${onExpired}
+plugins:
+  prompt_cache_ttl:
+${enabled ? '' : '    enabled: false\n'}    policies:
+      fake:
+        match: { client: fake }
+        cache_ttl: 1s
+        on_expired: ${onExpired}
 `;
 
 const WORKFLOW = `\
@@ -67,16 +71,16 @@ class HangFirstProvider extends ScriptedClient {
 }
 
 /** A session whose only stage was cancelled mid-turn, with the cancel time pushed past the TTL. */
-async function cancelled(onExpired: string) {
+async function cancelled(onExpired: string, enabled = true) {
   const root = tempDir('migent-gate-cancel-');
   const pidFile = path.join(root, 'pid');
   const workspace = tempDir('migent-gate-cancel-ws-');
   mkdirSync(path.join(workspace, '.migent', 'workflows'), { recursive: true });
-  writeFileSync(path.join(workspace, '.migent', 'config.yaml'), CONFIG(onExpired), 'utf8');
+  writeFileSync(path.join(workspace, '.migent', 'config.yaml'), CONFIG(onExpired, enabled), 'utf8');
   writeFileSync(path.join(workspace, '.migent', 'workflows', 'wf.yaml'), WORKFLOW, 'utf8');
-  const sessionId = createWorkflowSession(workspace, 'wf', { task: 'Finish the notes' });
+  const sessionId = createWorkflowSession(workspace, 'wf', { task: 'Finish the notes', plugins: pluginFreezeInput(createPluginRegistry(), registryOf({ fake: new FakeClient('fake', 'fake') })) });
   const provider = new HangFirstProvider(pidFile, ['status: complete\n\ndone']);
-  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
+  const runner = runnerWithPlugins(registryOf({ fake: provider }), 10);
   const timer = setInterval(() => {
     if (!existsSync(pidFile) || readFileSync(pidFile, 'utf8').trim() === '') return;
     clearInterval(timer);
@@ -132,6 +136,16 @@ describe('resume gate on a cancelled execution', () => {
     expect(ids).toHaveLength(2);
   }, 30_000);
 
+  test('a disabled plugin reopens the aged cancelled execution in place and records no expiry', async () => {
+    const run = await cancelled('ask', false);
+    const result = await run.resume();
+    expect(result.code).toBe(0);
+    expect(result.latestExecutionId).toBe(run.executionId);
+    expect(run.provider.calls).toHaveLength(2);
+    expect(run.events()).not.toContain('resume.expired');
+    expect(parsed(run.events())).not.toContain('resume.expired');
+  }, 30_000);
+
   test('resume reopens in place, as without a policy, and records the verdict', async () => {
     const run = await cancelled('resume');
     const result = await run.resume();
@@ -153,7 +167,7 @@ class HangSecond extends ScriptedClient {
 }
 
 const SIBLING_WORKFLOW = `\
-schema_version: 7
+schema_version: 8
 id: wf
 stages:
   - id: a
@@ -175,7 +189,7 @@ describe('a decision for one stage leaves an unrelated cancelled stage alone (R1
       writeFileSync(path.join(workspace, '.migent', 'config.yaml'), CONFIG('ask'), 'utf8');
       writeFileSync(path.join(workspace, '.migent', 'workflows', 'wf.yaml'), SIBLING_WORKFLOW, 'utf8');
       const provider = new HangSecond(['status: complete\n\nA done', 'status: complete\n\nC done', 'status: complete\n\nB done']);
-      const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
+      const runner = runnerWithPlugins(registryOf({ fake: provider }), 10);
       const first = await executeNamedWorkflow(workspace, { workflowId: 'wf', task: 'Task', stageId: 'a' }, runner);
       const store = new SessionStore(workspace);
       const { sessionId } = first;

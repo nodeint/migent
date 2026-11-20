@@ -1,7 +1,7 @@
 import Type, { type Static } from 'typebox';
 
 import { id, nullable } from './common.js';
-import { NonBlankString, ResumeOnExpired, RoleAgent } from './config.js';
+import { NonBlankString, RoleAgent } from './config.js';
 import { PLUGIN_EXTENSIONS, withExtensionProperties } from './extension-catalog.js';
 
 /**
@@ -12,7 +12,7 @@ import { PLUGIN_EXTENSIONS, withExtensionProperties } from './extension-catalog.
  * by the kernel's version-gated readers and are not described here.
  */
 
-export const WORKFLOW_SCHEMA_VERSION = 7;
+export const WORKFLOW_SCHEMA_VERSION = 8;
 
 /** Artifact ids: a letter, then letters, digits, `_` or `-`. */
 export const ARTIFACT_ID_PATTERN = '^[A-Za-z][A-Za-z0-9_-]*$';
@@ -85,9 +85,8 @@ export const WorkflowDecisionList = Type.Array(WorkflowDecisionItem, { minItems:
 export const WorkflowSession = Type.Object(
   {
     resume_from: Type.Optional(nullable(NonBlankString)),
-    on_expired: Type.Optional(nullable(ResumeOnExpired)),
   },
-  { $id: id('workflow/session'), title: 'Stage session', description: 'Continue the client session of a dependency, and what to do when its cache may have expired.', additionalProperties: false },
+  { $id: id('workflow/session'), title: 'Stage session', description: 'Continue the client session of a dependency.', additionalProperties: false },
 );
 
 export const WorkflowRunWhen = Type.Object(
@@ -140,7 +139,7 @@ export const WORKFLOW_CORE_PROPERTIES = {
 
 export const WorkflowDocumentInput = Type.Object(
   withExtensionProperties(WORKFLOW_CORE_PROPERTIES, PLUGIN_EXTENSIONS, 'workflow'),
-  { $id: id('workflow/document'), title: 'Workflow file', description: 'An authored workflow file at schema_version 7.', additionalProperties: false },
+  { $id: id('workflow/document'), title: 'Workflow file', description: 'An authored workflow file at schema_version 8.', additionalProperties: false },
 );
 
 export type WorkflowDocumentInput = Static<typeof WorkflowDocumentInput>;

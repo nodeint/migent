@@ -7,7 +7,7 @@ import { createPreparedSession } from '../src/session-records.ts';
 import { selectSessionWorkflow } from '../src/session-selection.ts';
 import { tempDir, writeSessionConfig } from './support.ts';
 
-const PLAN = `schema_version: 7
+const PLAN = `schema_version: 8
 id: plan
 stages:
   - id: draft

@@ -18,7 +18,7 @@ import {
 } from './support.ts';
 
 const DOCS_FLOW = `\
-schema_version: 7
+schema_version: 8
 id: docs_flow
 artifacts:
   implementation:

@@ -24,6 +24,9 @@ const STAGE_V5_RENAMED: Readonly<Record<string, string>> = {
   model: 'was renamed to {location}.agent in schema_version 5. Run `migent migrate`.',
   options: 'was removed in schema_version 5. Set options on an inline {location}.agent under client.options.',
 };
+const SESSION_RENAMED: Readonly<Record<string, string>> = {
+  on_expired: 'moved to {stage}.prompt_cache_ttl.on_expired in schema_version 8. Run `migent migrate`.',
+};
 const PRODUCES_KEYS = ['artifact'];
 const SESSION_KEYS = keysOf(WorkflowSession);
 const DECISION_ENTRY_KEYS = keysOf(WorkflowDecisionEntry);
@@ -99,6 +102,10 @@ export function unknownKeys(value: Record<string, unknown>, valid: readonly stri
   return Object.keys(value).filter((key) => !valid.includes(key)).map((key) => unusedKeyMessage(key, valid, location));
 }
 
+function sessionRenamed(stageLocation: string): Record<string, string> {
+  return Object.fromEntries(Object.entries(SESSION_RENAMED).map(([key, text]) => [key, text.replaceAll('{stage}', stageLocation)]));
+}
+
 /** Unknown keys at the top level, stages, `produces`, `session` and decision entries, with author-coordinate paths. */
 export function unknownWorkflowKeyEntries(
   data: Record<string, unknown>,
@@ -117,7 +124,7 @@ export function unknownWorkflowKeyEntries(
       ? unknownKeyEntries(stage, { valid: [...STAGE_KEYS_V5, ...stageKeys], location, base, renamed: STAGE_V5_RENAMED })
       : unknownKeyEntries(stage, { valid: [...STAGE_KEYS_V4, ...stageKeys], location, base })));
     if (isRecord(stage.produces)) entries.push(...unknownKeyEntries(stage.produces, { valid: PRODUCES_KEYS, location: `${location}.produces`, base: [...base, 'produces'] }));
-    if (isRecord(stage.session)) entries.push(...unknownKeyEntries(stage.session, { valid: SESSION_KEYS, location: `${location}.session`, base: [...base, 'session'] }));
+    if (isRecord(stage.session)) entries.push(...unknownKeyEntries(stage.session, { valid: SESSION_KEYS, location: `${location}.session`, base: [...base, 'session'], renamed: sessionRenamed(location) }));
     if (!Array.isArray(stage.decision)) return;
     for (const [entryIndex, entry] of stage.decision.entries()) {
       if (!isRecord(entry) || Object.keys(entry).length !== 1) continue;

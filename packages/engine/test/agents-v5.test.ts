@@ -15,7 +15,7 @@ import { defaultClients, tempDir } from './support.ts';
 const resolver = defaultClients();
 
 const CONFIG = {
-  schema_version: 7,
+  schema_version: 8,
   agents: {
     fast: { client: { type: 'codex', options: { temperature: '0.2' } }, model: 'gpt-5' },
     other: { client: { type: 'grok' }, model: 'grok-4' },
@@ -27,7 +27,7 @@ const CONFIG = {
 
 function stageOf(extra: Record<string, unknown> = {}): RoleStageSpec {
   const workflow = parseWorkflowMapping(
-    { schema_version: 7, id: 'w', stages: [{ id: 's', role: 'dev', depends_on: [], ...extra }] },
+    { schema_version: 8, id: 'w', stages: [{ id: 's', role: 'dev', depends_on: [], ...extra }] },
     'test',
   );
   const stage = workflow.stages.s;
@@ -48,7 +48,7 @@ test('a v6 stage rejects the v4 model and options keys with their replacements',
   expect(() => stageOf({ model: 'fast' })).toThrow('stages.s.model was renamed to stages.s.agent in schema_version 5');
   expect(() => stageOf({ options: { a: 'b' } })).toThrow('stages.s.options was removed in schema_version 5');
   const entries = unknownWorkflowKeyEntries({
-    schema_version: 7,
+    schema_version: 8,
     stages: [{ id: 's', role: 'dev', model: 'fast' }],
   });
   expect(entries.map((entry) => entry.path)).toEqual([['stages', 0, 'model']]);

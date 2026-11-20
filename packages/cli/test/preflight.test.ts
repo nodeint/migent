@@ -4,7 +4,7 @@ import path from 'node:path';
 import { AgentToolRunner } from '@nodeint/migent-engine';
 import { afterEach, expect, test } from 'vitest';
 
-import { clientRegistry } from '../src/client.ts';
+import { clientRegistry, withPlugins } from '../src/client.ts';
 import { cliHooks } from '../src/hooks.ts';
 import { main } from '../src/index.ts';
 import { capture, registryOf, removeWorkspace, repoWorkflowText, ScriptedClient, writeFakeWorkflowWorkspace } from './support.ts';
@@ -21,7 +21,7 @@ function clients(fake: ScriptedClient) {
 
 /** The planner (stage 1) maps to the fake client; the reviewer (stage 2) is configurable. */
 function config(reviewer: string): string {
-  return `schema_version: 7
+  return `schema_version: 8
 agents:
   good:
     client:
@@ -45,7 +45,7 @@ function setup(reviewer: string): { workspace: string; provider: ScriptedClient 
   const workspace = writeFakeWorkflowWorkspace({ plan: repoWorkflowText('plan') });
   writeFileSync(path.join(workspace, '.migent', 'config.yaml'), config(reviewer), 'utf8');
   const provider = new ScriptedClient(['status: complete\n\ndone'], ['# Plan\n']);
-  cliHooks.runner = new AgentToolRunner(clients(provider), 10);
+  cliHooks.runner = withPlugins(new AgentToolRunner(clients(provider), 10));
   cliHooks.runCommand = (argv) => {
     if (argv[0] === 'grok') return CATALOG;
     throw new Error(`Unexpected command: ${argv.join(' ')}`);
@@ -105,7 +105,7 @@ test('a prepared session stays prepared and unfrozen until the problem is fixed'
     writeFileSync(path.join(directory, 'task.md'), 'do it\n', 'utf8');
 
     // main() clears cliHooks when it returns, so reinstall them for the next invocation.
-    cliHooks.runner = new AgentToolRunner(clients(provider), 10);
+    cliHooks.runner = withPlugins(new AgentToolRunner(clients(provider), 10));
     cliHooks.runCommand = (argv) => {
       if (argv[0] === 'grok') return CATALOG;
       throw new Error(`Unexpected command: ${argv.join(' ')}`);
@@ -118,7 +118,7 @@ test('a prepared session stays prepared and unfrozen until the problem is fixed'
     expect(provider.calls).toHaveLength(0);
 
     writeFileSync(path.join(workspace, '.migent', 'config.yaml'), config(GROK_OK), 'utf8');
-    cliHooks.runner = new AgentToolRunner(clients(provider), 10);
+    cliHooks.runner = withPlugins(new AgentToolRunner(clients(provider), 10));
     cliHooks.runCommand = () => CATALOG;
     const fixed = await capture(() => main(['session', 'run', '--once', '--session', sessionId], workspace));
     expect(fixed.value).toBe(0);
@@ -204,10 +204,50 @@ test('an agent naming an unknown resume policy stops the run before anything is 
   const { workspace, provider } = setup(GROK_OK);
   try {
     const file = path.join(workspace, '.migent', 'config.yaml');
-    writeFileSync(file, readFileSync(file, 'utf8').replace('  good:\n', '  good:\n    resume_policy: typo\n'), 'utf8');
+    writeFileSync(file, readFileSync(file, 'utf8').replace('  good:\n', '  good:\n    prompt_cache_ttl:\n      policy: typo\n'), 'utf8');
     const result = await capture(() => main(PLAN, workspace));
     expect(result.value).toBe(2);
     expect(result.stderr).toContain('typo');
+    expect(sessionDirectories(workspace)).toEqual([]);
+    expect(provider.calls).toHaveLength(0);
+  } finally {
+    removeWorkspace(workspace);
+  }
+});
+
+test('a workflow inline agent naming an unknown resume policy stops the run before anything is created', async () => {
+  const { workspace, provider } = setup(GROK_OK);
+  try {
+    const file = path.join(workspace, '.migent', 'workflows', 'plan.yaml');
+    const text = readFileSync(file, 'utf8');
+    const agent = '    agent:\n      client:\n        type: fake\n      model: m1\n      prompt_cache_ttl:\n        policy: typo\n';
+    writeFileSync(file, text.replace(/(\n {2}- id: plan\n)/, `$1${agent}`), 'utf8');
+    expect(readFileSync(file, 'utf8')).toContain('policy: typo');
+    const result = await capture(() => main(PLAN, workspace));
+    expect(result.value).toBe(2);
+    expect(result.stderr).toContain('typo');
+    expect(sessionDirectories(workspace)).toEqual([]);
+    expect(provider.calls).toHaveLength(0);
+  } finally {
+    removeWorkspace(workspace);
+  }
+});
+
+test('overlapping resume policies on an agent whose client is inferred from its model stop the run', async () => {
+  const { workspace, provider } = setup(GROK_OK);
+  try {
+    const file = path.join(workspace, '.migent', 'config.yaml');
+    const text = readFileSync(file, 'utf8')
+      .replace('  good:\n    client:\n      type: fake\n    model: m1\n', '  good:\n    model: m1\n')
+      .replace('roles:', 'plugins:\n  prompt_cache_ttl:\n    policies:\n      a:\n        match: { client: fake }\n        cache_ttl: 5m\n      b:\n        match: { client: fake }\n        cache_ttl: 1h\nroles:');
+    writeFileSync(file, text, 'utf8');
+    const lookup = { searched: ['fake'], skipped: [], failed: [] };
+    const real = clients(provider);
+    const inferring = { ...real, ids: () => real.ids(), get: (id: string) => real.get(id), clientsForModel: (model: string) => ({ ...lookup, matches: model === 'm1' ? ['fake'] : [] }) };
+    cliHooks.runner = withPlugins(new AgentToolRunner(inferring, 10));
+    const result = await capture(() => main(PLAN, workspace));
+    expect(result.value).toBe(2);
+    expect(result.stderr).toContain('Several resume policies match fake/m1: a, b');
     expect(sessionDirectories(workspace)).toEqual([]);
     expect(provider.calls).toHaveLength(0);
   } finally {

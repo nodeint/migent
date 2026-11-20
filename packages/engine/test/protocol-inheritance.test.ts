@@ -7,7 +7,7 @@ import { expect, test } from 'vitest';
 import { AgentToolRunner, executeNamedWorkflow } from '../src/index.ts';
 import { registryOf, ScriptedClient, tempDir } from './support.ts';
 
-const CONFIG = 'schema_version: 7\nagents:\n  fake: { client: { type: fake }, model: m1 }\nroles:\n  worker: { agent: fake }\n  checker: { agent: fake }\n';
+const CONFIG = 'schema_version: 8\nagents:\n  fake: { client: { type: fake }, model: m1 }\nroles:\n  worker: { agent: fake }\n  checker: { agent: fake }\n';
 const OK = 'status: complete\n\ndone';
 const QUESTION = 'status: question\n\n' + JSON.stringify({
   schema_version: 1,

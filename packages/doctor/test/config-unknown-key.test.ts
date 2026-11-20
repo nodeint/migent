@@ -18,12 +18,12 @@ afterEach(() => {
 });
 
 const PROJECT = {
-  schema_version: 7,
+  schema_version: 8,
   agents: { x: { client: { type: 'codex' }, model: 'm' } },
   roles: { dev: { agent: 'x' } },
 };
 const UNKNOWN = {
-  schema_version: 7, future_section: { example: { enabled: true } } };
+  schema_version: 8, future_section: { example: { enabled: true } } };
 
 test('an unknown top-level key in the project layer adds no diagnostic', () => {
   const clients = defaultClients();
@@ -55,9 +55,9 @@ test('draft validation of the project scope ignores an unknown key', () => {
 
 test('draft validation of the local scope ignores an unknown key', () => {
   const clients = defaultClients();
-  const plain = validateConfigDraft({ scope: 'local', draft: { schema_version: 7 }, companion: PROJECT }, clients);
+  const plain = validateConfigDraft({ scope: 'local', draft: { schema_version: 8 }, companion: PROJECT }, clients);
   expect(validateConfigDraft({ scope: 'local', draft: UNKNOWN, companion: PROJECT }, clients)).toEqual(plain);
-  expect(validateConfigDraft({ scope: 'local', draft: { schema_version: 7 }, companion: { ...PROJECT, ...UNKNOWN } }, clients)).toEqual(plain);
+  expect(validateConfigDraft({ scope: 'local', draft: { schema_version: 8 }, companion: { ...PROJECT, ...UNKNOWN } }, clients)).toEqual(plain);
 });
 
 test('mergeConfigLayers keeps an unknown top-level key in the merged config without error', () => {

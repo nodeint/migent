@@ -329,17 +329,7 @@ test("a route path keeps the author's key spelling", () => {
   ]);
 });
 
-test('an invalid session.on_expired is a draft problem at its own path', () => {
-  const result = collectWorkflowDraft(draft([stage('a', { session: { on_expired: 'later' } })]), 'build.yaml');
-  expect(result.problems.map((item) => item.path)).toContainEqual(['stages', 0, 'session', 'on_expired']);
-  const ok = collectWorkflowDraft(draft([stage('a', { session: { on_expired: 'fresh' } })]), 'build.yaml');
-  expect(ok.problems).toEqual([]);
-});
-
-test('an unknown session key is still reported as unknown-key next to on_expired', () => {
-  const result = collectWorkflowDraft(
-    draft([stage('a', { session: { on_expired: 'fresh', x: 1 } })], { schema_version: 7 }),
-    'build.yaml',
-  );
-  expect(result.problems.map((item) => [item.code, item.path])).toContainEqual(['unknown-key', ['stages', 0, 'session', 'x']]);
+test('session.on_expired is reported as an unknown session key', () => {
+  const result = collectWorkflowDraft(draft([stage('a', { session: { on_expired: 'fresh' } })], { schema_version: 8 }), 'build.yaml');
+  expect(result.problems.map((item) => [item.code, item.path])).toContainEqual(['unknown-key', ['stages', 0, 'session', 'on_expired']]);
 });

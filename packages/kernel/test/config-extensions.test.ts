@@ -38,7 +38,7 @@ const extensions = { extensions: catalog };
 
 const AGENT_VALUE = { mode: 'fast', retries: 2 };
 const base = (): Mapping => ({
-  schema_version: 7,
+  schema_version: 8,
   agents: { named: { client: { type: 'codex' }, model: 'm', fixture_agent: AGENT_VALUE, unowned_extra: 'kept' } },
   roles: {
     dev: { agent: 'named', fixture_role: { mode: 'role' } },

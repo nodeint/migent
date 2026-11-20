@@ -1,6 +1,9 @@
 import path from 'node:path';
 
-import { type ClientRegistry,ConfigurationError, resolveEffectiveClient, resolveStageSpec, whichSync } from '@nodeint/migent-kernel';
+import {
+  type ClientRegistry, ConfigurationError, type PluginRegistry, pluginValidationProblems, resolveEffectiveClient,
+  resolveStageSpec, whichSync,
+} from '@nodeint/migent-kernel';
 import { isRoleStage, loadWorkflowCatalog, type WorkflowDocument } from '@nodeint/migent-workflow';
 
 import { optionalArtifactMappings } from './artifact-notes.js';
@@ -37,6 +40,7 @@ export function diagnose(workspace: string, options: DiagnoseOptions): [Check, C
     invalidEffort: new Set(Object.keys(efforts).filter((key) => efforts[key]?.problem)),
     efforts,
     nativeOptionFacts: options.nativeOptionFacts,
+    plugins: options.plugins,
   });
   const clientCheck = checkClients(
     configResult.executableByClient,
@@ -48,6 +52,7 @@ export function diagnose(workspace: string, options: DiagnoseOptions): [Check, C
 
 /** What the workflow check knows from the config check and the environment. */
 interface WorkflowCheckContext {
+  readonly plugins?: PluginRegistry | undefined;
   readonly clients: ClientRegistry;
   readonly configDiagnostics: DiagnosticList;
   readonly config: Record<string, unknown> | null;
@@ -78,6 +83,7 @@ function checkWorkflows(workspace: string, context: WorkflowCheckContext): Check
       configDiagnostics.errors.flatMap((item) => (item.detail === undefined ? [] : [item.detail])),
     );
     for (const document of Object.values(catalog.documents)) {
+      problems.push(...workflowPluginProblems(document, config, context));
       checkStageBindings(
         document,
         { ...context, config, known, knownOptionReasons, knownWarnings },
@@ -90,6 +96,24 @@ function checkWorkflows(workspace: string, context: WorkflowCheckContext): Check
   const warnings = [...Object.values(catalog.documents).flatMap(workflowWarnings), ...stageWarnings];
   if (problems.length > 0) return failed('workflows', problems, { items, warnings });
   return passed('workflows', items, warnings);
+}
+
+/** The plugin `validate` findings on one workflow's inline agents and stage keys; config findings are reported once. */
+function workflowPluginProblems(
+  document: WorkflowDocument,
+  config: Record<string, unknown>,
+  context: { readonly plugins?: PluginRegistry | undefined; readonly clients: ClientRegistry },
+): string[] {
+  const { plugins: registry, clients } = context;
+  if (registry === undefined) return [];
+  const stages = Object.values(document.stages).map((stage) => ({
+    id: stage.id,
+    ...(stage.agent?.kind === 'inline' ? { agent: stage.agent.value } : {}),
+    ...Object.assign({}, ...Object.values(stage.extensions ?? {})),
+  }));
+  return pluginValidationProblems(registry, config, { workflow: { stages }, clients })
+    .filter((problem) => problem.path[0] === 'stages')
+    .map((problem) => `${document.id}: ${problem.message}`);
 }
 
 /** Parse-time unknown keys in the workflow. */

@@ -8,11 +8,12 @@ import {
 } from '@nodeint/migent-contracts';
 
 import { metricsPlugin } from './metrics/index.js';
+import { promptCacheTtlPlugin } from './prompt-cache-ttl/index.js';
 
 export type { PluginRegistry };
 
 /** First-party plugins. Features add themselves here (#131, #141, #142). */
-const FIRST_PARTY: readonly Plugin[] = [metricsPlugin];
+const FIRST_PARTY: readonly Plugin[] = [metricsPlugin, promptCacheTtlPlugin];
 
 /** Structural equality of plain data: schemas are JSON-like objects, arrays and scalars. */
 function sameData(a: unknown, b: unknown): boolean {

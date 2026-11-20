@@ -103,6 +103,6 @@
     }
   },
   "title": "Workflow file",
-  "description": "An authored workflow file at schema_version 7.",
+  "description": "An authored workflow file at schema_version 8.",
   "additionalProperties": false
 }

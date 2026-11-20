@@ -2,8 +2,20 @@
 
 ## Unreleased
 
+### Breaking
+
+- The prompt-cache-expiry resume policy is now the first-party `prompt_cache_ttl` plugin, and the config schema is
+  version 8. `resume_policies` moves to `plugins.prompt_cache_ttl.policies`, an agent's `resume_policy` to
+  `prompt_cache_ttl.policy`, and a stage's `session.on_expired` to `prompt_cache_ttl.on_expired`. Run
+  `migent migrate`; a legacy key in a version 8 file is a configuration error. Sessions started before this
+  release keep resuming with their frozen policies. ([#167](https://github.com/nodeint/migent/issues/167))
+- The stage view of `get workflow --json` no longer has an `on_expired` field.
+  ([#167](https://github.com/nodeint/migent/issues/167))
+
 ### Added
 
+- Plugin API 1.1: a plugin may declare an optional pure `validate`, which `migent doctor`, session creation, and
+  role creation run against the config. ([#167](https://github.com/nodeint/migent/issues/167))
 - Contracts declare a static plugin extension catalog (`PLUGIN_EXTENSIONS`, empty today) that lets a plugin claim flat
   keys on workflows, stages, agents, and roles, and `createPluginRegistry` checks a manifest's `extensions` against
   it. ([#174](https://github.com/nodeint/migent/issues/174))

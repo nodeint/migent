@@ -181,7 +181,7 @@ function promptArtifactNames(prompt: string): string[] {
 }
 
 export const FAKE_FLOW_CONFIG = `\
-schema_version: 7
+schema_version: 8
 agents:
   fake-model:
     client:

@@ -1,11 +1,18 @@
 import path from 'node:path';
 
-import type { ClientRegistry, OnExpired, ResolvedResumePolicy, ResumeEstimate } from '@nodeint/migent-kernel';
-import { effectiveOnExpired, evaluateResume } from '@nodeint/migent-kernel';
-import { readParsedEvents, resumeFacts, type SessionStore } from '@nodeint/migent-session';
+import type { ClientRegistry } from '@nodeint/migent-kernel';
+import { cancellationSignal } from '@nodeint/migent-kernel';
+import { readParsedEvents, type SessionStore } from '@nodeint/migent-session';
 
-/** What a gated resume does: continue the conversation, start a fresh one, or stop for a human decision. */
-export type GateVerdict = 'resume' | 'fresh' | 'ask';
+import { GateApplier, type GateChange } from './execution/gate-changes.js';
+import {
+  CONVERSATION_RESUME, conversationResumeDefinition, createConversationResumeOperation, type GateVerdict,
+  type ResumeExpiry, type ResumeInput,
+} from './execution/resume-operation.js';
+import type { InterceptorChain } from './runtime/interception.js';
+import { OperationRuntime } from './runtime/operation-runtime.js';
+
+export type { GateVerdict } from './execution/resume-operation.js';
 
 export interface GateRequest {
   readonly store: SessionStore;
@@ -15,18 +22,18 @@ export interface GateRequest {
   readonly stageId: string;
   /** The execution whose conversation would be resumed. */
   readonly sourceExecutionId: string;
-  /** The frozen or inherited policy; null means no policy applies and the gate does not run. */
-  readonly policy: ResolvedResumePolicy | null;
-  /** `session.on_expired` of the stage, from the frozen workflow. */
-  readonly stageOnExpired: OnExpired | null;
   readonly clients: ClientRegistry;
-  readonly now?: Date;
+  /** Which caller asks, and the frozen target of the stage or role. */
+  readonly path: ResumeInput['path'];
+  readonly target: { readonly client: string; readonly model: string };
+  /** The host's interceptors; none for a gate no plugin intercepts. */
+  readonly interceptors?: InterceptorChain | undefined;
 }
 
 export interface GateResult {
   readonly verdict: GateVerdict;
   /** Set when the resume was judged expired; the facts behind the decision. */
-  readonly estimate: ResumeEstimate | null;
+  readonly estimate: ResumeExpiry['estimate'] | null;
 }
 
 /**
@@ -57,31 +64,37 @@ function isUse(event: LogEvent, request: GateRequest): boolean {
 }
 
 /**
- * The one gate for resuming a conversation after the prompt cache may have expired. Without a policy it
- * returns `resume` and writes nothing. A human decision for this `(stage, source)` is applied once and wins.
- * Otherwise an expired verdict is recorded as `resume.expired`, whatever the action, and `ask` also
- * leaves a pending decision that stops the stage. The caller holds the session lock.
+ * The one gate for resuming a conversation after the prompt cache may have expired. A human decision for this
+ * `(stage, source)` is applied once and wins, then an existing pending stop asks. Otherwise the
+ * `conversation.resume` operation decides: the handler resumes, and a plugin may propose otherwise. An expired
+ * verdict is recorded as `resume.expired`, whatever the action. The caller holds the session lock.
  */
-export function gateResume(request: GateRequest): GateResult {
-  const { policy, store, sessionId, stageId, sourceExecutionId } = request;
-  if (policy === null) return { verdict: 'resume', estimate: null };
+export async function gateResume(request: GateRequest): Promise<GateResult> {
+  const { store, sessionId, stageId, sourceExecutionId } = request;
   const decision = decidedChoice(request);
   if (decision !== null) return { verdict: decision, estimate: null };
   const waiting = store.pendingResumes(sessionId);
   if (waiting.some((stop) => stop.stageId === stageId && stop.sourceExecutionId === sourceExecutionId)) {
     return { verdict: 'ask', estimate: null };
   }
-  const facts = resumeFacts(request.workspace, { sessionId, executionId: sourceExecutionId }, request.clients);
-  const evaluation = evaluateResume(policy, { ...facts, now: request.now ?? new Date() });
-  if (!evaluation.expired) return { verdict: 'resume', estimate: evaluation.estimate };
-  const { action, origin } = effectiveOnExpired({ stageOnExpired: request.stageOnExpired, policy });
-  store.recordResumeExpired(sessionId, {
-    stageId,
-    sourceExecutionId,
-    action,
-    origin,
-    policy: policy.name,
-    estimate: { ...evaluation.estimate, cacheTtlSec: policy.cacheTtlSec, marginSec: policy.marginSec },
+  const directory = path.join(request.workspace, '.migent', 'sessions', sessionId);
+  const runtime = new OperationRuntime<GateChange>({
+    operations: [createConversationResumeOperation({
+      workspace: request.workspace, clients: request.clients,
+    })],
+    applier: new GateApplier({ store, sessionId, directory }),
+    ...(request.interceptors === undefined ? {} : { interceptors: request.interceptors }),
   });
-  return { verdict: action, estimate: evaluation.estimate };
+  const input: ResumeInput = {
+    path: request.path, session_id: sessionId, stage_id: stageId, source_execution_id: sourceExecutionId,
+    client: request.target.client, model: request.target.model,
+  };
+  const output = await runtime.run({
+    scope: { sessionId, stageId, role: stageId },
+    definition: conversationResumeDefinition,
+    state: { input },
+    request: { identity: { executionId: sourceExecutionId, operationId: CONVERSATION_RESUME, attempt: 1 }, input },
+  });
+  cancellationSignal().throwIfCancelled();
+  return { verdict: output.verdict, estimate: output.expired === null ? null : output.expired.estimate };
 }

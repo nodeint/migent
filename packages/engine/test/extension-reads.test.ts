@@ -46,7 +46,7 @@ roles:
     demo_ro: role-value
 `;
 const WORKFLOW = {
-  schema_version: 7,
+  schema_version: 8,
   id: 'wf',
   demo_wf: 'workflow-value',
   stages: [{ id: 'one', role: 'developer', depends_on: [], demo_st: 'stage-value' }],

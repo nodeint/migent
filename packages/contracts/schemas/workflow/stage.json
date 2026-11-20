@@ -219,6 +219,30 @@
           "type": "null"
         }
       ]
+    },
+    "prompt_cache_ttl": {
+      "type": "object",
+      "properties": {
+        "on_expired": {
+          "anyOf": [
+            {
+              "type": "string",
+              "const": "ask"
+            },
+            {
+              "type": "string",
+              "const": "fresh"
+            },
+            {
+              "type": "string",
+              "const": "resume"
+            }
+          ],
+          "description": "What this stage does when the prompt cache may have expired."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Overrides the policy action for this stage."
     }
   },
   "title": "Workflow stage",

@@ -27,7 +27,7 @@ export function registryOf(clients: Record<string, CliClient>): ClientRegistry {
 }
 
 export const STAGE_CONFIG = `\
-schema_version: 7
+schema_version: 8
 agents:
   grok:
     client:
@@ -50,7 +50,7 @@ roles:
 `;
 
 const STAGE_WORKFLOW = `\
-schema_version: 7
+schema_version: 8
 id: plan-implement
 artifacts:
   implement:

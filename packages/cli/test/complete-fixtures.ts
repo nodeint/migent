@@ -6,7 +6,7 @@ import { createWorkflowSession, SessionLock, SessionStore } from '@nodeint/migen
 
 import { removeWorkspace, writeFakeWorkflowWorkspace } from './support.ts';
 
-const WORKFLOW = `schema_version: 7
+const WORKFLOW = `schema_version: 8
 id: plan
 artifacts:
   plan: { file: plan.md }
@@ -35,7 +35,7 @@ export function cleanWorkspaces(): void {
 export function stoppedSession(): { workspace: string; sessionId: string; directory: string } {
   const workspace = writeFakeWorkflowWorkspace({
     plan: WORKFLOW,
-    implement: 'schema_version: 7\nid: implement\nstages:\n  - { id: work, role: developer }\n',
+    implement: 'schema_version: 8\nid: implement\nstages:\n  - { id: work, role: developer }\n',
   });
   workspaces.push(workspace);
   const sessionId = createWorkflowSession(workspace, 'plan', { task: 'Write a plan' });

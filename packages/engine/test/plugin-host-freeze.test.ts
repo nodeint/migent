@@ -30,7 +30,7 @@ const registryOfPlugins = (...plugins: Plugin[]): PluginRegistry => ({
 });
 
 const BASE = 'agents:\n  fake:\n    client: { type: fake }\n    model: m1\nroles:\n  developer:\n    agent: fake\n';
-const WORKFLOW = 'schema_version: 7\nid: wf\nstages:\n  - id: one\n    role: developer\n';
+const WORKFLOW = 'schema_version: 8\nid: wf\nstages:\n  - id: one\n    role: developer\n';
 
 function setup(pluginsYaml: string, registry: PluginRegistry): { workspace: string; directory: string } {
   const workspace = tempDir('migent-plugin-host-');

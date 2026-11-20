@@ -1450,6 +1450,16 @@ Type: object
 | `data.plugins[].advisory` | boolean | yes | | |
 | `data.plugins[].version` | string \| null | yes | | |
 | `data.plugins[].target` | map of any \| null | yes | | |
+| `data.role_freeze` | object | no | | Plugin selection, resolved target and extension records frozen for a role session. |
+| `data.role_freeze.plugins` | object | yes | | |
+| `data.role_freeze.plugins.entries` | map of any | yes | | |
+| `data.role_freeze.plugins.live_entries` | string[] | yes | | |
+| `data.role_freeze.target` | object | yes | | |
+| `data.role_freeze.target.client` | string | yes | | |
+| `data.role_freeze.target.model` | string | yes | | |
+| `data.role_freeze.target.extensions` | map of any | no | | |
+| `data.role_freeze.target.role_extensions` | map of any | no | | |
+| `data.role_freeze.extensions` | map of any | yes | | |
 
 <a id="session-event-provider-stage-started-json"></a>
 

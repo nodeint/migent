@@ -18,7 +18,7 @@ export const PLUGIN_ARTIFACT_MODES = ['create_only', 'replace'] as const;
 /** The `hook` recorded for a failed activation. */
 export const PLUGIN_ACTIVATE_HOOK = 'activate';
 /** The plugin API version this core supports. A manifest needs the same major and a minor not above this one. */
-export const PLUGIN_API_VERSION = { major: 1, minor: 0 } as const;
+export const PLUGIN_API_VERSION = { major: 1, minor: 1 } as const;
 export const PLUGIN_ON_ERROR = ['ignore', 'stop', 'fail'] as const;
 export const PLUGIN_FAILURE_REASONS = ['error', 'timeout', 'invalid_intent', 'unavailable', 'version_changed', 'cancelled', 'stale'] as const;
 
@@ -327,8 +327,31 @@ export type PluginHandler = (
 ) => Promise<readonly PluginEventProposal[]>;
 
 /** A manifest plus `activate`, which registers interceptors and handlers once per host scope. */
+/** What `Plugin.validate` reads: detached plain data. A plugin's own extension values only, never core keys. */
+export interface PluginValidationInput {
+  /** The plugin's merged `plugins.<id>` entry; `{}` when absent. */
+  readonly options: Readonly<Record<string, unknown>>;
+  /** Every named agent, and every inline role or stage agent: its path, client type, model and extension values. */
+  readonly agents: readonly {
+    readonly path: string;
+    readonly client: string | null;
+    readonly model: string | null;
+    readonly extensions: Readonly<Record<string, unknown>>;
+  }[];
+  /** Every stage of the workflow being checked: its path and extension values. */
+  readonly stages: readonly { readonly path: string; readonly extensions: Readonly<Record<string, unknown>> }[];
+}
+
+/** One problem found by `Plugin.validate`. `path` is relative to the config or workflow document. */
+export interface PluginValidationProblem {
+  readonly path: string;
+  readonly message: string;
+}
+
 export interface Plugin {
   readonly manifest: PluginManifest;
+  /** Plugin API 1.1. Optional and pure: no I/O, no clock. Called by doctor, session creation and role creation. */
+  readonly validate?: (input: PluginValidationInput) => readonly PluginValidationProblem[];
   readonly activate: (
     options: Readonly<Record<string, unknown>>,
     migent: PluginActivationContext,

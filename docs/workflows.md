@@ -26,7 +26,7 @@ schema version 7, every file a workflow produces is declared once in a
 top-level `artifacts` registry, and a stage lists the ids it writes:
 
 ```yaml
-schema_version: 7
+schema_version: 8
 artifacts:
   plan:
     description: The architecture plan for the task.
@@ -199,8 +199,9 @@ Existing sessions keep their frozen workflow and original decision format.
 
 ## Expired resumes
 
-`session.on_expired` (`ask`, `fresh`, or `resume`) overrides the policy's `on_expired` for one stage. It can be
-set with or without `session.resume_from`, and has no effect when no `resume_policies` apply.
+`prompt_cache_ttl.on_expired` (`ask`, `fresh`, or `resume`) overrides the policy's `on_expired` for one stage. It
+can be set with or without `session.resume_from`, and has no effect when no `prompt_cache_ttl` policies apply.
+Before schema version 8 the key was `session.on_expired`; `migent migrate` moves it.
 
 ```yaml
 stages:
@@ -208,6 +209,7 @@ stages:
     role: reviewer
     session:
       resume_from: implement
+    prompt_cache_ttl:
       on_expired: fresh
 ```
 
@@ -316,7 +318,7 @@ bypasses verify and never leaves a guaranteed artifact missing. Migent rejects s
 when documentation files changed, and `revise` sends the work back to `docs`.
 
 ```yaml
-schema_version: 7
+schema_version: 8
 id: docs_flow
 artifacts:
   implementation:
@@ -742,7 +744,7 @@ start while `docs` is still running. The session completes when both reviews
 approve and nothing else can start.
 
 ```yaml
-schema_version: 7
+schema_version: 8
 id: implement
 concurrency: 2
 artifacts:

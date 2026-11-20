@@ -6,6 +6,7 @@ import { type BuildCommandInput, raiseCancellation, resetCancellation } from '@n
 import { SessionLock, SessionStore } from '@nodeint/migent-session';
 import { expect, test } from 'vitest';
 
+import { withPlugins } from '../src/client.ts';
 import { continueAgent, dispatchAgent } from '../src/commands/agent.ts';
 import { cliHooks } from '../src/hooks.ts';
 import { main } from '../src/index.ts';
@@ -17,14 +18,14 @@ const question = 'status: question\n\n' + JSON.stringify({ schema_version: 1, qu
   options: [{ id: 'A', label: 'New sessions only' }, { id: 'B', label: 'Include old sessions' }],
 }] });
 
-const policy = (onExpired: string) => `resume_policies:\n  fake:\n    match: { client: fake }\n    cache_ttl: 1s\n    on_expired: ${onExpired}\n`;
+const policy = (onExpired: string, enabled = true) => `plugins:\n  prompt_cache_ttl:\n${enabled ? '' : '    enabled: false\n'}    policies:\n      fake:\n        match: { client: fake }\n        cache_ttl: 1s\n        on_expired: ${onExpired}\n`;
 
 /** A role session stopped on a question, with its source execution aged past the TTL. */
-async function asked(onExpired: string | null, responses: string[]) {
+async function asked(onExpired: string | null, responses: string[], disabled = false) {
   const root = writeFakeWorkflowWorkspace({});
-  if (onExpired !== null) appendFileSync(path.join(root, '.migent/config.yaml'), `\n${policy(onExpired)}`);
+  if (onExpired !== null) appendFileSync(path.join(root, '.migent/config.yaml'), `\n${policy(onExpired, !disabled)}`);
   const provider = new ScriptedClient([question, ...responses]);
-  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
+  const runner = withPlugins(new AgentToolRunner(registryOf({ fake: provider }), 10));
   const first = await capture(() => dispatchAgent(root, { role: 'reviewer', prompt: 'Review scope', runner, asJson: true }));
   expect(first.value).toBe(9);
   const id = readdirSync(path.join(root, '.migent/sessions'))[0]!;
@@ -97,7 +98,7 @@ async function cancelledRole(onExpired: string, responses: string[]) {
     try { raiseCancellation(15); } catch { /* the flag stays set for the command */ }
   }, 300);
   const code = await dispatchAgent(root, {
-    role: 'reviewer', prompt: 'Review the saved turn', runner: new AgentToolRunner(registryOf({ fake: provider }), 10),
+    role: 'reviewer', prompt: 'Review the saved turn', runner: withPlugins(new AgentToolRunner(registryOf({ fake: provider }), 10)),
   });
   clearTimeout(timer);
   resetCancellation();
@@ -108,7 +109,7 @@ async function cancelledRole(onExpired: string, responses: string[]) {
   const metadata = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
   writeFileSync(file, JSON.stringify({ ...metadata, completed_at: '2026-01-01T00:00:00.000+00:00' }));
   ageProviderEvents(file);
-  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
+  const runner = withPlugins(new AgentToolRunner(registryOf({ fake: provider }), 10));
   return { root, id, provider, runner, file };
 }
 
@@ -258,7 +259,7 @@ async function cancelledLaterTurn(onExpired: string, responses: string[]) {
   const root = writeFakeWorkflowWorkspace({});
   appendFileSync(path.join(root, '.migent/config.yaml'), `\n${policy(onExpired)}`);
   const provider = new HangSecond([question, 'status: complete\n\nLost', ...responses]);
-  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
+  const runner = withPlugins(new AgentToolRunner(registryOf({ fake: provider }), 10));
   const first = await capture(() => dispatchAgent(root, { role: 'reviewer', prompt: 'ORIGINAL_TASK', runner }));
   expect(first.value).toBe(9);
   const id = readdirSync(path.join(root, '.migent/sessions'))[0]!;
@@ -382,5 +383,66 @@ test('role session: a legacy cancelled reply without origin is re-sent without i
   try {
     expect(readFileSync(path.join(directory, 'events.jsonl'), 'utf8')).not.toContain('"origin":"human"');
     expect(inputFiles(run.root, run.id)).toEqual([]);
+  } finally { removeWorkspace(run.root); }
+}, 30_000);
+
+test('a disabled prompt_cache_ttl plugin resumes whatever its policies say, and records no expiry (AC7)', async () => {
+  const run = await asked('ask', ['status: complete\n\nDone'], true);
+  try {
+    const replied = await capture(() => continueAgent(run.root, { sessionId: run.id, reply: 'New only', runner: run.runner }));
+    expect(replied.value).toBe(0);
+    expect(run.provider.calls[1]?.agent_id).toBe('native-session-1');
+    const events = readFileSync(path.join(run.root, '.migent/sessions', run.id, 'events.jsonl'), 'utf8');
+    expect(events).not.toContain('resume.expired');
+  } finally { removeWorkspace(run.root); }
+}, 30_000);
+
+/** Turns the role session into a pre-plugin one: no freeze event, and a policy stamp on its execution. */
+type LegacyStamp = { name: string; policies: Record<string, unknown> };
+
+function stampLegacy(run: { root: string; id: string }, stamp: LegacyStamp): void {
+  const directory = path.join(run.root, '.migent/sessions', run.id);
+  const events = path.join(directory, 'events.jsonl');
+  const kept = readFileSync(events, 'utf8').split('\n').filter((line) => !line.includes('"plugins.frozen"'));
+  writeFileSync(events, kept.join('\n'));
+  const executions = path.join(directory, 'executions');
+  const file = path.join(executions, readdirSync(executions)[0]!, 'execution.json');
+  const metadata = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+  writeFileSync(file, JSON.stringify({ ...metadata, resume_policy: stamp }));
+}
+
+test('a legacy role stamp keeps its explicit policy name, which can differ from the matching one', async () => {
+  const run = await asked(null, ['status: complete\n\nDone']);
+  try {
+    const policies = {
+      fake: { match: { client: 'fake' }, cache_ttl: '1h', on_expired: 'resume' },
+      named: { cache_ttl: '1s', on_expired: 'ask' },
+    };
+    stampLegacy(run, { name: 'named', policies });
+    const stopped = await capture(() => continueAgent(run.root, { sessionId: run.id, reply: 'New only', runner: run.runner }));
+    expect(stopped.value).toBe(10);
+    expect(run.provider.calls).toHaveLength(1);
+  } finally { removeWorkspace(run.root); }
+}, 30_000);
+
+test('a live enabled: false turns off the gate of a legacy role session', async () => {
+  const run = await asked(null, ['status: complete\n\nDone']);
+  try {
+    appendFileSync(path.join(run.root, '.migent/config.yaml'), '\nplugins:\n  prompt_cache_ttl:\n    enabled: false\n');
+    stampLegacy(run, { name: 'fake', policies: { fake: { match: { client: 'fake' }, cache_ttl: '1s', on_expired: 'ask' } } });
+    const replied = await capture(() => continueAgent(run.root, { sessionId: run.id, reply: 'New only', runner: run.runner }));
+    expect(replied.value).toBe(0);
+    expect(run.provider.calls[1]?.agent_id).toBe('native-session-1');
+  } finally { removeWorkspace(run.root); }
+}, 30_000);
+
+test('a role session created before the plugin keeps gating from its stamped policy', async () => {
+  const run = await asked(null, ['status: complete\n\nDone']);
+  try {
+    const policies = { fake: { match: { client: 'fake' }, cache_ttl: '1s', on_expired: 'ask' } };
+    stampLegacy(run, { name: 'fake', policies });
+    const stopped = await capture(() => continueAgent(run.root, { sessionId: run.id, reply: 'New only', runner: run.runner }));
+    expect(stopped.value).toBe(10);
+    expect(run.provider.calls).toHaveLength(1);
   } finally { removeWorkspace(run.root); }
 }, 30_000);

@@ -3,7 +3,6 @@ import { isRecord, isRoleStage, SCHEMA_V2, type WorkflowDocument } from '@nodein
 
 import { corrupt } from './freeze-corrupt.js';
 import { targetExtensionField } from './freeze-extensions.js';
-import { freezeStagePolicy } from './freeze-resume-policy.js';
 
 /** The `targets` mapping of a freeze: one client, model and option set per stage. */
 export function readTargets(value: unknown, filePath: string, schemaVersion: unknown): Record<string, StageTarget> {
@@ -66,30 +65,26 @@ export interface ResolvedFreezeTargets {
   readonly roleTargets: Record<string, StageTarget>;
 }
 
-/** Resolves every role stage of `workflow` against `config`. `resumePolicies` is null when none is configured. */
+/** Resolves every role stage of `workflow` against `config`. */
 export function resolveFreezeTargets(
   workflow: WorkflowDocument,
   resolve: {
     config: Record<string, unknown>;
     spec: ResolveSpecOptions;
-    resumePolicies: Record<string, unknown> | null;
   },
 ): ResolvedFreezeTargets {
-  const { config, spec, resumePolicies } = resolve;
+  const { config, spec } = resolve;
   const out: ResolvedFreezeTargets = { written: {}, resolved: {}, roleTargets: {} };
   for (const stage of Object.values(workflow.stages)) {
     if (!isRoleStage(stage)) continue;
     const target = resolveStageSpec(config, stage, spec);
     out.resolved[stage.id] = target;
     out.roleTargets[stage.role] = target;
-    // Always selected, so an agent naming an unknown policy is refused even when none is configured.
-    const policy = freezeStagePolicy(config, stage, target);
     out.written[stage.id] = {
       client: target.client,
       model: target.model,
       options: { ...target.options },
       ...targetExtensionField(target),
-      ...(resumePolicies === null ? {} : { resume_policy: policy }),
     };
   }
   return out;

@@ -304,7 +304,7 @@ test('an invalid session id throws and unknown, role, and metadata problems are 
 });
 
 const VERIFY_ONLY = `\
-schema_version: 7
+schema_version: 8
 id: checks
 stages:
   - id: gate
@@ -346,7 +346,7 @@ test('distinct clients are checked as distinct executables', () => {
   writeFileSync(
     path.join(workspace, '.migent', 'config.yaml'),
     `\
-schema_version: 7
+schema_version: 8
 agents:
   a:
     client:
@@ -366,7 +366,7 @@ roles:
   );
   writeFileSync(
     path.join(workspace, '.migent', 'workflows', 'two.yaml'),
-    'schema_version: 7\nid: two\nstages:\n  - id: one\n    role: developer\n    depends_on: []\n  - id: two\n    role: reviewer\n    depends_on: [one]\n',
+    'schema_version: 8\nid: two\nstages:\n  - id: one\n    role: developer\n    depends_on: []\n  - id: two\n    role: reviewer\n    depends_on: [one]\n',
     'utf8',
   );
   const draftId = createPreparedSession(workspace, { title: 'wave', workflowId: 'two', priorSessionId: null });

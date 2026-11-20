@@ -1,6 +1,6 @@
 import { type PluginManifest, type PluginRegistry } from '@nodeint/migent-contracts';
 import type { ClientRegistry } from '@nodeint/migent-kernel';
-import { pluginEntryIssues, registryManifests, resolvePluginTarget } from '@nodeint/migent-kernel';
+import { ConfigurationError, pluginEntryIssues, pluginValidationProblems, registryManifests, resolvePluginTarget } from '@nodeint/migent-kernel';
 import type { PluginFreezeInput, PluginsFrozenEntries } from '@nodeint/migent-session';
 
 /** An enabled entry: anything but a mapping with `enabled: false`. A non-mapping counts as enabled and invalid. */
@@ -43,9 +43,17 @@ function withDefaultEntries(config: Record<string, unknown>, registry: PluginReg
 }
 
 /** Validates the merged `plugins` section and throws the first issue, so a freeze write fails with exit 2. */
-function assertPluginsValid(config: Record<string, unknown>, registry: PluginRegistry): void {
+function assertPluginsValid(
+  config: Record<string, unknown>,
+  registry: PluginRegistry,
+  scope: { workflow: Record<string, unknown> | undefined; clients: ClientRegistry },
+): void {
   const [first] = pluginEntryIssues({ plugins: config.plugins, manifests: registryManifests(registry) });
   if (first !== undefined) throw first;
+  const [problem] = pluginValidationProblems(registry, config, scope);
+  if (problem !== undefined) {
+    throw new ConfigurationError(problem.message, { code: 'plugin-invalid', path: problem.path });
+  }
 }
 
 /** What a freeze write needs from the host: the classifier, and the validated `plugins.frozen` snapshot. */
@@ -53,8 +61,8 @@ export function pluginFreezeInput(registry: PluginRegistry, clients: ClientRegis
   return {
     classify: pluginClassifier(registry),
     withDefaults: (config) => withDefaultEntries(config, registry),
-    snapshot: (config) => {
-      assertPluginsValid(config, registry);
+    snapshot: (config, workflow) => {
+      assertPluginsValid(config, registry, { workflow, clients });
       const plugins = config.plugins as Record<string, unknown>;
       return Object.entries(plugins).map(([id, entry]): PluginsFrozenEntries[number] => {
         const manifest = registry.get(id)?.manifest;

@@ -26,10 +26,17 @@
         }
       ]
     },
-    "resume_policy": {
-      "type": "string",
-      "pattern": "\\S",
-      "description": "A string with a non-blank value."
+    "prompt_cache_ttl": {
+      "type": "object",
+      "properties": {
+        "policy": {
+          "type": "string",
+          "pattern": "\\S",
+          "description": "The name of a `plugins.prompt_cache_ttl.policies` entry."
+        }
+      },
+      "additionalProperties": false,
+      "description": "Selects the prompt cache policy of the agent."
     }
   },
   "title": "Agent (effective)",

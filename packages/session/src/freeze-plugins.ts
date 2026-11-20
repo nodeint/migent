@@ -17,8 +17,11 @@ export interface PluginFreezeInput {
    * Returns the config unchanged when there are none.
    */
   readonly withDefaults?: (config: Record<string, unknown>) => Record<string, unknown>;
-  /** Validates the merged config's plugin entries and returns the snapshot. Throws a `ConfigurationError`. */
-  readonly snapshot: (config: Record<string, unknown>) => PluginsFrozenEntries;
+  /**
+   * Validates the merged config's plugin entries, and the workflow's inline agents and stage keys when given,
+   * and returns the snapshot. Throws a `ConfigurationError`.
+   */
+  readonly snapshot: (config: Record<string, unknown>, workflow?: Record<string, unknown>) => PluginsFrozenEntries;
 }
 
 /**

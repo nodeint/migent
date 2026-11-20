@@ -27,7 +27,7 @@ const catalog: ExtensionCatalog = [
 ];
 
 const stage = (id: string, extra: Mapping = {}): Mapping => ({ id, role: 'dev', depends_on: [], ...extra });
-const doc = (stages: Mapping[], extra: Mapping = {}): Mapping => ({ schema_version: 7, id: 'flow', stages, ...extra });
+const doc = (stages: Mapping[], extra: Mapping = {}): Mapping => ({ schema_version: 8, id: 'flow', stages, ...extra });
 const options = { extensions: catalog };
 
 test('the parser and the draft collector accept claimed keys and the model carries them', () => {

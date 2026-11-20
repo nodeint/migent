@@ -1,26 +1,29 @@
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import { type AgentToolRunner, gateRoleResume, type RolePolicy, type RunResult, selectRolePolicy, storedRolePolicy } from '@nodeint/migent-engine';
+import { type AgentToolRunner, gateRoleResume, type RunResult } from '@nodeint/migent-engine';
 import { buildStageReplyPrompt, loadRoleResponsibilities, loadWorkspaceConfig, prependRoleInstructions } from '@nodeint/migent-kernel';
-import { type HumanInput, type QuestionAnswerRecord, SessionStore, watchSnapshot } from '@nodeint/migent-session';
+import { type HumanInput, type QuestionAnswerRecord, readRoleFreeze, SessionStore, watchSnapshot } from '@nodeint/migent-session';
 
 import { formatResumeDecision, printNotice } from '../display.js';
 import { EXIT_RESUME_EXPIRED } from '../exits.js';
 import type { AgentProfile } from './agent.js';
 import type { ContinueState } from './agent-continue.js';
 
-export type RoleGate = { verdict: 'resume' | 'fresh' | 'ask'; stamp: RolePolicy | null; skipped: { source_execution_id: string; reason: 'expired' } | null };
+export type RoleGate = { verdict: 'resume' | 'fresh' | 'ask'; skipped: { source_execution_id: string; reason: 'expired' } | null };
 
 /** The resume gate for a role session, before `runner.run`. A session created without a policy is never gated. */
-export function gateRole(
-  scope: { workspace: string; sessionId: string; role: string; runner: AgentToolRunner },
+export async function gateRole(
+  scope: { workspace: string; sessionId: string; role: string; runner: AgentToolRunner; profile: AgentProfile },
   sourceExecutionId: string | null,
-): RoleGate {
-  if (sourceExecutionId === null) return { verdict: 'resume', stamp: null, skipped: null };
-  const { workspace, sessionId, role, runner } = scope;
-  const gated = gateRoleResume({
+): Promise<RoleGate> {
+  if (sourceExecutionId === null) return { verdict: 'resume', skipped: null };
+  const { workspace, sessionId, role, runner, profile } = scope;
+  // A session with a role freeze gates on the frozen client and model, not on this run's live profile.
+  const frozen = readRoleFreeze(path.join(workspace, '.migent', 'sessions', sessionId))?.target ?? profile;
+  const gated = await gateRoleResume({
     store: new SessionStore(workspace), workspace, sessionId, role, sourceExecutionId, clients: runner.registry,
+    target: { client: frozen.client, model: frozen.model }, interceptors: runner.interceptors,
   });
   const skipped = gated.verdict === 'fresh' ? { source_execution_id: sourceExecutionId, reason: 'expired' as const } : null;
   return { ...gated, skipped };
@@ -35,16 +38,6 @@ export function roleResumeExpired(workspace: string, sessionId: string): number 
   }
   for (const decision of pending) printNotice(formatResumeDecision(decision, sessionId));
   return EXIT_RESUME_EXPIRED;
-}
-
-/** A new role session selects its policy once, from the config and the resolved client and model. */
-export function newRolePolicy(
-  workspace: string,
-  session: { createdSession: boolean; role: string; target: AgentProfile },
-): ReturnType<typeof selectRolePolicy> {
-  if (!session.createdSession) return null;
-  const { client, model } = session.target;
-  return selectRolePolicy(workspace, { role: session.role, client, model });
 }
 
 /** A free-text reply the human typed, which the agent receives unchanged. */
@@ -91,15 +84,15 @@ function cutOffText(scope: { workspace: string; sessionId: string }, executionId
 }
 
 /** One verdict per cancelled execution, decided before any of them is reopened. */
-export function judgeRoleCancelled(
-  scope: { workspace: string; sessionId: string; role: string; runner: AgentToolRunner },
+export async function judgeRoleCancelled(
+  scope: { workspace: string; sessionId: string; role: string; runner: AgentToolRunner; profile: AgentProfile },
   cancelled: readonly { executionId: string }[],
-): RoleCancelledVerdicts {
+): Promise<RoleCancelledVerdicts> {
   const skip = new Set<string>();
   const fresh: { executionId: string; text: string }[] = [];
   let asked = false;
   for (const item of cancelled) {
-    const { verdict } = gateRole(scope, item.executionId);
+    const { verdict } = await gateRole(scope, item.executionId);
     if (verdict === 'resume') continue;
     skip.add(item.executionId);
     if (verdict === 'ask') asked = true;
@@ -116,7 +109,6 @@ export async function runFreshAttempt(
   const { workspace, sessionId, role, runner, profile } = scope;
   const store = new SessionStore(workspace);
   store.supersedeCancelled(sessionId, role, { text: item.text, origin: 'cut_off' });
-  const stamp = sourceStamp(workspace, sessionId, item.executionId);
   return runner.run({
     client: profile.client,
     model: profile.model,
@@ -127,7 +119,6 @@ export async function runFreshAttempt(
     sessionId,
     resumeExecutionId: null,
     stageId: role,
-    resumePolicy: stamp,
     resumeSkipped: { source_execution_id: item.executionId, reason: 'expired' },
   });
 }
@@ -175,10 +166,4 @@ function sentInput(conversationFile: string, which: 'first' | 'last'): string {
 function taskOf(store: SessionStore, sessionId: string): string {
   const {task} = store.readSessionStatus(sessionId);
   return typeof task === 'string' ? task : '';
-}
-
-/** The policy stamped on a source execution, so a fresh attempt inherits it. */
-function sourceStamp(workspace: string, sessionId: string, executionId: string): RolePolicy | null {
-  const context = new SessionStore(workspace).executionContext(sessionId, executionId);
-  return context === null ? null : (storedRolePolicy(context.directory)?.stamp ?? null);
 }

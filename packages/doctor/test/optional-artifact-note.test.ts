@@ -9,7 +9,7 @@ import { type ConfigLoad,diagnose, diagnoseSession, validateWorkflowDraft } from
 import { defaultClients, STAGE_CONFIG, tempDir, whichFound } from './support.ts';
 
 const WORKFLOW = {
-  schema_version: 7,
+  schema_version: 8,
   id: 'notes',
   artifacts: {
     main: { file: 'main.md' },
@@ -30,7 +30,7 @@ const WORKFLOW = {
   downstream: [{ workflow: 'notes', task: 'Again', artifacts: { context: 'extra', required_one: 'main' } }],
 };
 
-const TEXT = `schema_version: 7
+const TEXT = `schema_version: 8
 id: notes
 artifacts:
   main: { file: main.md }
@@ -67,7 +67,7 @@ function workspaceWithNotes(): string {
 }
 
 test('draft validation warns once at the mapping and still passes', () => {
-  const project = { schema_version: 7, agents: { fast: { client: { type: 'grok' }, model: 'grok-4.6' } }, roles: { developer: { agent: 'fast' }, reviewer: { agent: 'fast' } } };
+  const project = { schema_version: 8, agents: { fast: { client: { type: 'grok' }, model: 'grok-4.6' } }, roles: { developer: { agent: 'fast' }, reviewer: { agent: 'fast' } } };
   const config: ConfigLoad = { ...mergeConfigLayers(project, null), layers: { project, local: null } };
   const out = validateWorkflowDraft({ draft: WORKFLOW, file: 'notes.yaml', siblings: [], config }, defaultClients());
   const notes = out.filter((item) => item.code === 'downstream-optional-artifact');

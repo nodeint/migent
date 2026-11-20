@@ -39,7 +39,7 @@ const registryWith = (...plugins: Plugin[]): PluginRegistry => ({
 const base = (withKey: boolean): string =>
   `agents:\n  fake:\n    client: { type: fake }\n    model: m1\nroles:\n  developer:\n    agent: fake\n${withKey ? '    demo_role: careful\n' : ''}`;
 const WORKFLOW = [
-  'schema_version: 7', 'id: wf', 'stages:', '  - id: one', '    role: developer',
+  'schema_version: 8', 'id: wf', 'stages:', '  - id: one', '    role: developer',
   '  - id: two', '    role: developer', '    depends_on: [one]', '',
 ].join('\n');
 

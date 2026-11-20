@@ -53,7 +53,7 @@ roles:
     agent: fake
 `;
 
-const WORKFLOW = `schema_version: 7
+const WORKFLOW = `schema_version: 8
 id: wf
 stages:
   - id: one

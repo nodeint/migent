@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 
 import { buildStagePrompt, buildStageReplyPrompt, buildVerifyRepairPrompt, type verifyExhaustedExecution } from '@nodeint/migent-kernel';
 import type { TurnKind } from '@nodeint/migent-prompts';
-import { type freezeSessionTask, frozenResumePolicy, type readWorkflowFreeze, SessionStore } from '@nodeint/migent-session';
+import { type freezeSessionTask, frozenStageTarget, type readWorkflowFreeze, SessionStore } from '@nodeint/migent-session';
 import type { RoleStageSpec } from '@nodeint/migent-workflow';
 
 import type { ExecuteRun } from './dispatch.js';
@@ -18,28 +18,29 @@ const NO_GATE: GateOutcome = { verdict: 'resume', sourceExecutionId: null };
 
 /**
  * The resume gate for one stage, before its prompt exists: a saved reply is taken only when the stage dispatches.
- * Runs only when the frozen session selected a policy and the stage would resume a conversation.
+ * Runs only when the stage would resume a conversation; the plugins decide whether the cache expired.
  */
-export function gateStageResume(
+export async function gateStageResume(
   run: Pick<ExecuteRun, 'workspace' | 'workflow' | 'sessionId' | 'runner'>,
-  stage: { stageId: string; stageSpec: RoleStageSpec; freeze: ReturnType<typeof readWorkflowFreeze> },
+  stage: { stageId: string; freeze: ReturnType<typeof readWorkflowFreeze> },
   source: { executionId?: string } = {},
-): GateOutcome {
+): Promise<GateOutcome> {
   const { workspace, workflow, sessionId, runner } = run;
-  const { stageId, stageSpec, freeze } = stage;
-  const policy = freeze === null ? null : frozenResumePolicy(freeze, stageId);
-  if (policy === null) return NO_GATE;
+  const { stageId, freeze } = stage;
+  if (freeze === null) return NO_GATE;
   const sourceExecutionId = source.executionId ?? dispatchResumeExecution(workspace, workflow, { sessionId, stageId });
   if (!sourceExecutionId) return NO_GATE;
-  const { verdict } = gateResume({
+  const { client, model } = frozenStageTarget(freeze, stageId);
+  const { verdict } = await gateResume({
     store: new SessionStore(workspace),
     workspace,
     sessionId,
     stageId,
     sourceExecutionId,
-    policy,
-    stageOnExpired: stageSpec.onExpired,
     clients: runner.registry,
+    path: 'dispatch',
+    target: { client, model },
+    interceptors: runner.interceptors,
   });
   return verdict === 'resume' ? NO_GATE : { verdict, sourceExecutionId };
 }

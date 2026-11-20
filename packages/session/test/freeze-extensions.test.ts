@@ -22,7 +22,7 @@ const catalog: ExtensionCatalog = [{
 
 test('renderWorkflowSource writes claimed keys flat and they round-trip', () => {
   const source = {
-    schema_version: 7,
+    schema_version: 8,
     id: 'flow',
     fixture_flow: 'x',
     stages: [{ id: 'a', role: 'dev', depends_on: [], fixture_stage: { mode: 'fast' } }],
@@ -77,7 +77,7 @@ roles:
     writeFileSync(path.join(workspace, '.migent/config.yaml'), config);
     const workflow = parseWorkflowMapping(
       {
-        schema_version: 7,
+        schema_version: 8,
         id: 'flow',
         ...(catalog.length > 0 && catalog[0].plugin === 'fixture' ? { fixture_flow: 'x' } : {}),
         stages: [{ id: 'a', role: 'developer', depends_on: [], ...(catalog[0]?.plugin === 'fixture' ? { fixture_stage: { mode: 'fast' } } : {}) }],

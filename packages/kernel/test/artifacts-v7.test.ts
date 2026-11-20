@@ -19,7 +19,7 @@ function parse(text: string) {
   return parseWorkflowMapping(parseYamlDocument(text) as Record<string, unknown>, 't.yaml');
 }
 
-const BASE = `schema_version: 7
+const BASE = `schema_version: 8
 id: plan
 artifacts:
   plan: { file: plan.md, description: The plan. }
@@ -43,7 +43,7 @@ stages:
 
 test('v7 builds the registry, stage references and decision artifacts', () => {
   const document = parse(BASE);
-  expect(document.schemaVersion).toBe(7);
+  expect(document.schemaVersion).toBe(8);
   expect(document.artifacts?.map((a) => [a.id, a.file, a.required, a.producer])).toEqual([
     ['plan', 'plan.md', true, { stage: 'plan', decision: null }],
     ['plan-comments', 'plan-comments.md', false, { stage: 'review', decision: 'approved' }],
@@ -129,7 +129,7 @@ test("resolution picks the chosen decision's artifact and holds only required on
 });
 
 test('a skip supersedes the artifacts of the stages it reaches', () => {
-  const text = `schema_version: 7
+  const text = `schema_version: 8
 id: gate
 artifacts:
   out: { file: out.md, required: false }
@@ -180,7 +180,7 @@ function migrate(text: string) {
 
 test('migration converts v6 outputs and reports unpublished artifacts as now published', () => {
   const result = migrate(V6);
-  expect(result.text).toContain('schema_version: 7');
+  expect(result.text).toContain('schema_version: 8');
   expect(result.text).not.toContain('produces:');
   expect(result.text).not.toContain('outputs:');
   const document = parse(result.text);

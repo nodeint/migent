@@ -2,7 +2,7 @@ import type { TSchema } from 'typebox';
 
 /**
  * Config sections: namespaced top-level config keys that a feature registers, next to the core
- * keys (`schema_version`, `agents`, `roles`, `resume_policies`). Pure data. The kernel merges and
+ * keys (`schema_version`, `agents`, `roles`). Pure data. The kernel merges and
  * validates sections, the session package freezes and resolves them, and neither imports the
  * feature that owns one. The list lives in `config-section-registry.ts`; an unregistered top-level key stays ignored.
  */

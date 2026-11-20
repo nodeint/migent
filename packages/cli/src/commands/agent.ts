@@ -2,8 +2,8 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { RoleRunResult, RoleRunResults } from '@nodeint/migent-contracts';
-import { AgentToolRunner, type RunResult } from '@nodeint/migent-engine';
-import { CancellationRequested, ConfigurationError, legacyClientOf, log, resolveRoleTarget } from '@nodeint/migent-kernel';
+import { AgentToolRunner, ensureRoleSessionFreeze, type RunResult, withRolePluginScope } from '@nodeint/migent-engine';
+import { CancellationRequested, ConfigurationError, legacyClientOf, log, resolveRoleTarget, type StageTarget } from '@nodeint/migent-kernel';
 import { createAgentSession, type HumanInput, isSessionLockLost, repairSessionUnlocked, requireAgentSession, SessionLock, SessionStore, stringOptions } from '@nodeint/migent-session';
 import { type OptionValues } from 'commander';
 
@@ -17,7 +17,7 @@ import { bindCancellationSignals } from '../signals.js';
 import { optionalText, stringList } from '../text.js';
 import { findWorkspace, invocationCwdPath, resolvePrompt } from '../workspace.js';
 import { continueState, continueTurn } from './agent-continue.js';
-import { answersInput, freshRolePrompt, gateRole, judgeRoleCancelled, newRolePolicy, recordAnswer, resumeSource, rolePrompt, roleResumeExpired, runFreshAttempt } from './agent-resume.js';
+import { answersInput, freshRolePrompt, gateRole, judgeRoleCancelled, recordAnswer, resumeSource, rolePrompt, roleResumeExpired, runFreshAttempt } from './agent-resume.js';
 
 const CLIENT_MAPPING = 'claude→claude-code, codex→codex, grok→grok, agy→agy, opencode→opencode';
 
@@ -62,7 +62,7 @@ async function dispatchLocked(context: {
   sessionId: string;
   createdSession: boolean;
   args: DispatchArgs;
-  target: AgentProfile;
+  target: StageTarget;
   runner: AgentToolRunner;
   lock: SessionLock;
 }): Promise<number> {
@@ -70,13 +70,16 @@ async function dispatchLocked(context: {
   const resume = context.createdSession
     ? { cancelled: false, executionId: null }
     : resumeState(workspace, sessionId);
+  // The role freeze exists before the first execution, whichever entry point starts it.
+  ensureRoleSessionFreeze({ workspace, sessionId }, runner, target);
   printProfileNotice(args.role, target);
-  const outcome = await guardRoleRun(lock, sessionId, async () => {
+  const outcome = await runScoped({ lock, workspace, sessionId, runner, started: createdSession }, async () => {
     const scope = { role: args.role, runner, profile: target };
     if (resume.cancelled) return continueCancelledExecutions(workspace, sessionId, scope);
     // The answer is recorded before the gate, so an `ask` stop keeps it for the decision.
     const { text: input, human } = dispatchInput(workspace, sessionId, args);
-    const gated = gateRole({ workspace, sessionId, role: args.role, runner }, resume.executionId);
+    const gateScope = { workspace, sessionId, role: args.role, runner, profile: target };
+    const gated = await gateRole(gateScope, resume.executionId);
     if (gated.verdict === 'ask') return roleResumeExpired(workspace, sessionId);
     const prompt = gated.verdict === 'fresh'
       ? freshRolePrompt({ workspace, sessionId, role: args.role }, input)
@@ -91,7 +94,6 @@ async function dispatchLocked(context: {
       sessionId,
       resumeExecutionId: gated.verdict === 'fresh' ? null : resume.executionId,
       stageId: args.role,
-      resumePolicy: gated.stamp ?? newRolePolicy(workspace, { createdSession, role: args.role, target }),
       resumeSkipped: gated.skipped,
     });
     return [result];
@@ -159,6 +161,15 @@ async function withSessionLock(
   }
 }
 
+/** Runs a role body under the cancellation guard and the plugin scope of its session. */
+function runScoped<T>(
+  session: { lock: SessionLock; workspace: string; sessionId: string; runner: AgentToolRunner; started?: boolean },
+  body: () => Promise<T>,
+): Promise<T | number> {
+  const { lock, workspace, sessionId, runner, started = false } = session;
+  return guardRoleRun(lock, sessionId, () => withRolePluginScope({ workspace, sessionId, started }, runner, body));
+}
+
 async function guardRoleRun<T>(
   lock: SessionLock,
   sessionId: string,
@@ -217,18 +228,28 @@ async function continueLocked(
     return EXIT_QUESTION;
   }
   const latest = store.latestExecution(args.sessionId);
-  if (latest === null) throw new ConfigurationError(`Session ${args.sessionId} has no execution.`);
+  if (latest === null) {
+    // A role session that crashed before its freeze records it here, then reports the missing execution.
+    const runner = args.runner ?? cliHooks.runner ?? withPlugins(new AgentToolRunner(clientRegistry()));
+    ensureRoleSessionFreeze(
+      { workspace, sessionId: args.sessionId },
+      runner,
+      resolveRoleTarget(workspace, state.role, { registry: runner.registry }),
+    );
+    throw new ConfigurationError(`Session ${args.sessionId} has no execution.`);
+  }
   const profile = executionProfile(latest.directory, latest.executionId);
   const { role } = state;
   printProfileNotice(role, profile);
-  return guardRoleRun(lock, args.sessionId, async () => {
-    const runner = args.runner ?? cliHooks.runner ?? withPlugins(new AgentToolRunner(clientRegistry()));
+  const runner = args.runner ?? cliHooks.runner ?? withPlugins(new AgentToolRunner(clientRegistry()));
+  return runScoped({ lock, workspace, sessionId: args.sessionId, runner }, async () => {
     if (state.sessionStatus === 'cancelled') {
       return await runCancelledRole(workspace, args.sessionId, { role, profile, runner, asJson: false });
     }
     // The answer is recorded before the gate, so an `ask` stop leaves it saved and the decision consumes it once.
     const recordedAnswer = recordAnswer(store, { sessionId: args.sessionId, state, explicitReply: args.reply });
-    const gated = gateRole({ workspace, sessionId: args.sessionId, role, runner }, resumeSource(state, latest));
+    const gateScope = { workspace, sessionId: args.sessionId, role, runner, profile };
+    const gated = await gateRole(gateScope, resumeSource(state, latest));
     if (gated.verdict === 'ask') return roleResumeExpired(workspace, args.sessionId);
     const next = continueTurn(
       { workspace, store, sessionId: args.sessionId, explicitReply: args.reply, recordedAnswer },
@@ -246,7 +267,6 @@ async function continueLocked(
       sessionId: args.sessionId,
       resumeExecutionId: gated.verdict === 'fresh' ? null : next.resumeId,
       stageId: role,
-      resumePolicy: gated.stamp,
       resumeSkipped: gated.skipped,
     });
     printAgent({ ...result }, { role: role, client: profile.client, model: profile.model }, workspace);
@@ -266,7 +286,8 @@ async function continueCancelledExecutions(
 ): Promise<RunResult[] | number> {
   const { role, runner, profile } = scope;
   const store = new SessionStore(workspace);
-  const verdicts = judgeRoleCancelled({ workspace, sessionId, role, runner }, store.reopenableCancelled(sessionId));
+  const gateScope = { workspace, sessionId, role, runner, profile };
+  const verdicts = await judgeRoleCancelled(gateScope, store.reopenableCancelled(sessionId));
   const reopened = store.reopenCancelledExecutions(sessionId, false, { skip: verdicts.skip });
   for (const item of reopened) {
     log(`session ${sessionId} was cancelled during ${item.executionId}. Resuming that execution.`);

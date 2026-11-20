@@ -83,7 +83,7 @@ function project(config: string, stageOptions = ''): string {
   const workspace = tempDir('migent-native-');
   mkdirSync(path.join(workspace, '.migent', 'workflows'), { recursive: true });
   writeFileSync(path.join(workspace, '.migent', 'config.yaml'), config, 'utf8');
-  writeFileSync(path.join(workspace, '.migent', 'workflows', 'w.yaml'), `schema_version: 7
+  writeFileSync(path.join(workspace, '.migent', 'workflows', 'w.yaml'), `schema_version: 8
 id: w
 stages:
   - id: build
@@ -94,7 +94,7 @@ ${stageOptions}    responsibilities: []
   return workspace;
 }
 
-const CONFIG = (options: string): string => `schema_version: 7
+const CONFIG = (options: string): string => `schema_version: 8
 agents:
   a:
     client:

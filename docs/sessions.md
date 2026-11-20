@@ -85,8 +85,8 @@ The session-level files have distinct purposes:
   warn on stderr. `--refresh-workflow` replaces it. A missing file means the
   session uses the live workflow and config. Repair does not rebuild it.
   Agent sessions do not have this file. Its `config` key holds only registered
-  config sections; frozen `roles`, `targets`, and `resume_policies` stay at the
-  top level.
+  config sections; frozen `roles` and `targets` stay at the
+  top level. A session frozen before schema version 8 may still hold `resume_policies`; it is read, never rewritten.
 - Plugin extension keys are frozen too, without a `schema_version` bump. `workflow` holds the workflow and stage keys,
   flat. `targets.<stage>.extensions` holds the keys on the resolved agent, and `role_extensions` the keys on each role,
   both grouped by plugin id. `extensions` records, for every plugin with a catalog entry at freeze time, its
@@ -102,6 +102,18 @@ The session-level files have distinct purposes:
   freeze hash and the entry versions and pinned agent targets. A freeze file
   that no longer matches the last event, or a missing or upgraded plugin, stops
   the resume with exit code 2.
+- A role session has no freeze file. Before its first execution it records one `plugins.frozen` event whose
+  `role_freeze` object holds the frozen plugin entries, the resolved client, model and extension keys, and the
+  extension versions; `freeze_hash` is the SHA-256 of that object. A role session that already has an execution
+  and no `role_freeze` (an older session) records none and runs as before. A role run then reads its plugins from
+  `role_freeze`, so a later config edit does not change them.
+- A role session started before the `prompt_cache_ttl` plugin has no `plugins.frozen` event but may carry a
+  `resume_policy` stamp (`name` and `policies`) in the `execution.json` of an execution. Migent reads the newest stamp
+  in memory as the plugin's options and its agent `policy`, and never rewrites it. A live
+  `plugins.prompt_cache_ttl.enabled: false` still turns the gate off for such a session.
+- Downgrading: a session written by this version does not carry `resume_policies` or `resume_policy`, so an older
+  Migent that reads it resumes every conversation without the cache gate. A workflow session frozen by an older
+  Migent keeps its freeze file as written; this version reads its policies and never rewrites them.
 - The resume gate checks extension owners first. Every plugin that owns at least one frozen extension key, whether
   enabled, disabled, or advisory, must still be registered (`extension-unregistered`) and declare the frozen
   extension version (`extension-version-changed`). Both errors name the plugin and the session, and say to use the

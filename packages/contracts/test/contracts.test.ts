@@ -4,11 +4,9 @@ import {
   AnyJsonObject,
   CLI_CONTRACTS,
   ConfigLayer,
-  EffectiveConfig,
   isValid,
   LegacyLifecycleEvent,
   LifecycleEventV2,
-  ResumePolicy,
   SealedMetrics,
   SealedMetricsCurrent,
   SealedMetricsHistorical,
@@ -48,27 +46,15 @@ describe('known shapes are opt-in descriptions', () => {
   });
 });
 
-describe('resume policy contracts', () => {
-  const policy = { match: { client: 'claude', model: 'claude-*' }, cache_ttl: '5m', margin: '30s', min_context_tokens: 1000, on_expired: 'ask' };
-
-  test('config accepts a valid policy and an agent reference', () => {
-    expect(isValid(ConfigLayer, { resume_policies: { default: { cache_ttl: '1h' }, claude: policy }, agents: { dev: { resume_policy: 'claude' } } })).toBe(true);
-    expect(isValid(EffectiveConfig, { roles: {}, resume_policies: { claude: policy } })).toBe(true);
+describe('prompt cache ttl contracts', () => {
+  test('the core config no longer owns resume policies', () => {
+    expect(Object.keys(ConfigLayer.properties)).not.toContain('resume_policies');
+    expect(isValid(ConfigLayer, { plugins: { prompt_cache_ttl: { policies: { default: { cache_ttl: '1h' } } } } })).toBe(true);
   });
 
-  test('config rejects an unknown key, a missing cache_ttl and a bad on_expired', () => {
-    expect(isValid(ResumePolicy, { cache_ttl: '5m', extra: 1 })).toBe(false);
-    expect(isValid(ResumePolicy, { margin: '30s' })).toBe(false);
-    expect(isValid(ResumePolicy, { cache_ttl: '5m', on_expired: 'never' })).toBe(false);
-    expect(isValid(ResumePolicy, { cache_ttl: '5 minutes' })).toBe(false);
-    expect(isValid(ResumePolicy, { cache_ttl: '5m', match: { other: 'x' } })).toBe(false);
-  });
-
-  test('workflow session accepts on_expired alone, resume_from alone and both', () => {
-    expect(isValid(WorkflowSession, { on_expired: 'fresh' })).toBe(true);
+  test('workflow session accepts resume_from only', () => {
     expect(isValid(WorkflowSession, { resume_from: 'plan' })).toBe(true);
-    expect(isValid(WorkflowSession, { resume_from: 'plan', on_expired: 'resume' })).toBe(true);
-    expect(isValid(WorkflowSession, { on_expired: 'later' })).toBe(false);
+    expect(isValid(WorkflowSession, { on_expired: 'fresh' })).toBe(false);
     expect(isValid(WorkflowSession, { other: 1 })).toBe(false);
   });
 });

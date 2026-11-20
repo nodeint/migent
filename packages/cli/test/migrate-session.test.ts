@@ -17,7 +17,7 @@ test('migrate upgrades session workflow.yaml and workflow.frozen.yaml', async ()
     mkdirSync(session, { recursive: true });
     writeFileSync(
       path.join(root, 'config.yaml'),
-      'schema_version: 7\nroles:\n  developer:\n    agent:\n      model: grok-4\n      client:\n        type: grok\n',
+      'schema_version: 8\nroles:\n  developer:\n    agent:\n      model: grok-4\n      client:\n        type: grok\n',
       'utf8',
     );
     const draft =
@@ -32,10 +32,10 @@ test('migrate upgrades session workflow.yaml and workflow.frozen.yaml', async ()
     const captured = await capture(() => main(['migrate', '--yes'], workspace));
     expect(captured.value).toBe(0);
     const newDraft = readFileSync(path.join(session, 'workflow.yaml'), 'utf8');
-    expect(newDraft).toContain('schema_version: 7');
+    expect(newDraft).toContain('schema_version: 8');
     expect(newDraft).not.toContain('produces');
     const newFrozen = readFileSync(path.join(session, 'workflow.frozen.yaml'), 'utf8');
-    expect(newFrozen).toContain('schema_version: 7');
+    expect(newFrozen).toContain('schema_version: 8');
     expect(newFrozen).not.toContain('produces');
     expect(newFrozen).toContain(`source_sha256: ${sha256Hex(newDraft)}`);
 
@@ -52,7 +52,7 @@ function sessionFixture(workspace: string): { root: string; session: string; dra
   mkdirSync(session, { recursive: true });
   writeFileSync(
     path.join(root, 'config.yaml'),
-    'schema_version: 7\nroles:\n  developer:\n    agent:\n      model: grok-4\n      client:\n        type: grok\n',
+    'schema_version: 8\nroles:\n  developer:\n    agent:\n      model: grok-4\n      client:\n        type: grok\n',
     'utf8',
   );
   const draft =

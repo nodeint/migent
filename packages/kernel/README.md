@@ -31,7 +31,7 @@ Configuration, authoring, migration, outputs, selection, and process execution f
 | authoring exports, `buildDraftSourceMap` | `src/authoring.ts`, `src/draft-source.ts` | Draft validate/render/save |
 | `schedulableStageIds`, `NextStageResult` | `src/selection.ts` | Next-stage selection |
 | `parseStageOutcome`, `resolveStageOutcome` | `src/stage-outcome.ts`, `src/outcome-resolver.ts` | Stage outcome |
-| `selectResumePolicy`, `validateResumePolicies`, `evaluateResume`, `effectiveOnExpired` | `src/resume-policy.ts` | Resume policies: select, validate, and decide whether a resume is expired |
+| `liftConfigCacheTtl`, `liftWorkflowCacheTtl` | `src/migration-cache-ttl.ts` | The 7 to 8 move of the resume-policy keys to `prompt_cache_ttl` |
 | `pendingResumeStops`, `stageStopFacts` | `src/resume-stops.ts` | Pending `expired` stops projected from events |
 | `endsScheduling`, `stageStopStatus`, `stopResolved`, `exitFor`, `acceptsBlockedResume` | `src/session-status-policy.ts` | Session-status rules derived from `SESSION_STATUS_CATALOG` |
 | `decideCorrection`, `CORRECTION_POLICY` | `src/correction-policy.ts` | Correction turns |

@@ -4,8 +4,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { BuildCommandInput, CliClient, ClientOption, ClientRegistry, CliModelCatalog, CliRunOutput, CliUsage, CommandSpec, UsageCapture } from '@nodeint/migent-kernel';
+import { createPluginRegistry } from '@nodeint/migent-plugins';
 import { createWorkflowSession, SessionLock } from '@nodeint/migent-session';
 import { onTestFinished } from 'vitest';
+
+import { AgentToolRunner } from '../src/agent-runner.ts';
 
 const optionKey = /^[A-Za-z][A-Za-z0-9_.-]*$/;
 
@@ -30,7 +33,7 @@ export function registryOf(clients: Record<string, CliClient>): ClientRegistry {
 }
 
 export const SESSION_CONFIG = `\
-schema_version: 7
+schema_version: 8
 agents:
   grok:
     client:
@@ -51,7 +54,7 @@ export function writeSessionConfig(workspace: string): void {
 }
 
 const STAGE_CONFIG = `\
-schema_version: 7
+schema_version: 8
 agents:
   grok:
     client:
@@ -74,7 +77,7 @@ roles:
 `;
 
 const STAGE_WORKFLOW = `\
-schema_version: 7
+schema_version: 8
 id: plan-implement
 artifacts:
   implement:
@@ -96,6 +99,13 @@ stages:
     depends_on:
       - implement
 `;
+
+/** A runner with the first-party plugins, so `prompt_cache_ttl` gates resumes as it does in the CLI. */
+export function runnerWithPlugins(clients: ClientRegistry, maxParallel: number): AgentToolRunner {
+  const runner = new AgentToolRunner(clients, maxParallel);
+  runner.pluginRegistry = createPluginRegistry();
+  return runner;
+}
 
 export function tempDir(prefix: string): string {
   return mkdtempSync(path.join(tmpdir(), prefix));

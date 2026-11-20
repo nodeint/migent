@@ -116,7 +116,6 @@ export class AgentToolRunner {
       response_protocol: prior.protocol,
       turn_kind: turnKind,
       ...(request.resumeSkipped ? { resume_skipped: request.resumeSkipped } : {}),
-      ...(request.resumePolicy ? { resume_policy: request.resumePolicy } : {}),
     });
     this.emitStageStarted(opened, opened.eventReporter);
     const { progress, previous } = prior;

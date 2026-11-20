@@ -91,7 +91,6 @@ export const StageView = Type.Object(
     ),
     max_revisions: nullable(int()),
     resume_from: nullable(Type.String()),
-    on_expired: Type.Optional(nullable(Type.String())),
     verify: strings(),
     max_verify: int(),
     verify_timeout: nullable(int()),

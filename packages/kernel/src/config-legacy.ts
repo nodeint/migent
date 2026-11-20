@@ -9,6 +9,12 @@ export function refuseLegacyAgentKeys(agentConfig: Record<string, unknown>, { la
       { code: 'agent-options-moved', path: [...path, 'options'] },
     );
   }
+  if (Object.hasOwn(agentConfig, 'resume_policy')) {
+    throw new ConfigurationError(
+      `${label}.resume_policy moved to ${label}.prompt_cache_ttl.policy in schema_version 8. Run \`migent migrate\`.`,
+      { code: 'legacy-key', path: [...path, 'resume_policy'] },
+    );
+  }
   if (Object.hasOwn(agentConfig, 'provider')) {
     throw new ConfigurationError(
       `${label}.provider was removed in schema_version 6; set ${label}.client.type. Run \`migent migrate\`.`,
@@ -20,6 +26,12 @@ export function refuseLegacyAgentKeys(agentConfig: Record<string, unknown>, { la
 
 /** A v4 top-level key in a current document names its v5 replacement. */
 export function rejectLegacyConfigKeys(config: Record<string, unknown>): void {
+  if (Object.hasOwn(config, 'resume_policies')) {
+    throw new ConfigurationError(
+      'resume_policies moved to plugins.prompt_cache_ttl.policies in schema_version 8. Run `migent migrate`.',
+      { code: 'legacy-key', path: ['resume_policies'] },
+    );
+  }
   if (Object.hasOwn(config, 'models')) {
     throw new ConfigurationError('models was renamed to agents in schema_version 5. Run `migent migrate`.', {
       code: 'legacy-key',

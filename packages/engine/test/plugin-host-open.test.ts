@@ -31,7 +31,7 @@ const registryOfPlugins = (...plugins: Plugin[]): PluginRegistry => ({
 });
 
 const BASE = 'agents:\n  fake:\n    client: { type: fake }\n    model: m1\nroles:\n  developer:\n    agent: fake\n';
-const WORKFLOW = 'schema_version: 7\nid: wf\nstages:\n  - id: one\n    role: developer\n';
+const WORKFLOW = 'schema_version: 8\nid: wf\nstages:\n  - id: one\n    role: developer\n';
 const DEMO = 'plugins:\n  demo:\n    enabled: true\n  note:\n    enabled: true\n';
 
 function workspaceWith(config: string): string {
