@@ -69,3 +69,33 @@ test('composed stage properties accept the claimed key and keep the schema close
   expect(isValid(schema, { id: 'a', fixture_stage: { mode: 'x' } })).toBe(false);
   expect(isValid(schema, { id: 'a', unclaimed: 1 })).toBe(false);
 });
+
+const withResponseKey = (key: string, plugin = 'fixture'): ExtensionCatalog => [
+  { plugin, version: 1, fields: { response: Type.Object({ [key]: Type.Object({ verdict: Type.String() }) }) } },
+];
+
+test('a response entry keyed by its plugin id is valid', () => {
+  expect(extensionCatalogIssues(withResponseKey('fixture'))).toEqual([]);
+  expect(extensionKeys(withResponseKey('fixture'), 'response')).toEqual(['fixture']);
+  expect(extensionOwner(withResponseKey('fixture'), 'response', 'fixture')).toBe('fixture');
+});
+
+test('a response field with no property is reported', () => {
+  const empty: ExtensionCatalog = [{ plugin: 'fixture', version: 1, fields: { response: Type.Object({}) } }];
+  expect(extensionCatalogIssues(empty).join(' ')).toMatch(/exactly one property/);
+});
+
+test('a response key that differs from the plugin id is reported', () => {
+  expect(extensionCatalogIssues(withResponseKey('other_key')).join('\n')).toMatch(/response key "other_key" must equal the plugin id/);
+});
+
+test.each(['status', 'decision', 'summary', 'blocker', 'questions', 'schema_version'])(
+  'a plugin whose id is the core handoff key %s is reported',
+  (key) => {
+    expect(extensionCatalogIssues(withResponseKey(key, key)).join('\n')).toMatch(/core response key/);
+  },
+);
+
+test('a plugin whose id is the reserved key response_extensions is reported', () => {
+  expect(extensionCatalogIssues(withResponseKey('response_extensions', 'response_extensions')).join('\n')).toMatch(/legacy response key|reserved/);
+});

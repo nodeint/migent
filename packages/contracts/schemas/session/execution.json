@@ -132,6 +132,12 @@
         "^.*$": {}
       }
     },
+    "response_extensions": {
+      "type": "object",
+      "patternProperties": {
+        "^.*$": {}
+      }
+    },
     "final_turn": {
       "type": "number"
     },

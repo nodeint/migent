@@ -81,7 +81,9 @@ export function savedOutcome(
     const raw = JSON.parse(
       readFileSync(path.join(store.turnDirectory(context, turn), 'outcome.json'), 'utf8'),
     ) as unknown;
-    if (isRecord(raw) && raw.status === 'complete') {
+    // A stage with extensions re-reads the handoff file: the saved outcome carries no payloads.
+    const hasExtensions = (outcomeContext.extensions ?? []).length > 0;
+    if (isRecord(raw) && raw.status === 'complete' && !hasExtensions) {
       return new StageOutcome(raw.status, {
         blocker: typeof raw.blocker === 'string' && raw.blocker ? raw.blocker : null,
         decision: typeof raw.decision === 'string' && raw.decision ? raw.decision : null,

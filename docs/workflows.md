@@ -574,12 +574,27 @@ The document is a closed JSON object; its schema is published in
 Migent deletes the file before every fresh turn, so an agent writes it again each turn,
 including after a verify repair or an artifact correction.
 
+**Response extensions.** Under protocol 4, a plugin may ask for extra data in a stage. The stage prompt then has a
+`## Response extensions` section that gives each top-level key, whether it is required, the plugin's instructions,
+and the JSON Schema of the payload. The key goes in the `complete` document only:
+
+```json
+{"schema_version":1,"status":"complete","summary":"Done.","judge":{"verdict":"ship"}}
+```
+
+Migent checks the payload against the schema frozen with the session, so a resume never follows a later catalog
+edit. A missing required payload, an invalid payload, or an extension key on a `blocked` or `question` document
+is `invalid_extension`. An unknown key, or a key with no active extension in the stage, is `invalid_schema`. Both
+use the `handoff` correction below. A valid payload is stored as `response_extensions` in `execution.json` and
+never changes the outcome, the decision, or routing. Conversations stamped protocol 3 or 2 never get extensions,
+even after `--refresh-workflow`.
+
 **Protocol 2 conversations.** A conversation started before this change keeps the earlier
 contract until it ends: the reply starts with `status:`, `decision:` and `blocker:` header lines,
 and questions go to a separate `question-request.json`. The protocol is recorded as
 `response_protocol` in each `execution.json`. A new conversation (no source execution) uses
-protocol 3. An execution that continues one (a reply, retry, revision, route-back or
-`resume_from`) inherits its source execution's protocol.
+protocol 4, which uses the protocol 3 handoff-file contract. An execution that continues one (a reply, retry,
+revision, route-back or `resume_from`) inherits its source execution's protocol.
 
 `migent session continue <session-id>` runs that stage again after the blocker
 is fixed. The new attempt's prompt includes the blocker text and the previous
@@ -657,7 +672,7 @@ one per kind per execution (so a protocol 3 execution gets at most two correctio
 
 | Kind | Trigger | Contract in the correction | `failure_reason` when still wrong | Event |
 | --- | --- | --- | --- | --- |
-| `handoff` | Protocol 3: `handoff.json` missing, empty, not JSON, not matching the schema, with a decision the stage does not allow, or `question` without `ask: human` | full | `handoff_file_invalid` | `handoff.file_invalid` |
+| `handoff` | Protocol 3: `handoff.json` missing, empty, not JSON, not matching the schema, with a decision the stage does not allow, or `question` without `ask: human`; under protocol 4, a missing or invalid response extension payload | full | `handoff_file_invalid` | `handoff.file_invalid` |
 | `stage_output` | After `status: complete`, a required artifact or completion output is missing or empty. Both protocols; under protocol 3 the agent fixes it by also rewriting `handoff.json` | reminder | `stage_output_missing` | `stage.output_missing` |
 | `response_contract` | Protocol 2 only: missing or invalid `status:` or `decision:` header, or `status: question` without `ask: human` | full | `response_contract_invalid` | `response.contract_invalid` |
 | `question_file` | Protocol 2 only: `status: question` with an unusable request file | reminder | `question_file_invalid` | `question.file_invalid` |

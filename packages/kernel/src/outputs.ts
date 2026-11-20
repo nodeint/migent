@@ -35,6 +35,8 @@ export interface ExecutionSnapshot {
   outcomeDecision: string | null;
   failureReason?: string | null;
   verifyReport?: string | null;
+  /** Stored response extension payloads by plugin id; absent when the execution has none. */
+  responseExtensions?: Readonly<Record<string, unknown>>;
 }
 
 export interface PublishedOutput {

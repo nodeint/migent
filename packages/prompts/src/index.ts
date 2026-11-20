@@ -28,6 +28,10 @@ const TURN_DIRECTIVES: Record<TurnKind, string> = {
 
 /** Protocol 3: the stage result is the handoff file. Protocol 2: response headers plus a question file. */
 export const HANDOFF_FILE_PROTOCOL = 3;
+/** First protocol that carries plugin response extensions. Earlier conversations never get them. */
+export const RESPONSE_EXTENSIONS_PROTOCOL = 4;
+/** Protocol a new conversation is stamped with. 4 adds plugin response extensions on top of protocol 3. */
+export const CURRENT_RESPONSE_PROTOCOL = 4;
 /** Oldest response protocol still understood. */
 export const LEGACY_RESPONSE_PROTOCOL = 2;
 
@@ -41,12 +45,22 @@ function directive(turn: TurnKind | null, hasTask: boolean, handoff: boolean): s
   return turn === null ? 'Carry out the request above.' : TURN_DIRECTIVES[turn];
 }
 
+/** One response extension as the prompt describes it. */
+export interface ResponseExtensionPrompt {
+  key: string;
+  required: boolean;
+  instructions: string;
+  schema: string;
+}
+
 export interface ProviderPromptOptions {
   contract?: ContractMode;
   turn?: TurnKind | null;
   decisionValues?: readonly string[];
   decisionInstructions?: Readonly<Record<string, string>>;
   ask?: AskTarget | null;
+  /** Active response extensions of the stage; `schema` is compact JSON Schema text. Empty renders today's contract. */
+  responseExtensions?: readonly ResponseExtensionPrompt[];
   /** Response protocol the conversation runs under. Defaults to the current protocol (3). */
   protocol?: number;
   /** Absolute path of the handoff file. Required to describe protocol 3. */
@@ -102,11 +116,18 @@ function artifactLines(files: readonly ArtifactFile[], artifactName: string | nu
   return lines;
 }
 
-function reminderLine(handoff: boolean, statusLabel: string, decisions: readonly EnvelopeDecision[]): string {
+function reminderLine(
+  handoff: boolean,
+  statusLabel: string,
+  contract: { decisions: readonly EnvelopeDecision[]; extensions: readonly ResponseExtensionPrompt[] },
+): string {
+  const { decisions, extensions } = contract;
   const decisionLabel = decisions.map(({ name }) => name).join('|');
   const decision = decisions.length > 0 ? `, with \`decision: ${decisionLabel}\` when complete` : '';
+  const required = extensions.filter((item) => item.required).map((item) => `\`${item.key}\``);
+  const keys = handoff && required.length > 0 ? `, and the required ${required.join(', ')} key when complete` : '';
   return handoff
-    ? `Same response contract and stage instructions as before: write the handoff file with \`status\` ${statusLabel}${decision}.`
+    ? `Same response contract and stage instructions as before: write the handoff file with \`status\` ${statusLabel}${decision}${keys}.`
     : `Same response contract and stage instructions as before: start with \`status: ${statusLabel}\`${decision}.`;
 }
 
@@ -116,17 +137,18 @@ interface DoTextInput {
   handoff: boolean;
   statusLabel: string;
   decisions: readonly EnvelopeDecision[];
+  extensions: readonly ResponseExtensionPrompt[];
   artifactName: string | null;
   taskFile: string | null;
 }
 
 // The single place that tells the agent what to do this turn.
 function doText(input: DoTextInput): string {
-  const { options, mode, handoff, statusLabel, decisions, artifactName, taskFile } = input;
+  const { options, mode, handoff, statusLabel, decisions, extensions, artifactName, taskFile } = input;
   const doLines: string[] = [];
   if (mode !== null) doLines.push(directive(options.turn ?? null, taskFile !== null, handoff));
   doLines.push(...artifactLines(options.artifactFiles ?? [], artifactName));
-  if (mode === 'reminder') doLines.push(reminderLine(handoff, statusLabel, decisions));
+  if (mode === 'reminder') doLines.push(reminderLine(handoff, statusLabel, { decisions, extensions }));
   return doLines.join('\n');
 }
 
@@ -150,6 +172,15 @@ function envelopePaths(options: ProviderPromptOptions) {
   };
 }
 
+/** Extensions as the template reads them. Only a handoff contract lists any. */
+function envelopeExtensions(options: ProviderPromptOptions, handoffContract: boolean): ResponseExtensionPrompt[] {
+  return handoffContract ? [...options.responseExtensions ?? []] : [];
+}
+
+function templateExtensions(extensions: readonly ResponseExtensionPrompt[]) {
+  return extensions.map((item) => ({ ...item, marker: item.required ? 'required' : 'optional' }));
+}
+
 function envelope(options: ProviderPromptOptions) {
   const mode = contractMode(options);
   const decisions = envelopeDecisions(options, mode);
@@ -162,6 +193,7 @@ function envelope(options: ProviderPromptOptions) {
   const taskFile = options.taskFile ?? null;
   const statusLabel = canAsk ? 'complete | question | blocked' : 'complete | blocked';
   const handoffContract = handoff && mode !== null;
+  const extensions = envelopeExtensions(options, handoffContract);
   return {
     full: mode === 'full',
     reminder: mode === 'reminder',
@@ -172,6 +204,7 @@ function envelope(options: ProviderPromptOptions) {
     handoffContract,
     ...envelopePaths(options),
     decisions,
+    extensions: templateExtensions(extensions),
     decisionLabel: decisions.map(({ name }) => name).join('|'),
     artifactName,
     supportingDirectory,
@@ -181,7 +214,7 @@ function envelope(options: ProviderPromptOptions) {
     hasExecution: taskFile !== null || canAsk || handoffContract || artifactName !== null
       || supportingDirectory
       || previousVerifyReport !== null,
-    doText: doText({ options, mode, handoff, statusLabel, decisions, artifactName, taskFile }),
+    doText: doText({ options, mode, handoff, statusLabel, decisions, extensions, artifactName, taskFile }),
   };
 }
 

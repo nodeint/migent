@@ -1669,6 +1669,7 @@ Type: object
 | `execution.stage_id` | string \| null | yes | | |
 | `execution.outcome` | map of any \| null | yes | | |
 | `execution.artifacts` | string[] | yes | | |
+| `execution.response_extension` | any \| null | yes | | |
 
 <a id="plugins-llm-config-json"></a>
 

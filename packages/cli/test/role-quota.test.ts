@@ -52,7 +52,8 @@ test('a role quota fails the run once and does not rerun', async () => {
     expect(executions).toHaveLength(1);
     const record = JSON.parse(
       readFileSync(path.join(root, '.migent', 'sessions', sessionId, 'executions', executions[0]!, 'execution.json'), 'utf8'),
-    ) as { failure_reason?: string; retry_at?: string };
+    ) as { failure_reason?: string; retry_at?: string; response_protocol?: number };
+    expect(record.response_protocol).toBe(4);
     expect(record.failure_reason).toBe('quota');
     expect(record.retry_at).toBe(FUTURE);
     const events = readFileSync(path.join(root, '.migent', 'sessions', sessionId, 'events.jsonl'), 'utf8');

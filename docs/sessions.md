@@ -111,6 +111,10 @@ The session-level files have distinct purposes:
   `resume_policy` stamp (`name` and `policies`) in the `execution.json` of an execution. Migent reads the newest stamp
   in memory as the plugin's options and its agent `policy`, and never rewrites it. A live
   `plugins.prompt_cache_ttl.enabled: false` still turns the gate off for such a session.
+- Response contracts are frozen without a `schema_version` bump. `response_contracts` maps stage id, then plugin id, to
+  `required`, `instructions`, and the payload `schema` copied from the catalog. It is written only when non-empty, and
+  each owner records `keys.response: [plugin]` in `extensions`. A contract without that record, for an unknown stage,
+  or with a malformed field makes the freeze corrupt. An older Migent ignores the key.
 - Downgrading: a session written by this version does not carry `resume_policies` or `resume_policy`, so an older
   Migent that reads it resumes every conversation without the cache gate. A workflow session frozen by an older
   Migent keeps its freeze file as written; this version reads its policies and never rewrites them.
@@ -246,12 +250,15 @@ Each execution directory contains:
   see [Workflows](workflows.md#correctable-response-failures)). `corrections` records
   each granted correction by kind (`turn`, `error_kind`, `error_detail`). A stage with no role records `failure_reason:
   verify_failed` when the list fails.
-- `handoff.json`: the stage outcome the agent writes under response protocol 3 (see
+- `handoff.json`: the stage outcome the agent writes under response protocol 3 or 4 (see
   [Workflows](workflows.md#stage-protocol)). Migent deletes it before every fresh turn, so it
   holds the last turn's handoff, and a failed validation leaves it for diagnosis. Corrections for it
-  are recorded as `corrections.handoff`. `execution.json` records `response_protocol` (3 for a
+  are recorded as `corrections.handoff`. `execution.json` records `response_protocol` (4 for a
   new conversation; a continued conversation keeps its source execution's value, and a missing
   or legacy value is read as protocol 1). Protocol 2 conversations use `question-request.json`.
+  A valid response extension payload is stored as `response_extensions` in `execution.json`, a mapping from plugin id
+  to the payload as written. It is written in the same commit as the terminal `outcome`, only when non-empty, and
+  `outcome`, events, and `status.json` never carry it.
 - `conversation.json`: client conversation checkpoint used when resuming a
   client session. It stores the client and model, native agent ID, options
   setting, lifecycle status, and fallback message history. A stage with no

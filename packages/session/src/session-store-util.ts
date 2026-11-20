@@ -115,6 +115,9 @@ export function executionResultFields(result: ExecutionResultInput): Record<stri
     completed_at: status === 'running' ? null : timestamp,
     ...(error === null ? {} : { error }),
     ...(outcome === null ? {} : { outcome: outcome.toJson() }),
+    // The payloads sit beside the outcome, never inside it, so events and status never carry them.
+    ...(outcome === null || Object.keys(outcome.extensions).length === 0
+      ? {} : { response_extensions: outcome.extensions }),
     ...(extra ?? {}),
   };
 }

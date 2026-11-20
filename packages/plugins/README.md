@@ -15,6 +15,9 @@ First-party Migent plugins and their static registry. Internal; no stable public
   handler must not assume a written file has a `plugin.decision`; `session show` reports the ones that lack it.
 - `call.session.snapshot()` and `resumeFacts()` need `uses.session`. Never cache their result across invocations: a
   changed read makes the core discard the result and re-run the handler once, then record `stale`.
+- A plugin reads only its own response extension payload: `execution.response_extension` in an `execution.finished`
+  hook input (`null` when it has none), and `responseExtension` on each snapshot execution row (absent when it has
+  none). No other plugin's payload appears there. Reading it adds no freshness rule.
 - To claim keys on workflows, stages, agents, or roles, add one entry to `PLUGIN_EXTENSIONS` in
   `@nodeint/migent-contracts` and repeat it as the manifest's `extensions`. `createPluginRegistry` rejects a manifest
   that differs from its catalog entry or omits it. Raise the entry's `version` only for an incompatible schema change.
@@ -24,6 +27,10 @@ First-party Migent plugins and their static registry. Internal; no stable public
   `prompt_cache_ttl` (the prompt-cache resume policy), both `defaultEnabled`.
 - A plugin may declare a pure `validate(input)` (plugin API 1.1). `migent doctor`, session creation, and role creation
   call it for every enabled plugin and refuse the problems it returns.
+- A plugin may declare a pure `responseContract(input)` (plugin API 1.2) that returns `{ required, instructions }` or
+  `null` for each stage when the session freezes. It needs a catalog entry with a `response` field whose only key is
+  the plugin id; `createPluginRegistry` rejects a mismatch, or the member on an API below 1.2. A throw or an invalid
+  result stops session creation with `plugin-response-contract-invalid`. It is not evaluated on resume.
 
 ## Key symbols
 

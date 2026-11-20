@@ -8,7 +8,11 @@ import Type from 'typebox';
  * that owns an entry. This module has no dependency on the core key sets; `extensions.ts` checks them.
  */
 
-export const EXTENSION_LEVELS = ['workflow', 'stage', 'agent', 'role'] as const;
+/**
+ * `response` is not a config level: its one key, equal to the plugin id, is a top-level key of the `complete`
+ * handoff document, and its schema is the payload schema.
+ */
+export const EXTENSION_LEVELS = ['workflow', 'stage', 'agent', 'role', 'response'] as const;
 export type ExtensionLevel = (typeof EXTENSION_LEVELS)[number];
 
 /** A plugin id and a claimed key match this pattern. */

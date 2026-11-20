@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
-import type { PluginRegistry } from '@nodeint/migent-contracts';
+import type { ExtensionCatalog, PluginRegistry } from '@nodeint/migent-contracts';
 import type { ClientRegistry, ExecutionSnapshot } from '@nodeint/migent-kernel';
 import { ConfigurationError, endsScheduling, log, NextStage, readyStages, runnableNow, schedulableStageIds, Stop, stopReasonFor, utcNow, writeFileAtomic } from '@nodeint/migent-kernel';
 import { activatePreparedSession, assertSingleLineTask, bindPriorSessionId, createWorkflowSession, loadFrozenWorkflow, readWorkflowFreeze, recordPluginsFrozen, repairSessionUnlocked, requireLiveWorkflow, requireTaskBody, resolvePriorSessionId, sessionEventLog, SessionLock, SessionStore, warnIfFrozenDrift, WORKFLOW_FREEZE_FILE, writeWorkflowFreeze } from '@nodeint/migent-session';
@@ -75,9 +75,11 @@ function bindExecuteRun(
 function refreshSessionWorkflow(
   workspace: string,
   sessionId: string,
-  options: { startPrepared: boolean; registry: ClientRegistry; pluginRegistry: PluginRegistry },
+  options: {
+    startPrepared: boolean; registry: ClientRegistry; pluginRegistry: PluginRegistry; extensions?: ExtensionCatalog;
+  },
 ): void {
-  const { startPrepared, registry, pluginRegistry } = options;
+  const { startPrepared, registry, pluginRegistry, extensions } = options;
   const sessionDirectory = path.join(workspace, '.migent', 'sessions', sessionId);
   const freeze = readWorkflowFreeze(sessionDirectory);
   const status = new SessionStore(workspace).readSessionStatus(sessionId);
@@ -86,7 +88,7 @@ function refreshSessionWorkflow(
   const workflowPath = typeof status.workflow_path === 'string' ? status.workflow_path : null;
   const workflowId = typeof status.workflow_id === 'string' ? status.workflow_id : null;
   const live = requireLiveWorkflow(workspace, workflowPath, workflowId);
-  refreezeWorkflow(workspace, sessionDirectory, { workflow: live, registry, pluginRegistry });
+  refreezeWorkflow(workspace, sessionDirectory, { workflow: live, registry, pluginRegistry, extensions });
 }
 
 // Rejects a refresh of a finished, frozen-less, or wrongly prepared session.
@@ -117,14 +119,16 @@ function notPreparedHint(sessionId: string, sessionStatus: string): string {
 function refreezeWorkflow(
   workspace: string,
   sessionDirectory: string,
-  next: { workflow: Parameters<typeof writeWorkflowFreeze>[1]['workflow']; registry: ClientRegistry; pluginRegistry: PluginRegistry },
+  next: { workflow: Parameters<typeof writeWorkflowFreeze>[1]['workflow']; registry: ClientRegistry; pluginRegistry: PluginRegistry; extensions?: ExtensionCatalog },
 ): void {
   const freezePath = path.join(sessionDirectory, WORKFLOW_FREEZE_FILE);
   const previousText = readFileSync(freezePath, 'utf8');
   const previousHash = createHash('sha256').update(previousText).digest('hex');
-  const { workflow, registry, pluginRegistry } = next;
+  const { workflow, registry, pluginRegistry, extensions } = next;
   const plugins = pluginFreezeInput(pluginRegistry, registry);
-  const written = writeWorkflowFreeze(sessionDirectory, { workspace, workflow, resolveClient: registry, plugins });
+  const written = writeWorkflowFreeze(sessionDirectory, {
+    workspace, workflow, resolveClient: registry, plugins, ...(extensions === undefined ? {} : { extensions }),
+  });
   try {
     sessionEventLog.record(sessionDirectory, {
       event: 'workflow.refreshed',
@@ -162,6 +166,8 @@ export interface ExecuteRequest {
   continueFailed?: boolean;
   startPrepared?: boolean;
   refreshWorkflow?: boolean;
+  /** Extension catalog to create, refresh and resume under. Tests inject one; omitted means the static catalog. */
+  extensions?: ExtensionCatalog;
   /**
    * Runs once the request is validated and before a new session is created or a prepared one is
    * frozen. Returning false stops the run with a configuration error and leaves nothing behind.
@@ -242,7 +248,9 @@ export async function openExecuteSession(
     const created = await createExecuteSession(workspace, request, creation);
     if ('code' in created) return { kind: 'final', result: created };
     const { sessionId, workflow } = created;
-    const plugins = selectSessionPlugins(workspace, sessionId, { pluginRegistry, registry });
+    const plugins = selectSessionPlugins(workspace, sessionId, {
+    pluginRegistry, registry, extensions: request.extensions,
+  });
     opened = { sessionId, workflow, workflowId: workflow.id, plugins, started: true, ...UNCHANGED_REPLY };
   }
   const { sessionId, workflow, workflowId } = opened;
@@ -256,10 +264,13 @@ export async function openExecuteSession(
 function selectSessionPlugins(
   workspace: string,
   sessionId: string,
-  deps: { pluginRegistry: PluginRegistry; registry: ClientRegistry },
+  deps: { pluginRegistry: PluginRegistry; registry: ClientRegistry; extensions?: ExtensionCatalog },
 ): PluginSelection {
   const directory = path.join(workspace, '.migent', 'sessions', sessionId);
-  return selectPlugins(workspace, directory, { registry: deps.pluginRegistry, clients: deps.registry });
+  return selectPlugins(workspace, directory, {
+    registry: deps.pluginRegistry, clients: deps.registry,
+    ...(deps.extensions === undefined ? {} : { extensions: deps.extensions }),
+  });
 }
 
 /** The session a run continues with, before its workflow is prepared. */
@@ -299,7 +310,9 @@ async function resumeExistingSession(
   if (started.rejected !== null) return { result: started.rejected };
   // After a prepared start has frozen the session, and before any resume or dispatch: a freeze mismatch or a
   // missing plugin stops the run with exit 2.
-  const plugins = selectSessionPlugins(workspace, sessionId, { pluginRegistry, registry });
+  const plugins = selectSessionPlugins(workspace, sessionId, {
+    pluginRegistry, registry, extensions: request.extensions,
+  });
   const blocked = { sessionStatus: started.sessionStatus, stageReply, cancelledReplyStage };
   const reopened = resumeBlockedStages(store, { sessionId, stageId }, blocked) !== null;
   const sessionStatus = reopened ? 'active' : started.sessionStatus;
@@ -337,7 +350,7 @@ function openExistingSession(
   if (request.refreshWorkflow && !request.startPrepared) refreshSessionWorkflow(
     workspace,
     sessionId,
-    { startPrepared: false, registry, pluginRegistry },
+    { startPrepared: false, registry, pluginRegistry, extensions: request.extensions },
   );
   const bound = bindExecuteRun(
     workspace,
@@ -450,6 +463,7 @@ async function createExecuteSession(
       priorSessionId: request.priorSessionId,
       resolveClient: registry,
       plugins: pluginFreezeInput(pluginRegistry, registry),
+      extensions: request.extensions,
     },
   );
   held.acquire(workspace, sessionId);

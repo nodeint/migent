@@ -33,7 +33,7 @@ test('classify maps typed gate errors to a kind and leaves other errors alone', 
 });
 
 test('every handoff error kind maps to the handoff correction kind', () => {
-  for (const kind of ['missing', 'empty', 'invalid_json', 'invalid_schema', 'invalid_decision', 'question_not_allowed'] as const) {
+  for (const kind of ['missing', 'empty', 'invalid_json', 'invalid_schema', 'invalid_decision', 'question_not_allowed', 'invalid_extension'] as const) {
     expect(classifyGateError(new HandoffFileError(kind, 'd', '/f'))).toMatchObject({ kind: 'handoff', errorKind: kind, detail: 'd' });
   }
 });
@@ -76,7 +76,7 @@ test('a missing handoff gets one full-contract correction and the rewritten hand
   expect(provider.calls[1]?.prompt).toContain('## Do\n\nRewrite the whole handoff file');
   expect(result.failure_reason).toBe('');
   expect(record.status).toBe('completed');
-  expect(record.response_protocol).toBe(3);
+  expect(record.response_protocol).toBe(4);
   expect(record.corrections.handoff).toMatchObject({ turn: 1, error_kind: 'missing' });
   expect(record.question_correction).toBeUndefined();
 });

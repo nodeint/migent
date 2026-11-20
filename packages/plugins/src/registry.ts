@@ -27,6 +27,19 @@ function sameData(a: unknown, b: unknown): boolean {
   return sameKeys && keys.every((key) => Object.hasOwn(right, key) && sameData(left[key], right[key]));
 }
 
+/** The plugin API minor that introduced `responseContract`. */
+const RESPONSE_CONTRACT_MINOR = 2;
+
+/** The response entry and `responseContract` go together, and the member needs plugin API 1.2. */
+function assertResponseContract(plugin: Plugin, entry: ExtensionCatalog[number] | undefined): void {
+  const { id, apiVersion } = plugin.manifest;
+  const declared = entry?.fields.response !== undefined;
+  const member = plugin.responseContract !== undefined;
+  if (member && !declared) throw new Error(`Plugin "${id}" has responseContract but its catalog entry has no response field.`);
+  if (declared && !member) throw new Error(`Plugin "${id}" has a response field in its catalog entry but no responseContract.`);
+  if (member && apiVersion.minor < RESPONSE_CONTRACT_MINOR) throw new Error(`Plugin "${id}" has responseContract and needs plugin API 1.2 or later; it declares ${apiVersion.major}.${apiVersion.minor}.`);
+}
+
 /**
  * Builds a registry. The default is the first-party list; tests inject their own plugins and catalog. A manifest's
  * `extensions` must equal the catalog entry for its id, and may be omitted only when the catalog has none.
@@ -52,6 +65,7 @@ export function createPluginRegistry(
           : `Plugin "${plugin.manifest.id}" declares extensions that the catalog does not list.`,
       );
     }
+    assertResponseContract(plugin, entry);
     if (byId.has(plugin.manifest.id)) throw new Error(`Plugin "${plugin.manifest.id}" is registered twice.`);
     byId.set(plugin.manifest.id, plugin);
   }

@@ -214,3 +214,28 @@ test('decision-scoped artifacts are listed under a conditional lead, never an un
   });
   expect(mixed).toContain('Write these artifacts in the artifacts directory:\n- `main.md`: Main.\nWrite these only for the decision you choose; skip them for other decisions:\n- `findings.md` only when you choose `decision: redo`\n- `comments.md` only when you choose `decision: done` [optional]: Notes.');
 });
+
+const extensions = [
+  { key: 'judge', required: true, instructions: 'Give a verdict.', schema: '{"type":"object"}' },
+  { key: 'notes', required: false, instructions: 'Add notes.', schema: '{"type":"string"}' },
+];
+
+test('a full contract lists each response extension with its marker, instructions, and schema', () => {
+  const prompt = renderProviderPrompt('STAGE-MESSAGE', { contract: true, protocol: 4, ask: null, handoffFile: '/h.json', responseExtensions: extensions });
+  expect(prompt).toContain('## Response extensions');
+  expect(prompt).toContain('- `judge` (required): Give a verdict.\n  JSON Schema: `{"type":"object"}`');
+  expect(prompt).toContain('- `notes` (optional): Add notes.');
+  expect(prompt.indexOf('## Response extensions')).toBeLessThan(prompt.indexOf('STAGE-MESSAGE'));
+});
+
+test('the reminder line names only the required extension keys', () => {
+  const prompt = renderProviderPrompt('body', { contract: 'reminder', protocol: 4, ask: null, handoffFile: '/h.json', responseExtensions: extensions });
+  expect(prompt).toContain('and the required `judge` key when complete.');
+  expect(prompt).not.toContain('`notes`');
+});
+
+test('an empty extension list renders exactly the contract without extensions', () => {
+  const options = { contract: true, protocol: 4, ask: null, handoffFile: '/h.json' } as const;
+  expect(renderProviderPrompt('body', { ...options, responseExtensions: [] })).toBe(renderProviderPrompt('body', options));
+  expect(renderProviderPrompt('body', options)).not.toContain('Response extensions');
+});

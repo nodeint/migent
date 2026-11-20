@@ -3,8 +3,9 @@ export { SessionEventLog, sessionEventLog, subscribeSessionEvents } from './even
 export type { EffectiveConfigSection, EntryClassifiers, FrozenSection, LiveEntry, SectionRequest } from './freeze-config-sections.js';
 export { effectiveConfigSection } from './freeze-config-sections.js';
 export type { FrozenExtensionRecord, FrozenExtensions } from './freeze-extensions.js';
-export type { PluginFreezeInput, PluginsFrozenEntries } from './freeze-plugins.js';
+export type { PluginFreezeInput, PluginResponseResult, PluginResponseResults, PluginsFrozenEntries } from './freeze-plugins.js';
 export { recordPluginsFrozen } from './freeze-plugins.js';
+export type { FrozenResponseContract, FrozenResponseContracts } from './freeze-response.js';
 export type {
   LegacyExecutionClient,
   LegacyExecutionEvidence,

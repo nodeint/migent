@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -79,4 +79,63 @@ test('the examples in the rendered contract pass the loader', () => {
   const lines = /```json\n([\s\S]*?)\n```/.exec(prompt)![1]!.split('\n');
   expect(lines).toHaveLength(3);
   for (const line of lines) expect(kindOf(line, { decisionValues: ['approved', 'revise'], ask: 'human' }), line).toBe('ok');
+});
+
+const verdictRule = {
+  key: 'judge', required: true, instructions: 'Give a verdict.',
+  check: (value: unknown) => (typeof value === 'object' && value !== null && typeof (value as { verdict?: unknown }).verdict === 'string'
+    ? [] : [{ path: '/verdict', message: 'Expected string' }]),
+};
+const optionalRule = { ...verdictRule, required: false };
+
+function loadWith(document: unknown, extensions: typeof verdictRule[]) {
+  const directory = mkdtempSync(path.join(tmpdir(), 'migent-handoff-'));
+  try {
+    const file = path.join(directory, 'handoff.json');
+    writeFileSync(file, JSON.stringify(document));
+    return loadHandoffFile(file, { decisionValues: [], ask: 'human', extensions });
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+}
+
+function errorOf(document: unknown, extensions: typeof verdictRule[]): HandoffFileError {
+  try {
+    loadWith(document, extensions);
+  } catch (error) {
+    if (error instanceof HandoffFileError) return error;
+    throw error;
+  }
+  throw new Error('expected a HandoffFileError');
+}
+
+const complete = { schema_version: 1, status: 'complete' };
+
+test('a valid extension payload is returned as written', () => {
+  const payload = { verdict: 'ship', extra: [1, 2] };
+  expect(loadWith({ ...complete, judge: payload }, [verdictRule]).extensions).toEqual({ judge: payload });
+  expect(loadWith(complete, [optionalRule]).extensions).toEqual({});
+});
+
+test('a missing required key names the key and its instructions', () => {
+  const error = errorOf(complete, [verdictRule]);
+  expect(error).toMatchObject({ kind: 'invalid_extension', detail: 'judge is required: Give a verdict.' });
+});
+
+test('a schema issue names the key and the payload path', () => {
+  expect(errorOf({ ...complete, judge: { verdict: 3 } }, [verdictRule]))
+    .toMatchObject({ kind: 'invalid_extension', detail: 'judge/verdict: Expected string' });
+});
+
+test('an extension key on blocked or question is rejected', () => {
+  const blocked = { schema_version: 1, status: 'blocked', blocker: 'x', judge: { verdict: 'a' } };
+  const asked = { schema_version: 1, status: 'question', questions: [question], judge: { verdict: 'a' } };
+  for (const document of [blocked, asked]) {
+    expect(errorOf(document, [optionalRule])).toMatchObject({ kind: 'invalid_extension', detail: 'judge: allowed only with status complete' });
+  }
+});
+
+test('an unknown or inactive key stays invalid_schema', () => {
+  expect(errorOf({ ...complete, judge: { verdict: 'a' } }, [])).toMatchObject({ kind: 'invalid_schema' });
+  expect(errorOf({ ...complete, other: {} }, [verdictRule])).toMatchObject({ kind: 'invalid_schema' });
 });

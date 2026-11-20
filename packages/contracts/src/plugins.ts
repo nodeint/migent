@@ -18,7 +18,7 @@ export const PLUGIN_ARTIFACT_MODES = ['create_only', 'replace'] as const;
 /** The `hook` recorded for a failed activation. */
 export const PLUGIN_ACTIVATE_HOOK = 'activate';
 /** The plugin API version this core supports. A manifest needs the same major and a minor not above this one. */
-export const PLUGIN_API_VERSION = { major: 1, minor: 1 } as const;
+export const PLUGIN_API_VERSION = { major: 1, minor: 2 } as const;
 export const PLUGIN_ON_ERROR = ['ignore', 'stop', 'fail'] as const;
 export const PLUGIN_FAILURE_REASONS = ['error', 'timeout', 'invalid_intent', 'unavailable', 'version_changed', 'cancelled', 'stale'] as const;
 
@@ -201,6 +201,8 @@ export interface PluginExecutionRow {
   skip: Record<string, unknown> | null;
   /** Why this execution started a new conversation instead of resuming (`expired`), from `resume_skipped`. */
   freshReason: string | null;
+  /** The calling plugin's own response extension payload for this execution. Absent when it has none. */
+  responseExtension?: unknown;
 }
 
 /** Detached facts about one session at one moment. `basis_seq` is the last non-`plugin.*` event seq. */
@@ -315,6 +317,7 @@ export const PluginHookInput = Type.Object(
       stage_id: nullable(Type.String()),
       outcome: nullable(Type.Record(Type.String(), Type.Unknown())),
       artifacts: Type.Array(Type.String()),
+      response_extension: nullable(Type.Unknown()),
     })),
   },
   { $id: id('plugins/hook-input'), title: 'Plugin hook input', description: 'Detached, deeply frozen data: no handles and no writable paths.' },
@@ -348,8 +351,34 @@ export interface PluginValidationProblem {
   readonly message: string;
 }
 
+/** What `Plugin.responseContract` reads: detached, frozen plain data. Never another plugin's keys. */
+export interface PluginResponseContractInput {
+  /** The plugin's merged `plugins.<id>` entry; `{}` when absent. */
+  readonly options: Readonly<Record<string, unknown>>;
+  /** The stage's id and its core fields, without any plugin key. */
+  readonly stage: Readonly<Record<string, unknown>> & { readonly id: string };
+  /** The core workflow fields (`id`, `downstream`, and so on), without `stages` and without any plugin key. */
+  readonly workflow: Readonly<Record<string, unknown>>;
+  /** The plugin's own extension values on the stage and on the workflow. */
+  readonly extensions: {
+    readonly stage: Readonly<Record<string, unknown>>;
+    readonly workflow: Readonly<Record<string, unknown>>;
+  };
+}
+
+/** What a plugin asks of the agent in one stage's handoff. `instructions` is non-blank text for the agent. */
+export interface PluginResponseContract {
+  readonly required: boolean;
+  readonly instructions: string;
+}
+
 export interface Plugin {
   readonly manifest: PluginManifest;
+  /**
+   * Plugin API 1.2. Optional and pure: no I/O, no clock. Evaluated per stage when the session freezes, never on
+   * resume. `null` leaves the extension inactive for the stage. Needs a `response` entry in the catalog.
+   */
+  readonly responseContract?: (input: PluginResponseContractInput) => PluginResponseContract | null;
   /** Plugin API 1.1. Optional and pure: no I/O, no clock. Called by doctor, session creation and role creation. */
   readonly validate?: (input: PluginValidationInput) => readonly PluginValidationProblem[];
   readonly activate: (

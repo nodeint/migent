@@ -20,7 +20,16 @@ Each line above is a separate example; write exactly one document. `status` is {
 
 Choose exactly one when complete. Set it as `decision` in the handoff file.{{#if canAsk}} Do not choose one while asking a question.{{/if}}
 {{#each decisions}}
-- `{{name}}`{{#if instruction}}: {{instruction}}{{/if}}{{/each}}{{/if}}{{#if canAsk}}
+- `{{name}}`{{#if instruction}}: {{instruction}}{{/if}}{{/each}}{{/if}}{{#if extensions.length}}
+
+## Response extensions
+
+These are extra top-level keys of the `complete` document only. Do not add them to `blocked` or `question`.
+{{#each extensions}}
+
+- `{{key}}` ({{marker}}): {{instructions}}
+  JSON Schema: `{{{schema}}}`
+{{/each}}{{/if}}{{#if canAsk}}
 
 ## Asking questions
 

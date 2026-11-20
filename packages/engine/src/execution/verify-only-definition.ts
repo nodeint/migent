@@ -75,6 +75,6 @@ function decideVerified(
   }
 }
 
-function completeOutcome(): { status: 'complete'; blocker: null; decision: null; question: null; questions: [] } {
-  return { status: 'complete', blocker: null, decision: null, question: null, questions: [] };
+function completeOutcome(): { status: 'complete'; blocker: null; decision: null; question: null; questions: []; extensions: Record<string, never> } {
+  return { status: 'complete', blocker: null, decision: null, question: null, questions: [], extensions: {} };
 }

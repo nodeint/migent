@@ -14,6 +14,21 @@
 
 ### Added
 
+- New conversations are stamped response protocol 4 (`CURRENT_RESPONSE_PROTOCOL`), which prepares plugin response
+  extensions. The agent-facing contract is unchanged; continued conversations keep their stamp.
+  An older Migent reads a protocol 4 stamp as a handoff-file protocol and does not implement response extensions.
+  ([#173](https://github.com/nodeint/migent/issues/173))
+- Stage handoffs accept plugin response extensions: under protocol 4, the stage prompt lists each active extension
+  (key, required or optional, instructions, frozen JSON Schema), `handoff.json` may carry its payload as a
+  top-level key of a `complete` document, and the core validates it against the frozen schema. A missing,
+  invalid, or misplaced payload gets the existing one `handoff` correction turn (error kind `invalid_extension`).
+  A valid payload is stored as `response_extensions` in `execution.json`, never in `outcome`, events, or
+  `status.json`. Protocol 3 and 2 conversations are unchanged. ([#173](https://github.com/nodeint/migent/issues/173))
+- A plugin reads its own stored response extension payload: `execution.response_extension` in the
+  `execution.finished` hook input and `responseExtension` on its snapshot execution rows. It never sees another
+  plugin's payload. ([#173](https://github.com/nodeint/migent/issues/173))
+- Plugin API 1.2: a plugin may declare a pure `responseContract` that the session freeze evaluates per stage and
+  records as `response_contracts` in `workflow.frozen.yaml`. ([#173](https://github.com/nodeint/migent/issues/173))
 - Plugin API 1.1: a plugin may declare an optional pure `validate`, which `migent doctor`, session creation, and
   role creation run against the config. ([#167](https://github.com/nodeint/migent/issues/167))
 - Contracts declare a static plugin extension catalog (`PLUGIN_EXTENSIONS`, empty today) that lets a plugin claim flat

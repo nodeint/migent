@@ -7,6 +7,7 @@ import {
   PLUGIN_EXTENSIONS,
   type PluginExtension,
 } from './extension-catalog.js';
+import { HandoffDocument } from './handoff.js';
 import { STAGE_CORE_PROPERTIES, WORKFLOW_CORE_PROPERTIES } from './workflow.js';
 
 /** Keys that earlier schema versions removed. A plugin may not claim them. */
@@ -15,13 +16,20 @@ export const LEGACY_EXTENSION_KEYS: Readonly<Record<ExtensionLevel, readonly str
   stage: ['produces', 'model', 'options'],
   agent: ['options', 'provider', 'resume_policy'],
   role: ['options', 'default_model', 'instructions'],
+  response: ['response_extensions'],
 };
+
+/** The top-level keys of every `HandoffDocument` variant. A new core handoff field joins this list by itself. */
+export const CORE_HANDOFF_KEYS: readonly string[] = [
+  ...new Set(HandoffDocument.anyOf.flatMap((variant) => Object.keys(variant.properties))),
+];
 
 const CORE_KEYS: Readonly<Record<ExtensionLevel, readonly string[]>> = {
   workflow: Object.keys(WORKFLOW_CORE_PROPERTIES),
   stage: Object.keys(STAGE_CORE_PROPERTIES),
   agent: Object.keys(AGENT_CORE_PROPERTIES),
   role: Object.keys(ROLE_CORE_PROPERTIES),
+  response: CORE_HANDOFF_KEYS,
 };
 
 /** The core keys of a level, without any plugin key. */
@@ -39,6 +47,10 @@ function entryIssues(entry: PluginExtension, seen: Set<string>): string[] {
   if (!Number.isInteger(entry.version) || entry.version < 1) {
     issues.push(`Plugin "${entry.plugin}" extension version must be a positive integer.`);
   }
+  const responseKeys = Object.keys(entry.fields.response?.properties ?? {});
+  if (entry.fields.response !== undefined && responseKeys.length !== 1) {
+    issues.push(`Plugin "${entry.plugin}" response field must have exactly one property, the plugin id.`);
+  }
   return issues;
 }
 
@@ -48,6 +60,7 @@ function keyIssues(where: { plugin: string; level: ExtensionLevel }, key: string
   if (!EXTENSION_KEY_PATTERN.test(key)) issues.push(`Plugin "${plugin}" ${level} key "${key}" must match ${EXTENSION_KEY_PATTERN.source}.`);
   if (claimed.has(key)) issues.push(`The ${level} key "${key}" is claimed twice (plugin "${plugin}").`);
   claimed.add(key);
+  if (level === 'response' && key !== plugin) issues.push(`Plugin "${plugin}" response key "${key}" must equal the plugin id.`);
   if (CORE_KEYS[level].includes(key)) issues.push(`Plugin "${plugin}" claims the core ${level} key "${key}".`);
   if (LEGACY_EXTENSION_KEYS[level].includes(key)) issues.push(`Plugin "${plugin}" claims the legacy ${level} key "${key}".`);
   return issues;
