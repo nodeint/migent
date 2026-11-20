@@ -24,6 +24,9 @@
   invalid, or misplaced payload gets the existing one `handoff` correction turn (error kind `invalid_extension`).
   A valid payload is stored as `response_extensions` in `execution.json`, never in `outcome`, events, or
   `status.json`. Protocol 3 and 2 conversations are unchanged. ([#173](https://github.com/nodeint/migent/issues/173))
+- A plugin reads its own stored response extension payload: `execution.response_extension` in the
+  `execution.finished` hook input and `responseExtension` on its snapshot execution rows. It never sees another
+  plugin's payload. ([#173](https://github.com/nodeint/migent/issues/173))
 - Plugin API 1.2: a plugin may declare a pure `responseContract` that the session freeze evaluates per stage and
   records as `response_contracts` in `workflow.frozen.yaml`. ([#173](https://github.com/nodeint/migent/issues/173))
 - Plugin API 1.1: a plugin may declare an optional pure `validate`, which `migent doctor`, session creation, and

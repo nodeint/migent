@@ -86,7 +86,8 @@
         "id",
         "stage_id",
         "outcome",
-        "artifacts"
+        "artifacts",
+        "response_extension"
       ],
       "properties": {
         "id": {
@@ -120,6 +121,14 @@
           "items": {
             "type": "string"
           }
+        },
+        "response_extension": {
+          "anyOf": [
+            {},
+            {
+              "type": "null"
+            }
+          ]
         }
       }
     }

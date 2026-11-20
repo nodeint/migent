@@ -201,6 +201,8 @@ export interface PluginExecutionRow {
   skip: Record<string, unknown> | null;
   /** Why this execution started a new conversation instead of resuming (`expired`), from `resume_skipped`. */
   freshReason: string | null;
+  /** The calling plugin's own response extension payload for this execution. Absent when it has none. */
+  responseExtension?: unknown;
 }
 
 /** Detached facts about one session at one moment. `basis_seq` is the last non-`plugin.*` event seq. */
@@ -315,6 +317,7 @@ export const PluginHookInput = Type.Object(
       stage_id: nullable(Type.String()),
       outcome: nullable(Type.Record(Type.String(), Type.Unknown())),
       artifacts: Type.Array(Type.String()),
+      response_extension: nullable(Type.Unknown()),
     })),
   },
   { $id: id('plugins/hook-input'), title: 'Plugin hook input', description: 'Detached, deeply frozen data: no handles and no writable paths.' },

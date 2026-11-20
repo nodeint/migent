@@ -13,6 +13,8 @@ import { loadFrozenWorkflow } from './session-freeze.js';
 
 export interface ExecutionRow extends PluginExecutionRow {
   client: string | null;
+  /** Stored payloads by plugin id. Narrowed to the caller's own entry before a plugin reads the row. */
+  responseExtensions?: Readonly<Record<string, unknown>>;
 }
 
 export function sessionIsCorrupt(sessionDirectory: string): boolean {
@@ -117,6 +119,7 @@ function executionRow(directoryName: string, raw: Record<string, unknown>): Exec
     completedAt: text(raw.completed_at),
     skip: isRecord(raw.skip) ? raw.skip : null,
     freshReason: isRecord(raw.resume_skipped) ? text(raw.resume_skipped.reason) : null,
+    ...(isRecord(raw.response_extensions) ? { responseExtensions: raw.response_extensions } : {}),
   };
 }
 

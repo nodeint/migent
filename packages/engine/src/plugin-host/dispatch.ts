@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 
 import {
@@ -30,6 +29,7 @@ import { declaresAgent } from './freeze.js';
 import { recordPluginFailure } from './holds.js';
 import { HostInterceptorChain, type InterceptorInvocation, recordHookInvoked, type SettledInterceptor, settleInterceptor, type StaleAt } from './interception.js';
 import { InvocationState } from './invocation.js';
+import { finishedExecutionInput, snapshotForPlugin } from './owner-snapshot.js';
 import { isSafeOutputName, validateProposals } from './proposals.js';
 import type { PluginSelection, SelectedPlugin } from './selection.js';
 
@@ -271,6 +271,13 @@ export class PluginHost {
     };
   }
 
+  /** The session reads one plugin gets: the snapshot holds only that plugin's own response extensions. */
+  private readsFor(plugin: SelectedPlugin): SessionReads | undefined {
+    const { reads } = this;
+    if (reads === undefined) return undefined;
+    return { ...reads, snapshot: () => snapshotForPlugin(reads.snapshot(), plugin.id) };
+  }
+
   /**
    * Runs one interceptor under the plugin's deadline and records the result. Returns the accepted value, or null
    * when the invocation failed or its proposal was refused; the caller then keeps the value unchanged. A failure is
@@ -349,7 +356,7 @@ export class PluginHost {
     return {
       manifest: plugin.manifest, options: plugin.config,
       ...configSources(this.workspace, this.directory, plugin.id),
-      ...(this.reads === undefined ? {} : { reads: this.reads }),
+      ...(this.reads === undefined ? {} : { reads: this.readsFor(plugin) }),
     };
   }
 
@@ -558,14 +565,8 @@ export class PluginHost {
     const executionId = typeof trigger.record?.execution_id === 'string' ? trigger.record.execution_id : null;
     if (trigger.hook !== HOOK_FINISHED || executionId === null) return frozenCopy(base as PluginHookInput);
     const snapshot = this.store.executionSnapshots(this.sessionId).find((item) => item.executionId === executionId);
-    const artifacts = snapshot !== undefined && existsSync(snapshot.artifactDirectory)
-      ? readdirSync(snapshot.artifactDirectory).sort()
-      : [];
     const stageId = typeof trigger.record?.stage_id === 'string' ? trigger.record.stage_id : null;
-    const outcome = snapshot === undefined
-      ? null
-      : { status: snapshot.outcomeStatus, decision: snapshot.outcomeDecision, execution_status: snapshot.status };
-    const execution = { id: executionId, stage_id: stageId, outcome, artifacts };
+    const execution = finishedExecutionInput({ executionId, stageId, pluginId: plugin.id, snapshot });
     return frozenCopy({ ...base, execution } as PluginHookInput);
   }
 

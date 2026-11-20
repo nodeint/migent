@@ -104,6 +104,7 @@ export class SessionStoreCore {
         outcomeDecision,
         failureReason: typeof metadata.failure_reason === 'string' ? metadata.failure_reason : null,
         verifyReport: verifyReportPath(context.directory, metadata.verify),
+        ...(isRecord(metadata.response_extensions) ? { responseExtensions: metadata.response_extensions } : {}),
       });
     }
     return snapshots;

@@ -15,6 +15,9 @@ First-party Migent plugins and their static registry. Internal; no stable public
   handler must not assume a written file has a `plugin.decision`; `session show` reports the ones that lack it.
 - `call.session.snapshot()` and `resumeFacts()` need `uses.session`. Never cache their result across invocations: a
   changed read makes the core discard the result and re-run the handler once, then record `stale`.
+- A plugin reads only its own response extension payload: `execution.response_extension` in an `execution.finished`
+  hook input (`null` when it has none), and `responseExtension` on each snapshot execution row (absent when it has
+  none). No other plugin's payload appears there. Reading it adds no freshness rule.
 - To claim keys on workflows, stages, agents, or roles, add one entry to `PLUGIN_EXTENSIONS` in
   `@nodeint/migent-contracts` and repeat it as the manifest's `extensions`. `createPluginRegistry` rejects a manifest
   that differs from its catalog entry or omits it. Raise the entry's `version` only for an incompatible schema change.
