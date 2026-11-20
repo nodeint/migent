@@ -454,3 +454,14 @@ export function ageProviderEvents(executionFile: string, at = '2026-01-01T00:00:
   });
   writeFileSync(events, lines.join('\n'));
 }
+
+export class UnstartableProvider extends FakeClient {
+  public override buildCommand(input: Parameters<FakeClient['buildCommand']>[0]): CommandSpec {
+    super.buildCommand(input);
+    return { argv: ['migent-no-such-binary', '--api-key=hunter2', 'secret prompt'] };
+  }
+
+  public override parseResponse(stdout: string): [string, string | null] {
+    return stdout ? super.parseResponse(stdout) : ['', null];
+  }
+}

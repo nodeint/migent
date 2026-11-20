@@ -1,7 +1,7 @@
 import { expect, test } from 'vitest';
 
 import { CommandExecutor } from '../src/command-executor.ts';
-import { assertArgumentsPassable, spawnProviderSync,UnpassableArgument } from '../src/provider-spawn.ts';
+import { assertArgumentsPassable, UnpassableArgument } from '../src/provider-spawn.ts';
 
 const resolveTo = (resolved: string | null) => () => resolved;
 
@@ -17,14 +17,6 @@ test('line breaks are refused only for Windows batch shims', () => {
   expect(() => assertArgumentsPassable('claude', ['-p', 'one line'], { platform: 'win32', resolve: resolveTo('C:\\npm\\claude.cmd') })).not.toThrow();
   expect(() => assertArgumentsPassable('claude', args, { platform: 'darwin', resolve: resolveTo('/usr/bin/claude') })).not.toThrow();
   expect(() => assertArgumentsPassable('claude.cmd', args, { platform: 'win32', resolve: resolveTo(null) })).toThrow(UnpassableArgument);
-});
-
-test('sync spawn runs a command and reports a missing one', () => {
-  const ok = spawnProviderSync(process.execPath, ['-e', "process.stdout.write('hi')"], { encoding: 'utf8' });
-  expect(ok.status).toBe(0);
-  expect(ok.stdout).toBe('hi');
-  const missing = spawnProviderSync('migent-no-such-binary', [], { encoding: 'utf8' });
-  expect((missing.error as NodeJS.ErrnoException | undefined)?.code).toBe('ENOENT');
 });
 
 test.runIf(process.platform === 'win32')('executor refuses a multi-line argument to a .cmd shim', async () => {

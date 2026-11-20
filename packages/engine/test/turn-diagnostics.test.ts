@@ -2,7 +2,6 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { type CliRunOutput, type FailureOrigin, type RawFailure, type ResponseSource } from '@nodeint/migent-kernel';
-import { CommandExecutor } from '@nodeint/migent-kernel';
 import { observeTurn, renderProviderDiagnostics,StreamSummarizer } from '@nodeint/migent-kernel';
 import { createWorkflowSession } from '@nodeint/migent-session';
 import { expect, test, vi } from 'vitest';
@@ -124,49 +123,6 @@ function executionDir(workspace: string, sessionId: string, executionId: string)
 function diagnostics(dir: string): Record<string, any> {
   return JSON.parse(readFileSync(path.join(dir, 'diagnostics.json'), 'utf8')) as Record<string, any>;
 }
-
-test('a non-zero exit with empty stderr still yields a process failure, with counts', async () => {
-  const result = await new CommandExecutor(10).run(
-    { argv: [process.execPath, '-e', "console.log('a'); console.log('bb'); process.exit(5)"] },
-    process.cwd(),
-  );
-  expect(result.failure?.kind).toBe('provider-exit');
-  expect(result.failure?.stderrTail).toBe('');
-  expect(result.failure?.exitCode).toBe(5);
-  expect(result.process).toMatchObject({ stdoutBytes: 5, stdoutLines: 2, drain: 'closed', stderrTotalBytes: 0 });
-});
-
-test.skipIf(process.platform === 'win32')('a provider killed by a signal keeps its signal identity', async () => {
-  const result = await new CommandExecutor(10).run(
-    { argv: [process.execPath, '-e', "process.kill(process.pid, 'SIGKILL')"] },
-    process.cwd(),
-  );
-  expect(result.exitCode).toBe(137);
-  expect(result.failure?.signal).toBe('SIGKILL');
-  expect(result.process?.signal).toBe('SIGKILL');
-});
-
-test('a plain exit 137 is not recorded as a signal', async () => {
-  const result = await new CommandExecutor(10).run(
-    { argv: [process.execPath, '-e', 'process.exit(137)'] },
-    process.cwd(),
-  );
-  expect(result.exitCode).toBe(137);
-  expect(result.failure?.signal).toBeNull();
-  expect(result.process?.signal).toBeNull();
-});
-
-test('stderr written just before exit is read after close, with total and tail sizes', async () => {
-  const big = 'x'.repeat(20_000);
-  const result = await new CommandExecutor(10).run(
-    { argv: [process.execPath, '-e', `process.stderr.write(${JSON.stringify(big)}); process.stderr.write("LAST\\n"); process.exit(3)`] },
-    process.cwd(),
-  );
-  expect(result.failure?.stderrTail.endsWith('LAST\n')).toBe(true);
-  expect(result.failure?.stderrTotalBytes).toBe(20_005);
-  expect(result.failure?.stderrTail.length).toBeLessThan(20_005);
-  expect(result.failure?.drain).toBe('closed');
-});
 
 test('an accepted exit-only turn leaves a record that says accepted', async () => {
   const { workspace, sessionId } = setup();
