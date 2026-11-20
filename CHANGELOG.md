@@ -2,55 +2,50 @@
 
 ## Unreleased
 
+## 0.10.0
+
 ### Breaking
 
-- The prompt-cache-expiry resume policy is now the first-party `prompt_cache_ttl` plugin, and the config schema is
-  version 8. `resume_policies` moves to `plugins.prompt_cache_ttl.policies`, an agent's `resume_policy` to
-  `prompt_cache_ttl.policy`, and a stage's `session.on_expired` to `prompt_cache_ttl.on_expired`. Run
-  `migent migrate`; a legacy key in a version 8 file is a configuration error. Sessions started before this
-  release keep resuming with their frozen policies. ([#167](https://github.com/nodeint/migent/issues/167))
-- The stage view of `get workflow --json` no longer has an `on_expired` field.
-  ([#167](https://github.com/nodeint/migent/issues/167))
+- The prompt-cache-expiry resume policy is now the first-party `prompt_cache_ttl` plugin and the config schema is
+  version 8: run `migent migrate` to move `resume_policies`, an agent's `resume_policy`, and a stage's
+  `session.on_expired` under `plugins.prompt_cache_ttl` and `prompt_cache_ttl`.
+  Sessions started before this release keep their frozen policies.
+  ([#184](https://github.com/nodeint/migent/pull/184))
+- The stage view of `get workflow --json` no longer has an `on_expired` field, so JSON consumers must stop reading it.
+  `migent migrate` does not update JSON consumers. ([#184](https://github.com/nodeint/migent/pull/184))
 
 ### Added
 
-- The first-party `next` plugin asks each stage of a workflow with `downstream` which downstream workflow to run
-  next, or to abstain, and records the answers in `plugins/next/recommendations.json`. `session show` and
-  `session follow --json` list them as `recommendations`, and the text view prints `recommend` lines. `next.json`
-  is unchanged. Disable the plugin with `plugins.next.enabled: false`.
-  ([#125](https://github.com/nodeint/migent/issues/125))
-- New conversations are stamped response protocol 4 (`CURRENT_RESPONSE_PROTOCOL`), which prepares plugin response
-  extensions. The agent-facing contract is unchanged; continued conversations keep their stamp.
-  An older Migent reads a protocol 4 stamp as a handoff-file protocol and does not implement response extensions.
-  ([#173](https://github.com/nodeint/migent/issues/173))
-- Stage handoffs accept plugin response extensions: under protocol 4, the stage prompt lists each active extension
-  (key, required or optional, instructions, frozen JSON Schema), `handoff.json` may carry its payload as a
-  top-level key of a `complete` document, and the core validates it against the frozen schema. A missing,
-  invalid, or misplaced payload gets the existing one `handoff` correction turn (error kind `invalid_extension`).
-  A valid payload is stored as `response_extensions` in `execution.json`, never in `outcome`, events, or
-  `status.json`. Protocol 3 and 2 conversations are unchanged. ([#173](https://github.com/nodeint/migent/issues/173))
+- The first-party `next` plugin asks each stage with `downstream` which workflow to run next and records the
+  answers in `plugins/next/recommendations.json`. `session show` and `session follow --json` list them as
+  `recommendations`; disable the plugin with `plugins.next.enabled: false`. ([#188](https://github.com/nodeint/migent/pull/188))
+- New conversations are stamped response protocol 4, which prepares plugin response extensions without changing the
+  agent-facing contract. An older Migent reads this stamp as a handoff-file protocol and ignores extensions. ([#187](https://github.com/nodeint/migent/pull/187))
+- Stage handoffs accept plugin response extensions: under protocol 4 the stage prompt lists each extension and its
+  frozen schema, and `handoff.json` may carry the payload, which the core validates and stores as
+  `response_extensions` in `execution.json`. An invalid payload gets one `handoff` correction turn, and protocol 3
+  and 2 conversations are unchanged. ([#187](https://github.com/nodeint/migent/pull/187))
 - A plugin reads its own stored response extension payload: `execution.response_extension` in the
   `execution.finished` hook input and `responseExtension` on its snapshot execution rows. It never sees another
-  plugin's payload. ([#173](https://github.com/nodeint/migent/issues/173))
+  plugin's payload. ([#187](https://github.com/nodeint/migent/pull/187))
 - Plugin API 1.2: a plugin may declare a pure `responseContract` that the session freeze evaluates per stage and
-  records as `response_contracts` in `workflow.frozen.yaml`. ([#173](https://github.com/nodeint/migent/issues/173))
+  records as `response_contracts` in `workflow.frozen.yaml`. ([#187](https://github.com/nodeint/migent/pull/187))
 - Plugin API 1.1: a plugin may declare an optional pure `validate`, which `migent doctor`, session creation, and
-  role creation run against the config. ([#167](https://github.com/nodeint/migent/issues/167))
-- Contracts declare a static plugin extension catalog (`PLUGIN_EXTENSIONS`, empty today) that lets a plugin claim flat
-  keys on workflows, stages, agents, and roles, and `createPluginRegistry` checks a manifest's `extensions` against
-  it. ([#174](https://github.com/nodeint/migent/issues/174))
+  role creation run against the config. ([#184](https://github.com/nodeint/migent/pull/184))
+- Contracts declare a static plugin extension catalog (`PLUGIN_EXTENSIONS`) that lets a plugin claim flat keys on
+  workflows, stages, agents, and roles. `createPluginRegistry` checks a manifest's `extensions` against it. ([#182](https://github.com/nodeint/migent/pull/182))
 - The workflow parser, draft collector, and the session freeze accept, validate, and keep plugin-claimed keys on
-  workflows and stages. ([#174](https://github.com/nodeint/migent/issues/174))
+  workflows and stages. ([#182](https://github.com/nodeint/migent/pull/182))
 - Config loading, `migent doctor`, and agent and role resolution accept, validate, and carry plugin-claimed keys on
-  named agents, inline agents, and roles. ([#174](https://github.com/nodeint/migent/issues/174))
+  named agents, inline agents, and roles. ([#182](https://github.com/nodeint/migent/pull/182))
 - The session freeze records plugin-claimed keys on workflows, stages, resolved agents, and roles, and reads them
-  without the current extension catalog. ([#174](https://github.com/nodeint/migent/issues/174))
+  without the current extension catalog. ([#182](https://github.com/nodeint/migent/pull/182))
 - Resuming a session refuses when a plugin that owns frozen extension keys is unregistered or declares another
   extension version, and a plugin with an extension catalog entry may change its semver when its frozen entry still
-  validates. ([#174](https://github.com/nodeint/migent/issues/174))
+  validates. ([#182](https://github.com/nodeint/migent/pull/182))
 - Plugins read their own frozen extension keys through `config.extensions` (`workflow()`, `stage(id)`, `agent(id)`,
   `role(name)`), and no other plugin read, including `call.session.snapshot()` and `config.core`, exposes
-  plugin-owned keys. ([#174](https://github.com/nodeint/migent/issues/174))
+  plugin-owned keys. ([#182](https://github.com/nodeint/migent/pull/182))
 
 ## 0.9.0
 
@@ -166,26 +161,9 @@
 - Windows no longer needs Git Bash's `sh` on `PATH` to run `verify` commands, which previously failed with "Unable to
   start the verify shell". ([#127](https://github.com/nodeint/migent/pull/127))
 
-## 0.5.6
-
-### Added
-
-- `migent session rename <session> "<title>"` changes a session's display title at any time, including during a live
-  run. It writes only `title.json`;
-  the task, events, and status are untouched, and `session list`, `show`, and `follow` show the new title at once.
-  `--json` prints `{session_id, title, previous_title}`.
-
-### Changed
-
-- New sessions get short incrementing numeric ids (`1`, `2`, `3`, …) instead of UUIDs:
-  the next id is the highest numeric session directory name plus one, starting at `1`.
-  Sessions written by earlier versions (UUID, timestamp or `session_<hex>` ids) keep working unchanged and do not affect
-  numbering.
-  `session_id` and `prior_session_id` are now written as quoted strings in `manifest.yaml`, and the manifest reader also
-  accepts an unquoted integer. A role run without a session id (library use) now also gets a numeric id.
-
 ## Older versions
 
+- [0.5.6](https://github.com/nodeint/migent/releases/tag/v0.5.6)
 - [0.5.5](https://github.com/nodeint/migent/releases/tag/v0.5.5)
 - [0.5.4](https://github.com/nodeint/migent/releases/tag/v0.5.4)
 - [0.5.3](https://github.com/nodeint/migent/releases/tag/v0.5.3)
