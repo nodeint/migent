@@ -3,7 +3,7 @@ import type { TSchema } from 'typebox';
 import * as O from './cli-output.js';
 import { LegacyLifecycleEvent, LifecycleEventV2, ProviderStreamRecord, ResumeDecidedData, ResumeExpiredData, SealedMetricsCurrent, SealedMetricsHistorical } from './known-shapes.js';
 import { SESSION_EVENT_SCHEMAS, SessionEvent } from './session-events.js';
-import { ExecutionInput, ExecutionQuestions, SessionDiagnostics, SessionExecution, SessionLockFile, SessionManifest, SessionMetrics, SessionMetricsLegacy, SessionNext, SessionQuestions, SessionStatusFile } from './session-files.js';
+import { ExecutionInput, ExecutionQuestions, SessionDiagnostics, SessionExecution, SessionLockFile, SessionManifest, SessionMetrics, SessionMetricsLegacy, SessionNext, SessionQuestions, SessionRecommendations, SessionStatusFile } from './session-files.js';
 
 export type Framing = 'document' | 'json-lines';
 export type ContractClass = 'produced' | 'passthrough';
@@ -119,6 +119,7 @@ export const SESSION_FILES: readonly SessionFileEntry[] = [
   f('diagnostics', 'executions/<id>/diagnostics.json', { schema: SessionDiagnostics, class: 'known', framing: 'document' }),
   f('metrics', 'plugins/metrics/metrics.json', { schema: SessionMetrics, class: 'known', framing: 'document' }),
   f('metrics-legacy', 'metrics.json', { schema: SessionMetricsLegacy, class: 'known', framing: 'document' }),
+  f('recommendations', 'plugins/next/recommendations.json', { schema: SessionRecommendations, class: 'known', framing: 'document' }),
   f('events', 'events.jsonl', { schema: SessionEvent, class: 'guaranteed', framing: 'json-lines' }),
 ];
 

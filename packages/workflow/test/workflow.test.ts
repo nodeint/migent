@@ -535,3 +535,14 @@ test('a legacy session.on_expired in a schema 8 stage names its new location', (
   const moved = /stages\.b\.session\.on_expired moved to stages\.b\.prompt_cache_ttl\.on_expired in schema_version 8/;
   expect(() => loadWorkflowDocument(sessionFlow('      on_expired: fresh', 8))).toThrow(moved);
 });
+
+test('rejects a duplicate downstream workflow id at load', () => {
+  const dir = tempDir('migent-flow-');
+  const flow = path.join(dir, 'flow.yaml');
+  writeFileSync(
+    flow,
+    'schema_version: 8\nid: dup\ndownstream:\n  - workflow: next\n    task: one\n  - workflow: next\n    task: two\nstages:\n  - id: a\n    role: r\n',
+    'utf8',
+  );
+  expect(() => loadWorkflowDocument(flow)).toThrow(/Duplicate downstream workflow: next\./);
+});

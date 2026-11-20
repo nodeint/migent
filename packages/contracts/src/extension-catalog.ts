@@ -45,6 +45,17 @@ const PromptCacheTtlStage = Type.Object(
   { additionalProperties: false, description: 'Overrides the policy action for this stage.' },
 );
 
+/** One stage's recommendation: a downstream workflow id, or `null` to abstain, with a one-line reason. */
+const NextRecommendation = Type.Object(
+  {
+    workflow: Type.Union([Type.String({ pattern: String.raw`^\S+$`, description: 'A workflow id.' }), Type.Null()], {
+      description: 'The recommended downstream workflow id, or `null` to abstain.',
+    }),
+    reason: Type.String({ pattern: String.raw`^[^\r\n]*\S[^\r\n]*$`, description: 'A short, non-blank, single-line reason.' }),
+  },
+  { additionalProperties: false, description: 'The downstream workflow this stage recommends running next.' },
+);
+
 /** Static and core-owned. A feature adds its entry here. */
 export const PLUGIN_EXTENSIONS: ExtensionCatalog = [
   {
@@ -55,6 +66,7 @@ export const PLUGIN_EXTENSIONS: ExtensionCatalog = [
       stage: Type.Object({ prompt_cache_ttl: PromptCacheTtlStage }),
     },
   },
+  { plugin: 'next', version: 1, fields: { response: Type.Object({ next: NextRecommendation }) } },
 ];
 
 /** The keys claimed on one level, in catalog order. */

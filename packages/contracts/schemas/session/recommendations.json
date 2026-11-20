@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/session/recommendations.json",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "recommendations"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "number",
+      "const": 1
+    },
+    "recommendations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "stage_id",
+          "execution_id",
+          "workflow",
+          "reason"
+        ],
+        "properties": {
+          "stage_id": {
+            "type": "string"
+          },
+          "execution_id": {
+            "type": "string"
+          },
+          "workflow": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "warning": {
+            "type": "string"
+          }
+        },
+        "description": "`workflow` is `null` when the stage abstained. `warning` is set when `workflow` is not in the frozen `downstream`."
+      }
+    }
+  },
+  "title": "Recommendations (`plugins/next/recommendations.json`)",
+  "description": "Rebuilt by the `next` plugin after each execution once any stage has recommended. One entry per stage whose latest completed execution carries a recommendation."
+}

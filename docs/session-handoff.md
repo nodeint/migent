@@ -65,3 +65,24 @@ and current model settings, then binds context. A prepared session from an
 older Migent keeps the project workflow path recorded in its manifest. A failed
 bind leaves it prepared. Its manually written
 `task.md` remains the task; suggestions do not overwrite it.
+
+## Stage recommendations
+
+`next.json` holds the static suggestions of the source workflow. The `next` plugin adds the opinion of each stage
+about them. It is enabled by default and applies to workflows with a non-empty `downstream`, on response
+protocol 4 or later. The `complete` handoff of such a stage must carry a `next` key, or the handoff is rejected
+through the correction flow (`invalid_extension`):
+
+```json
+{
+  "schema_version": 1,
+  "status": "complete",
+  "next": { "workflow": "implement", "reason": "The plan is approved." }
+}
+```
+
+`workflow` is a `downstream` id, or `null` to abstain; `reason` is one non-blank line. An id outside `downstream`
+is accepted and stored unchanged, and its entry carries a `warning`. The plugin keeps the latest completed
+statement of each stage in `plugins/next/recommendations.json` (see the
+[session files reference](reference/session-files.md)). Nothing starts automatically and `next.json` is unchanged.
+Turn the plugin off for new sessions with `plugins.next.enabled: false`.

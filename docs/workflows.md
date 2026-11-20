@@ -542,6 +542,10 @@ with a letter and contain letters, digits or underscores. Unknown fields,
 missing output references, duplicate target workflows and invalid names are errors.
 Doctor reports missing target workflows; completion does not load or freeze them.
 
+Unless `plugins.next.enabled` is `false`, every stage of a workflow with `downstream` also recommends one of the
+listed workflows, or abstains with `null`, in its `complete` handoff. The prompt lists the ids and tasks. See
+[stage recommendations](session-handoff.md#stage-recommendations).
+
 After success, Migent writes session `next.json` and prints its absolute path
 and commands such as `migent session run --workflow implement --prior <id>`.
 Nothing starts automatically. The target requires no input declaration.

@@ -37,7 +37,8 @@ while it is updated), and `.deleting/` (sessions being removed).
 ├── task.md                               # task body; written before the first stage
 ├── events.jsonl
 ├── plugins/
-│   └── metrics/metrics.json              # written by the metrics plugin when a workflow session completes
+│   ├── metrics/metrics.json              # written by the metrics plugin when a workflow session completes
+│   └── next/recommendations.json         # rebuilt by the next plugin once a stage has recommended a downstream workflow
 ├── session.lock                          # present only while a process is running the session
 ├── cancel.requested                      # temporary; written by `session cancel`, removed by the running process
 ├── outputs/                              # present after outputs are published
