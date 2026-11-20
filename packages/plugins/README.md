@@ -24,6 +24,10 @@ First-party Migent plugins and their static registry. Internal; no stable public
   `prompt_cache_ttl` (the prompt-cache resume policy), both `defaultEnabled`.
 - A plugin may declare a pure `validate(input)` (plugin API 1.1). `migent doctor`, session creation, and role creation
   call it for every enabled plugin and refuse the problems it returns.
+- A plugin may declare a pure `responseContract(input)` (plugin API 1.2) that returns `{ required, instructions }` or
+  `null` for each stage when the session freezes. It needs a catalog entry with a `response` field whose only key is
+  the plugin id; `createPluginRegistry` rejects a mismatch, or the member on an API below 1.2. A throw or an invalid
+  result stops session creation with `plugin-response-contract-invalid`. It is not evaluated on resume.
 
 ## Key symbols
 

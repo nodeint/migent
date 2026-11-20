@@ -14,6 +14,8 @@
 
 ### Added
 
+- Plugin API 1.2: a plugin may declare a pure `responseContract` that the session freeze evaluates per stage and
+  records as `response_contracts` in `workflow.frozen.yaml`. ([#173](https://github.com/nodeint/migent/issues/173))
 - Plugin API 1.1: a plugin may declare an optional pure `validate`, which `migent doctor`, session creation, and
   role creation run against the config. ([#167](https://github.com/nodeint/migent/issues/167))
 - Contracts declare a static plugin extension catalog (`PLUGIN_EXTENSIONS`, empty today) that lets a plugin claim flat

@@ -3,6 +3,8 @@ import type { ClientRegistry } from '@nodeint/migent-kernel';
 import { ConfigurationError, pluginEntryIssues, pluginValidationProblems, registryManifests, resolvePluginTarget } from '@nodeint/migent-kernel';
 import type { PluginFreezeInput, PluginsFrozenEntries } from '@nodeint/migent-session';
 
+import { evaluateResponseContracts } from './response-contracts.js';
+
 /** An enabled entry: anything but a mapping with `enabled: false`. A non-mapping counts as enabled and invalid. */
 export function isEnabledEntry(entry: unknown): boolean {
   return !(typeof entry === 'object' && entry !== null && !Array.isArray(entry) && (entry as Record<string, unknown>).enabled === false);
@@ -61,6 +63,7 @@ export function pluginFreezeInput(registry: PluginRegistry, clients: ClientRegis
   return {
     classify: pluginClassifier(registry),
     withDefaults: (config) => withDefaultEntries(config, registry),
+    responseContracts: (config, workflow) => evaluateResponseContracts(registry, config, workflow),
     snapshot: (config, workflow) => {
       assertPluginsValid(config, registry, { workflow, clients });
       const plugins = config.plugins as Record<string, unknown>;

@@ -42,6 +42,7 @@ import {
 } from './freeze-extensions.js';
 import { errorText, readFreezeMapping } from './freeze-file.js';
 import type { PluginFreezeInput, PluginsFrozenEntries } from './freeze-plugins.js';
+import { freezeResponseContracts, type FrozenResponseContracts, readFrozenResponseContracts, responseOwners } from './freeze-response.js';
 import { sessionMapping } from './freeze-session-mapping.js';
 import { readTargets, resolveFreezeTargets } from './freeze-targets.js';
 import { type LegacyPolicyData, readLegacyFreeze } from './legacy-freeze.js';
@@ -64,6 +65,8 @@ export interface WorkflowFreeze {
   config: Record<string, FrozenSection>;
   /** Plugin extension data recorded at creation; empty for a freeze written without any. */
   extensions: FrozenExtensions;
+  /** Active response contracts by stage and plugin, with their frozen payload schemas; empty when none. */
+  responseContracts: FrozenResponseContracts;
 }
 
 export interface WrittenFreeze {
@@ -127,7 +130,12 @@ export function writeWorkflowFreeze(sessionDirectory: string, source: FreezeSour
   const sourceSha256 = sourceFileHash(workflow.source);
   const filePath = path.join(sessionDirectory, WORKFLOW_FREEZE_FILE);
   parseWorkflowMapping(workflowBody, filePath, { extensions: catalog });
-  const extensionKeys = freezeExtensionKeys(catalog, { workflow, targets: resolved, roleTargets });
+  const results = source.plugins?.responseContracts?.(config, workflowBody) ?? {};
+  const owners = responseOwners(results);
+  const extensionKeys = freezeExtensionKeys(catalog, {
+    workflow, targets: resolved, roleTargets, responseOwners: owners,
+  });
+  const contracts = freezeResponseContracts(catalog, results);
   const text = stringify(
     {
       schema_version: 2,
@@ -137,6 +145,7 @@ export function writeWorkflowFreeze(sessionDirectory: string, source: FreezeSour
       targets,
       ...(sections === null ? {} : { config: sections }),
       ...extensionKeys,
+      ...contracts,
     },
     { lineWidth: 0 },
   );
@@ -176,6 +185,11 @@ export function readWorkflowFreeze(sessionDirectory: string): WorkflowFreeze | n
     legacy,
     config: readFrozenConfigSections(parsed.config, (message) => corrupt(filePath, message)),
     extensions,
+    responseContracts: readFrozenResponseContracts(parsed, {
+      records: extensions.records,
+      stageIds: Object.keys(workflow.stages),
+      filePath,
+    }),
   };
 }
 

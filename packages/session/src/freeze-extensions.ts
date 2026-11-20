@@ -32,6 +32,8 @@ function ownedKeys(plugin: string, groups: readonly (ExtensionValues | undefined
 
 /** The inputs of the freeze `extensions` map. */
 export interface ExtensionSources {
+  /** Plugin ids that own an active response contract. Their `keys.response` lists the plugin id. */
+  readonly responseOwners?: readonly string[];
   readonly workflow: WorkflowDocument;
   readonly targets: Record<string, StageTarget>;
   readonly roleTargets: Record<string, StageTarget>;
@@ -46,15 +48,17 @@ export function freezeExtensionKeys(
   sources: ExtensionSources,
 ): Record<string, unknown> {
   if (catalog.length === 0) return {};
-  const { workflow, targets, roleTargets } = sources;
+  const { workflow, targets, roleTargets, responseOwners = [] } = sources;
   const records: Record<string, unknown> = {};
   for (const entry of catalog) {
-    const keys: KeyLists = {
+    const keys: Partial<KeyLists> = {
       workflow: ownedKeys(entry.plugin, [workflow.extensions]),
       stage: ownedKeys(entry.plugin, Object.values(workflow.stages).map((stage) => stage.extensions)),
       agent: ownedKeys(entry.plugin, Object.values(targets).map((target) => target.extensions)),
       role: ownedKeys(entry.plugin, Object.values(roleTargets).map((target) => target.roleExtensions)),
     };
+    // Written only when non-empty, so a freeze without response contracts keeps its bytes.
+    if (responseOwners.includes(entry.plugin)) keys.response = [entry.plugin];
     records[entry.plugin] = { version: entry.version, keys };
   }
   const roleExtensions = Object.fromEntries(

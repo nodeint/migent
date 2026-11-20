@@ -22,7 +22,25 @@ export interface PluginFreezeInput {
    * and returns the snapshot. Throws a `ConfigurationError`.
    */
   readonly snapshot: (config: Record<string, unknown>, workflow?: Record<string, unknown>) => PluginsFrozenEntries;
+  /**
+   * Evaluates `responseContract` (plugin API 1.2) of every enabled plugin with a response entry, for each stage
+   * of the workflow, in chain order. Returns the active results by stage id and plugin id; an inactive stage is
+   * absent. Throws a `ConfigurationError` for a throw or an invalid result.
+   */
+  readonly responseContracts?: (
+    config: Record<string, unknown>,
+    workflow: Record<string, unknown>,
+  ) => PluginResponseResults;
 }
+
+/** One active `responseContract` result. */
+export interface PluginResponseResult {
+  readonly required: boolean;
+  readonly instructions: string;
+}
+
+/** The active results of `responseContract`: stage id, then plugin id. */
+export type PluginResponseResults = Readonly<Record<string, Readonly<Record<string, PluginResponseResult>>>>;
 
 /**
  * Records `plugins.frozen` for a freeze that was just written, bound to its hash. The caller holds the session

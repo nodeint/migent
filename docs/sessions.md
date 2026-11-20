@@ -111,6 +111,10 @@ The session-level files have distinct purposes:
   `resume_policy` stamp (`name` and `policies`) in the `execution.json` of an execution. Migent reads the newest stamp
   in memory as the plugin's options and its agent `policy`, and never rewrites it. A live
   `plugins.prompt_cache_ttl.enabled: false` still turns the gate off for such a session.
+- Response contracts are frozen without a `schema_version` bump. `response_contracts` maps stage id, then plugin id, to
+  `required`, `instructions`, and the payload `schema` copied from the catalog. It is written only when non-empty, and
+  each owner records `keys.response: [plugin]` in `extensions`. A contract without that record, for an unknown stage,
+  or with a malformed field makes the freeze corrupt. An older Migent ignores the key.
 - Downgrading: a session written by this version does not carry `resume_policies` or `resume_policy`, so an older
   Migent that reads it resumes every conversation without the cache gate. A workflow session frozen by an older
   Migent keeps its freeze file as written; this version reads its policies and never rewrites them.
