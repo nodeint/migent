@@ -55,7 +55,7 @@ stages:
   - id: commit_phase
     role: operator
     ask: human
-    depends_on: [review_phase]
+    depends_on: [implement_phase, review_phase]
     instructions:
       - Read phase_report.md and review_phase's approval. Before a new commit, require HEAD to equal the recorded base, on the same branch with exactly the reviewed changes and no unrelated staged, unstaged, or untracked files. Stop on differences; changed code requires another review. Use only the recovery rule below when HEAD has already advanced.
       - Follow CONTRIBUTING.md for commit mechanics; do not push or open a PR. Stage files by name (never `git add -A` or `git commit -am`), inspect the staged diff, and exclude secrets and build output.
