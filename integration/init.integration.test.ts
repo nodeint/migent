@@ -9,6 +9,8 @@ import {
   removeWorkspace, REVISE, runMain, tempWorkspace,
 } from './support.ts';
 
+const PLAN_NEXT = { workflow: 'implement', reason: 'The plan is ready.' };
+
 test.each([
   ['implement', false], ['implement', true], ['plan', false], ['plan', true],
 ] as const)('generated %s workflow completes through review (revise=%s)', async (workflow, revise) => {
@@ -22,11 +24,13 @@ test.each([
         : 'Available models:\n  - grok-test\n',
     })).toBe(0);
     const work = workflow === 'plan'
-      ? { text: COMPLETE, artifact: '# Implementation plan\n' }
+      ? { text: COMPLETE, artifact: '# Implementation plan\n', next: PLAN_NEXT }
       : { text: COMPLETE };
+    const plan = workflow === 'plan';
+    const approved = plan ? { text: APPROVED, next: PLAN_NEXT } : { text: APPROVED };
     installScript(workspace, revise
-      ? [work, { text: REVISE }, work, { text: APPROVED }]
-      : [work, { text: APPROVED }]);
+      ? [work, plan ? { text: REVISE, next: PLAN_NEXT } : { text: REVISE }, work, approved]
+      : [work, approved]);
 
     const [code, results, stderr] = await runMain(workspace, [
       'session', 'run', '--workflow', workflow, '--task', 'Add a JSON export flag',
