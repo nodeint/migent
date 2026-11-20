@@ -308,6 +308,14 @@ function outputsLine(snapshot: Record<string, unknown>): Line {
   return ['outputs', [...published, ...missing.map((name) => `${name} (not produced)`)].join(', ')];
 }
 
+function recommendationLines(snapshot: Record<string, unknown>): Line[] {
+  return recordList(snapshot.recommendations).map((entry): Line => {
+    const target = typeof entry.workflow === 'string' ? entry.workflow : 'abstain';
+    const warning = nonEmptyString(entry.warning) ? ` (warning: ${entry.warning})` : '';
+    return ['recommend', `${String(entry.stage_id)} → ${target}: ${String(entry.reason)}${warning}`];
+  });
+}
+
 export function printWatchSnapshot(snapshot: Record<string, unknown>): void {
   const lines: Line[] = [
     ...identityLines(snapshot),
@@ -315,6 +323,7 @@ export function printWatchSnapshot(snapshot: Record<string, unknown>): void {
     ...attentionLines(snapshot),
     ...outcomeLines(snapshot),
     ...pluginLines(snapshot),
+    ...recommendationLines(snapshot),
     ...recordList(snapshot.quota_failures).map((quota): Line => ['quota', formatQuotaFailure(quota)]),
   ];
   if (nonEmptyString(snapshot.diagnostics)) lines.push(['diagnostics', snapshot.diagnostics]);

@@ -780,6 +780,12 @@ gives the cause and the advisory rows stay as frozen. The JSON snapshot has the 
 (`active`, `invocations`, `added_after_freeze`, `live_unavailable`, `holds`, `freeze_mismatch`, `unrecorded`), omitted without
 plugin data. `added_after_freeze` is `null` when `live_unavailable` is set. `session follow`
 streams `plugin.*` records like any other event.
+While the session's current freeze holds a `next` response contract, the snapshot adds one
+`recommend  <stage> → <workflow|abstain>: <reason>` line per entry of `plugins/next/recommendations.json`, with a
+`(warning: …)` suffix when the workflow is not in `downstream`. The JSON snapshot has the same data as a `recommendations`
+array (`stage_id`, `execution_id`, `workflow`, `reason`, `warning`). It is omitted when the file is missing, the freeze
+has no `next` contract (for example after `--refresh-workflow` removed `downstream`), or the file is not valid JSON or
+does not match its schema. In the last case a notice goes to stderr and `--json` stdout stays one object.
 For a schema 2 session it also prints, on stderr, any drift
 between `status.json` and the fold of the session files. `session follow` prints
 that snapshot and then follows events until a signal. It merges `events.jsonl`

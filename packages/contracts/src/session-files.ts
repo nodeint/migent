@@ -165,6 +165,34 @@ export const SessionMetricsLegacy = Type.Object(SealedMetricsHistorical.properti
 });
 export type SessionMetricsLegacy = Static<typeof SessionMetricsLegacy>;
 
+// ---- plugins/next/recommendations.json --------------------------------------------------------
+
+/** One stage's recommendation, copied unchanged from its `complete` handoff. */
+export const SessionRecommendation = Type.Object(
+  {
+    stage_id: str(),
+    execution_id: str(),
+    workflow: nullable(str()),
+    reason: str(),
+    warning: opt(str()),
+  },
+  { description: '`workflow` is `null` when the stage abstained. `warning` is set when `workflow` is not in the frozen `downstream`.' },
+);
+export type SessionRecommendation = Static<typeof SessionRecommendation>;
+
+export const SessionRecommendations = Type.Object(
+  {
+    schema_version: Type.Literal(1),
+    recommendations: Type.Array(SessionRecommendation),
+  },
+  {
+    $id: id('session/recommendations'),
+    title: 'Recommendations (`plugins/next/recommendations.json`)',
+    description: 'Rebuilt by the `next` plugin after each execution once any stage has recommended. One entry per stage whose latest completed execution carries a recommendation.',
+  },
+);
+export type SessionRecommendations = Static<typeof SessionRecommendations>;
+
 // ---- status.json ------------------------------------------------------------------------------
 
 export const SessionStatusFile = Type.Object(

@@ -82,6 +82,13 @@ test('freeze bytes without plugin policies', () => {
           stage: []
           agent: []
           role: []
+      next:
+        version: 1
+        keys:
+          workflow: []
+          stage: []
+          agent: []
+          role: []
     "
   `);
 });
@@ -119,6 +126,13 @@ test('freeze bytes with plugin policies', () => {
         live_entries: []
     extensions:
       prompt_cache_ttl:
+        version: 1
+        keys:
+          workflow: []
+          stage: []
+          agent: []
+          role: []
+      next:
         version: 1
         keys:
           workflow: []

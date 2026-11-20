@@ -23,8 +23,9 @@ First-party Migent plugins and their static registry. Internal; no stable public
   that differs from its catalog entry or omits it. Raise the entry's `version` only for an incompatible schema change.
   Read the frozen values with `config.extensions.workflow()`, `.stage(id)`, `.agent(stageId)`, and
   `.role(name)`: each returns only the calling plugin's keys, or `null`. The snapshot and `config.core` never include them.
-- Register a plugin in `src/registry.ts`. The first-party plugins are `metrics` (replaces the former core seal) and
-  `prompt_cache_ttl` (the prompt-cache resume policy), both `defaultEnabled`.
+- Register a plugin in `src/registry.ts`. The first-party plugins are `metrics` (replaces the former core seal),
+  `prompt_cache_ttl` (the prompt-cache resume policy) and `next` (asks stages of workflows with `downstream` for a
+  recommendation and records them), all `defaultEnabled`. Opt out with `plugins.<id>.enabled: false`.
 - A plugin may declare a pure `validate(input)` (plugin API 1.1). `migent doctor`, session creation, and role creation
   call it for every enabled plugin and refuse the problems it returns.
 - A plugin may declare a pure `responseContract(input)` (plugin API 1.2) that returns `{ required, instructions }` or
@@ -39,4 +40,6 @@ First-party Migent plugins and their static registry. Internal; no stable public
 | `createPluginRegistry`, `PluginRegistry` | `src/registry.ts` | Static registry of plugins by manifest id |
 | `metricsPlugin`, `metricsManifest`, `buildMetrics` | `src/metrics/` | Session metrics plugin, its manifest and the pure document builder |
 | `METRICS_PLUGIN_ID`, `METRICS_ARTIFACT_NAME` | `src/metrics/index.ts` | Names the CLI reader builds the artifact path from |
+| `nextPlugin`, `nextResponseContract`, `buildRecommendations` | `src/next/` | Stage recommendations plugin: the pure response contract, the pure document builder, and the `execution.finished` handler |
+| `NEXT_PLUGIN_ID`, `NEXT_ARTIFACT_NAME` | `src/next/index.ts` | Names a reader builds the `recommendations.json` path from |
 | `promptCacheTtlPlugin` (via the registry) | `src/prompt-cache-ttl/` | Prompt-cache expiry policy: `policy.ts` (pure selection and expiry), `validate.ts`, and the `conversation.resume` interceptor |

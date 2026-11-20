@@ -333,3 +333,13 @@ test('session.on_expired is reported as an unknown session key', () => {
   const result = collectWorkflowDraft(draft([stage('a', { session: { on_expired: 'fresh' } })], { schema_version: 8 }), 'build.yaml');
   expect(result.problems.map((item) => [item.code, item.path])).toContainEqual(['unknown-key', ['stages', 0, 'session', 'on_expired']]);
 });
+
+test('a duplicate downstream workflow id is an invalid-downstream finding with the entry path', () => {
+  const result = collectWorkflowDraft(
+    draft([stage('a')], { downstream: [{ workflow: 'next', task: 'one' }, { workflow: 'next', task: 'two' }] }),
+    'build.yaml',
+  );
+  expect(result.problems.map((item) => [item.message, item.path])).toEqual([
+    ['Duplicate downstream workflow: next.', ['downstream', 1, 'workflow']],
+  ]);
+});

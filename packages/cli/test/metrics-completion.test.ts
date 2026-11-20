@@ -151,7 +151,7 @@ test('a session frozen before the plugin existed completes with the metrics plug
   expect((await capture(() => main(['session', 'complete', sessionId, '--json'], workspace))).value).toBe(0);
   expect(existsSync(METRICS(directory))).toBe(true);
   const shown = JSON.parse((await capture(() => main(['session', 'show', sessionId, '--json'], workspace))).stdout);
-  expect(shown.plugins.active).toMatchObject([{ id: 'metrics', source: 'implicit' }, { id: 'prompt_cache_ttl', source: 'implicit' }]);
+  expect(shown.plugins.active).toMatchObject([{ id: 'metrics', source: 'implicit' }, { id: 'next', source: 'implicit' }, { id: 'prompt_cache_ttl', source: 'implicit' }]);
   expect(JSON.parse((await metricsCli(workspace, sessionId, '--json')).stdout)).toMatchObject({ session_id: sessionId });
 });
 
@@ -176,7 +176,7 @@ test('continuing a session frozen before the plugin existed completes it with th
   expect(JSON.parse((await metricsCli(workspace, sessionId, '--json')).stdout)).toMatchObject({ session_id: sessionId });
   cliHooks.runner = next;
   const shown = JSON.parse((await capture(() => main(['session', 'show', sessionId, '--json'], workspace))).stdout);
-  expect(shown.plugins.active).toMatchObject([{ id: 'metrics', source: 'implicit' }, { id: 'prompt_cache_ttl', source: 'implicit' }]);
+  expect(shown.plugins.active).toMatchObject([{ id: 'metrics', source: 'implicit' }, { id: 'next', source: 'implicit' }, { id: 'prompt_cache_ttl', source: 'implicit' }]);
 });
 
 test('a session with no freeze file completes with no metrics and no plugin events', async () => {

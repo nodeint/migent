@@ -575,7 +575,7 @@ test('get model, get option, get option --native, and session list --latest with
 test('known shapes describe files written by a real scripted run', async () => {
   const workspace = fakeWorkspace();
   cliHooks.runner = new AgentToolRunner(
-    registryOf({ fake: new ScriptedClient(['status: complete\n\nplanned'], ['# Plan\n']) }),
+    registryOf({ fake: new ScriptedClient([`status: complete\n\nplanned\n<<FILE>>${JSON.stringify({ schema_version: 1, status: 'complete', next: { workflow: 'implement', reason: 'Plan written.' } })}`], ['# Plan\n']) }),
     10,
   );
   cliHooks.runner.pluginRegistry = createPluginRegistry();

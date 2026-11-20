@@ -831,6 +831,12 @@ Type: object
 | `plugins.unrecorded[].reason` | `"no_decision"` \| `"content_mismatch"` | yes | | |
 | `plugins.unrecorded[].recorded_sha256` | string | no | | |
 | `plugins.unrecorded[].actual_sha256` | string | no | | |
+| `recommendations` | object[] | no | | Downstream workflows the stages recommended, from `plugins/next/recommendations.json`. Present only while the session's freeze holds a `next` response contract and the file is valid. |
+| `recommendations[].stage_id` | string | yes | | |
+| `recommendations[].execution_id` | string | yes | | |
+| `recommendations[].workflow` | string \| null | yes | | |
+| `recommendations[].reason` | string | yes | | |
+| `recommendations[].warning` | string | no | | |
 | `diagnostics` | string | no | | |
 | `exit_anomalies` | object[] | no | | |
 | `exit_anomalies[].stage_id` | string | yes | | |
@@ -950,6 +956,12 @@ Type: object
 | `plugins.unrecorded[].reason` | `"no_decision"` \| `"content_mismatch"` | yes | | |
 | `plugins.unrecorded[].recorded_sha256` | string | no | | |
 | `plugins.unrecorded[].actual_sha256` | string | no | | |
+| `recommendations` | object[] | no | | Downstream workflows the stages recommended, from `plugins/next/recommendations.json`. Present only while the session's freeze holds a `next` response contract and the file is valid. |
+| `recommendations[].stage_id` | string | yes | | |
+| `recommendations[].execution_id` | string | yes | | |
+| `recommendations[].workflow` | string \| null | yes | | |
+| `recommendations[].reason` | string | yes | | |
+| `recommendations[].warning` | string | no | | |
 | `diagnostics` | string | no | | |
 | `exit_anomalies` | object[] | no | | |
 | `exit_anomalies[].stage_id` | string | yes | | |

@@ -1880,6 +1880,13 @@ exports[`session complete --json and session follow --json on a stopped session 
         {
           "advisory": false,
           "enabled": true,
+          "id": "next",
+          "source": "implicit",
+          "version": "1.0.0",
+        },
+        {
+          "advisory": false,
+          "enabled": true,
           "id": "prompt_cache_ttl",
           "source": "implicit",
           "version": "1.0.0",
@@ -2025,6 +2032,13 @@ exports[`session complete --json and session follow --json on a stopped session 
           "advisory": false,
           "enabled": true,
           "id": "metrics",
+          "source": "implicit",
+          "version": "1.0.0",
+        },
+        {
+          "advisory": false,
+          "enabled": true,
+          "id": "next",
           "source": "implicit",
           "version": "1.0.0",
         },

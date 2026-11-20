@@ -151,7 +151,7 @@ function recordInvocation(extra) {
 }
 
 // Protocol 3: the stage result is the handoff file the prompt names. Mirrors a status-header reply.
-function writeHandoff(prompt, text) {
+function writeHandoff(prompt, text, step) {
   const target = [...prompt.matchAll(/^- Handoff file: `(.+)`$/gm)].at(-1)?.[1];
   if (!target) return;
   const headers = new Map();
@@ -165,6 +165,8 @@ function writeHandoff(prompt, text) {
   const document = { schema_version: 1, status };
   if (status === "blocked") document.blocker = headers.get("blocker") ?? "";
   else if (headers.get("decision")) document.decision = headers.get("decision");
+  // Optional step key `next`: the `next` plugin recommendation a complete handoff carries.
+  if (status === "complete" && step?.next !== undefined) document.next = step.next;
   mkdirSync(path.dirname(target), { recursive: true });
   writeFileSync(target, JSON.stringify(document), "utf8");
 }
@@ -221,7 +223,7 @@ function codex(prompt, step) {
   const exitCode = Number(step.exit || 0);
   if (exitCode) process.exit(exitCode);
   const text = responseText(prompt, step);
-  writeHandoff(prompt, text);
+  writeHandoff(prompt, text, step);
   const fileText = "file_text" in step ? step.file_text : text;
   const stdoutText = "stdout_text" in step ? step.stdout_text : text;
   const lastMessage = argAfter("--output-last-message");
@@ -235,7 +237,7 @@ function grok(prompt, step) {
   const exitCode = Number(step.exit || 0);
   if (exitCode) process.exit(exitCode);
   const text = responseText(prompt, step);
-  writeHandoff(prompt, text);
+  writeHandoff(prompt, text, step);
   const events = step.events || "text";
   if (events === "error") {
     emit({ type: "error", message: step.message || "provider failed" });

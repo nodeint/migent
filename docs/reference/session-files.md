@@ -538,6 +538,30 @@ Type: object
 | `executions[].skip` | map of any \| null | no | | |
 | `executions[].fresh_reason` | string \| null | no | | |
 
+<a id="session-recommendations-json"></a>
+
+### Recommendations (`plugins/next/recommendations.json`)
+
+Schema: `https://raw.githubusercontent.com/nodeint/migent/main/packages/contracts/schemas/session/recommendations.json`
+
+Rebuilt by the `next` plugin after each execution once any stage has recommended.
+One entry per stage whose latest completed execution carries a recommendation.
+
+Path:
+`plugins/next/recommendations.json`; class: known; framing: document
+
+Type: object
+
+| Field | Type | Required | Notes | Description |
+| --- | --- | --- | --- | --- |
+| `schema_version` | `1` | yes | | |
+| `recommendations` | object[] | yes | | |
+| `recommendations[].stage_id` | string | yes | | |
+| `recommendations[].execution_id` | string | yes | | |
+| `recommendations[].workflow` | string \| null | yes | | |
+| `recommendations[].reason` | string | yes | | |
+| `recommendations[].warning` | string | no | | |
+
 <a id="session-event-json"></a>
 
 ### Session event envelope (`events.jsonl`)
