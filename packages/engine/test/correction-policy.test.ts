@@ -76,7 +76,7 @@ test('a missing handoff gets one full-contract correction and the rewritten hand
   expect(provider.calls[1]?.prompt).toContain('## Do\n\nRewrite the whole handoff file');
   expect(result.failure_reason).toBe('');
   expect(record.status).toBe('completed');
-  expect(record.response_protocol).toBe(3);
+  expect(record.response_protocol).toBe(4);
   expect(record.corrections.handoff).toMatchObject({ turn: 1, error_kind: 'missing' });
   expect(record.question_correction).toBeUndefined();
 });

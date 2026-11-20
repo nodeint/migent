@@ -17,5 +17,5 @@ Prompt templates and renderers for Migent. Internal; no stable public API.
 | `buildStageReplyPrompt`, `formatQuestionAnswers` | `src/index.ts` | Human reply and answers |
 | `renderProviderPrompt`, `addStageOutcomeContract` | `src/index.ts` | Outcome contract wrapping |
 | `render*Correction`, `renderVerifyRepair` | `src/index.ts` | Correction and repair turns |
-| `CURRENT_RESPONSE_PROTOCOL` | `src/index.ts` | Response protocol version |
+| `CURRENT_RESPONSE_PROTOCOL` | `src/index.ts` | Protocol stamped on new conversations |
 | `renderPrompt` | `src/renderer.ts` | Template renderer |

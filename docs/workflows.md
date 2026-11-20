@@ -578,8 +578,8 @@ including after a verify repair or an artifact correction.
 contract until it ends: the reply starts with `status:`, `decision:` and `blocker:` header lines,
 and questions go to a separate `question-request.json`. The protocol is recorded as
 `response_protocol` in each `execution.json`. A new conversation (no source execution) uses
-protocol 3. An execution that continues one (a reply, retry, revision, route-back or
-`resume_from`) inherits its source execution's protocol.
+protocol 4, which uses the protocol 3 handoff-file contract. An execution that continues one (a reply, retry,
+revision, route-back or `resume_from`) inherits its source execution's protocol.
 
 `migent session continue <session-id>` runs that stage again after the blocker
 is fixed. The new attempt's prompt includes the blocker text and the previous

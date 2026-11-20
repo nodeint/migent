@@ -296,7 +296,7 @@ test('an invalid question file gets one correction turn in the same conversation
     const execution = lastExecution(root, result.sessionId);
     expect((execution.corrections as Record<string, unknown>).handoff).toMatchObject({ turn: 1, error_kind: 'invalid_json' });
     expect(execution.outcome).toMatchObject({ status: 'question', questions: [scopeQuestion] });
-    expect(execution.response_protocol).toBe(3);
+    expect(execution.response_protocol).toBe(4);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
@@ -368,18 +368,18 @@ test('a reply continues the conversation under the protocol it started with', as
     const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
     const first = await executeNamedWorkflow(root, { workflowId: 'plan', task: 'Plan' }, runner);
     expect(first.code).toBe(9);
-    expect(executionRecords(root, first.sessionId)[0]!.response_protocol).toBe(3);
+    expect(executionRecords(root, first.sessionId)[0]!.response_protocol).toBe(4);
     // A conversation begun before protocol 3 exists.
     stampExecutions(root, first.sessionId, 2);
     const second = await executeNamedWorkflow(root, { sessionId: first.sessionId, reply: '1A' }, runner);
     expect(second.code).toBe(0);
     const records = executionRecords(root, first.sessionId);
-    expect(records.map((record) => [record.stage_id, record.response_protocol])).toEqual([['plan', 2], ['plan', 2], ['after', 3]]);
+    expect(records.map((record) => [record.stage_id, record.response_protocol])).toEqual([['plan', 2], ['plan', 2], ['after', 4]]);
     // The answered turn runs on the protocol 2 contract; no handoff file is mentioned.
     const answered = provider.calls[1]?.prompt ?? '';
     expect(answered).not.toContain('Handoff file');
     expect(answered).not.toContain('Write one JSON document');
-    // A fresh stage with no source execution starts on protocol 3 and names its handoff file.
+    // A fresh stage with no source execution starts on protocol 4 and names its handoff file.
     expect(provider.calls[2]?.prompt).toContain('- Handoff file: ');
     expect(records[2]).toMatchObject({ status: 'completed' });
   } finally { rmSync(root, { recursive: true, force: true }); }

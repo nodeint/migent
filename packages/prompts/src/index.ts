@@ -28,6 +28,8 @@ const TURN_DIRECTIVES: Record<TurnKind, string> = {
 
 /** Protocol 3: the stage result is the handoff file. Protocol 2: response headers plus a question file. */
 export const HANDOFF_FILE_PROTOCOL = 3;
+/** Protocol a new conversation is stamped with. 4 adds plugin response extensions on top of protocol 3. */
+export const CURRENT_RESPONSE_PROTOCOL = 4;
 /** Oldest response protocol still understood. */
 export const LEGACY_RESPONSE_PROTOCOL = 2;
 

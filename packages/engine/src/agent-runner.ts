@@ -10,7 +10,7 @@ import { VerifyRunner } from '@nodeint/migent-kernel';
 import { ConfigurationError } from '@nodeint/migent-kernel';
 import { readCorrectionLedger } from '@nodeint/migent-kernel';
 import {
-  HANDOFF_FILE_PROTOCOL,
+  CURRENT_RESPONSE_PROTOCOL,
   LEGACY_RESPONSE_PROTOCOL,
 } from '@nodeint/migent-prompts';
 import { type ExecutionContext, SessionStore, stringOptions } from '@nodeint/migent-session';
@@ -62,9 +62,10 @@ export type { RunResult } from './turn-types.js';
 
 /**
  * Version of the response contract baked into a saved first prompt. 2 = headers plus a question
- * request file. 3 = one handoff file. A conversation keeps the protocol it started under.
+ * request file. 3 = one handoff file. 4 = handoff file plus plugin response extensions. A conversation
+ * keeps the protocol it started under.
  */
-const RESPONSE_PROTOCOL = HANDOFF_FILE_PROTOCOL;
+const RESPONSE_PROTOCOL = CURRENT_RESPONSE_PROTOCOL;
 
 export class AgentToolRunner {
   public readonly registry: ClientRegistry;

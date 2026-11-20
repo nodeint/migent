@@ -141,13 +141,26 @@ test("a stage that resumes another stage's conversation inherits its protocol, n
   noProtocol3(provider.calls[1]?.prompt);
 }, 60_000);
 
-test('a fresh session runs protocol 3 end to end and a stage that resumes another keeps its protocol', async () => {
+test('a fresh session stamps protocol 4 end to end and a stage that resumes another keeps its protocol', async () => {
   const { workspace, sessionId } = setup('id: wf\nstages:\n  - { id: make, role: worker }\n  - id: again\n    role: worker\n    depends_on: [make]\n    session: { resume_from: make }\ncompletion:\n  stage: again\n');
   const provider = new ScriptedClient([OK, OK]);
   const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
   const result = await executeNamedWorkflow(workspace, { workflowId: 'wf', sessionId }, runner);
   expect(result.code).toBe(0);
-  expect(protocols(workspace, sessionId)).toEqual([['make', 3], ['again', 3]]);
+  expect(protocols(workspace, sessionId)).toEqual([['make', 4], ['again', 4]]);
   expect(provider.calls[0]?.prompt).toContain('Handoff file');
   expect(provider.calls[0]?.prompt).not.toContain('Question file');
+}, 60_000);
+
+test('a conversation stamped 3 keeps protocol 3 when the default moves to 4', async () => {
+  const { workspace, sessionId } = setup('id: wf\nstages:\n  - { id: plan, role: worker, ask: human }\ncompletion:\n  stage: plan\n');
+  const provider = new ScriptedClient([QUESTION, OK]);
+  const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
+  runner.newConversationProtocol = 3;
+  const first = await executeNamedWorkflow(workspace, { workflowId: 'wf', sessionId }, runner);
+  expect(first.code).toBe(9);
+  runner.newConversationProtocol = 4;
+  const answered = await executeNamedWorkflow(workspace, { sessionId, reply: '1A' }, runner);
+  expect(answered.code).toBe(0);
+  expect(protocols(workspace, sessionId)).toEqual([['plan', 3], ['plan', 3]]);
 }, 60_000);

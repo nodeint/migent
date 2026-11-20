@@ -250,10 +250,10 @@ Each execution directory contains:
   see [Workflows](workflows.md#correctable-response-failures)). `corrections` records
   each granted correction by kind (`turn`, `error_kind`, `error_detail`). A stage with no role records `failure_reason:
   verify_failed` when the list fails.
-- `handoff.json`: the stage outcome the agent writes under response protocol 3 (see
+- `handoff.json`: the stage outcome the agent writes under response protocol 3 or 4 (see
   [Workflows](workflows.md#stage-protocol)). Migent deletes it before every fresh turn, so it
   holds the last turn's handoff, and a failed validation leaves it for diagnosis. Corrections for it
-  are recorded as `corrections.handoff`. `execution.json` records `response_protocol` (3 for a
+  are recorded as `corrections.handoff`. `execution.json` records `response_protocol` (4 for a
   new conversation; a continued conversation keeps its source execution's value, and a missing
   or legacy value is read as protocol 1). Protocol 2 conversations use `question-request.json`.
 - `conversation.json`: client conversation checkpoint used when resuming a
