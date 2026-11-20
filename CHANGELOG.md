@@ -14,6 +14,11 @@
 
 ### Added
 
+- The first-party `next` plugin asks each stage of a workflow with `downstream` which downstream workflow to run
+  next, or to abstain, and records the answers in `plugins/next/recommendations.json`. `session show` and
+  `session follow --json` list them as `recommendations`, and the text view prints `recommend` lines. `next.json`
+  is unchanged. Disable the plugin with `plugins.next.enabled: false`.
+  ([#125](https://github.com/nodeint/migent/issues/125))
 - New conversations are stamped response protocol 4 (`CURRENT_RESPONSE_PROTOCOL`), which prepares plugin response
   extensions. The agent-facing contract is unchanged; continued conversations keep their stamp.
   An older Migent reads a protocol 4 stamp as a handoff-file protocol and does not implement response extensions.

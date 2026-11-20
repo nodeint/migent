@@ -806,6 +806,44 @@
       },
       "description": "Derived on read from `plugins.frozen` and `plugin.*`. Absent when the session recorded no plugin data."
     },
+    "recommendations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "stage_id",
+          "execution_id",
+          "workflow",
+          "reason"
+        ],
+        "properties": {
+          "stage_id": {
+            "type": "string"
+          },
+          "execution_id": {
+            "type": "string"
+          },
+          "workflow": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "warning": {
+            "type": "string"
+          }
+        },
+        "description": "`workflow` is `null` when the stage abstained. `warning` is set when `workflow` is not in the frozen `downstream`."
+      },
+      "description": "Downstream workflows the stages recommended, from `plugins/next/recommendations.json`. Present only while the session's freeze holds a `next` response contract and the file is valid."
+    },
     "diagnostics": {
       "type": "string"
     },

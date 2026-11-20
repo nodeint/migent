@@ -21,6 +21,7 @@ import {
 import { isFile } from '../fs-utils.js';
 import { cliHooks } from '../hooks.js';
 import { bindCancellationSignals, delay, throwIfCliCancelled } from '../signals.js';
+import { readRecommendations } from './recommendations-read.js';
 
 /** Pause between log polls, in milliseconds. */
 const POLL_MS = 250;
@@ -210,7 +211,9 @@ function withLiveFacts(snapshot: Record<string, unknown>, sessionDirectory: stri
   const registry = cliHooks.runner?.pluginRegistry ?? pluginRegistry();
   const inspection = isRecord(plugins) ? plugins as unknown as PluginsInspection : null;
   const live = withLivePlugins(inspection, { workspace, sessionDirectory, registry });
-  return live === null ? snapshot : { ...snapshot, plugins: live };
+  const withPlugins = live === null ? snapshot : { ...snapshot, plugins: live };
+  const recommendations = readRecommendations(sessionDirectory);
+  return recommendations === undefined ? withPlugins : { ...withPlugins, recommendations };
 }
 
 function snapshotJson(snapshot: Record<string, unknown>): Static<typeof SessionSnapshot> {
