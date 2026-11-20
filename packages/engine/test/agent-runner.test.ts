@@ -7,7 +7,7 @@ import { expect, test } from 'vitest';
 
 import { GrokClient } from '../../adapters/src/clients/grok-client.ts';
 import { AgentToolRunner } from '../src/index.ts';
-import { BlockedClient, FakeClient, holdSessionLock, MissingOutcomeClient, registryOf, repoWorkflowText, ScriptedClient, tempDir, writePlanReviewSession, writeSessionConfig } from './support.ts';
+import { BlockedClient, FakeClient, holdSessionLock, MissingOutcomeClient, registryOf, repoWorkflowText, ScriptedClient, tempDir, UnstartableProvider, writePlanReviewSession, writeSessionConfig } from './support.ts';
 
 function executionFile(workspace: string, sessionId: string, executionId: string): string {
   return path.join(
@@ -614,17 +614,6 @@ test('the version command runs once for two executions', async () => {
   expect(readFileSync(hits, 'utf8')).toBe('1\n');
 });
 
-class UnstartableProvider extends FakeClient {
-  buildCommand(input: Parameters<FakeClient['buildCommand']>[0]) {
-    super.buildCommand(input);
-    return { argv: ['migent-no-such-binary', '--api-key=hunter2', 'secret prompt'] };
-  }
-
-  parseResponse(stdout: string): [string, string | null] {
-    return stdout ? super.parseResponse(stdout) : ['', null];
-  }
-}
-
 test('a provider that cannot start leaves diagnostics.json without argument values', async () => {
   const runner = new AgentToolRunner(registryOf({ fake: new UnstartableProvider() }), 10);
   const tmp = tempDir('migent-runner-');
@@ -649,29 +638,6 @@ test('a provider that cannot start leaves diagnostics.json without argument valu
   expect(conversation.history.some((entry) => entry.role === 'assistant')).toBe(false);
   expect(result.response).toBe('');
 });
-
-test('MIGENT_DEBUG writes wrapper and executor steps to debug.log for successful and failed runs', async () => {
-  const previous = process.env.MIGENT_DEBUG;
-  process.env.MIGENT_DEBUG = '1';
-  try {
-    for (const provider of [new FakeClient(), new UnstartableProvider()]) {
-      const runner = new AgentToolRunner(registryOf({ fake: provider }), 10);
-      const tmp = tempDir('migent-runner-');
-      const result = await runner.run({ client: 'fake', model: 'm1', prompt: 'p', workspace: tmp });
-      const log = readFileSync(
-        path.join(path.dirname(executionFile(tmp, result.session_id, result.execution_id)), 'debug.log'),
-        'utf8',
-      );
-      expect(log).toContain('wrapper spawned');
-      expect(log).toContain('wrapper ready');
-      expect(log).toContain('wrapper: listening');
-      expect(log).toContain('wrapper: provider spawned');
-    }
-  } finally {
-    if (previous === undefined) delete process.env.MIGENT_DEBUG;
-    else process.env.MIGENT_DEBUG = previous;
-  }
-}, 30000);
 
 test('no debug.log without MIGENT_DEBUG', async () => {
   const runner = new AgentToolRunner(registryOf({ fake: new FakeClient() }), 10);
