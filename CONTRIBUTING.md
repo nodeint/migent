@@ -159,7 +159,7 @@ Blank issues are disabled; write issues in English.
   Slug: `[a-z][a-z0-9]*(-[a-z0-9]+)*`; issue number positive, no leading zeros.
 - Commit/PR: `<type>: <imperative summary>`; short English line, no scope or final period.
   Commit describes its change; PR describes the outcome. Prefix need not match branch.
-- Release: `release/X.Y.Z` → `Release X.Y.Z`, matching version, no leading zeros.
+- Release: `release/X.Y.Z` → `release: vX.Y.Z`, matching version, no leading zeros.
   Supporting commits may use ordinary prefixes.
 - Squash: `<PR title> (#N)`. Leave existing history unchanged.
 - Hooks check branch/new commit names; CI checks branch/PR title, including edits.

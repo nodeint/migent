@@ -14,16 +14,16 @@ export function branchProblem(branch) {
 }
 
 export function subjectProblem(subject, branch) {
-  if (releaseBranch.test(branch) && subject === `Release ${branch.slice("release/".length)}`) return null;
+  if (releaseBranch.test(branch) && subject === `release: v${branch.slice("release/".length)}`) return null;
   return workSubject.test(subject)
     ? null
-    : "Use <type>: <imperative summary> without a final period; release subjects must match release/X.Y.Z. See CONTRIBUTING.md.";
+    : "Use <type>: <imperative summary> without a final period; release subjects must be release: vX.Y.Z matching the branch. See CONTRIBUTING.md.";
 }
 
 export function pullRequestProblems(branch, title) {
   const problems = [branchProblem(branch), subjectProblem(title, branch)].filter(Boolean);
-  if (releaseBranch.test(branch) && title !== `Release ${branch.slice("release/".length)}`) {
-    problems.push("Release PR title must be Release X.Y.Z matching its branch.");
+  if (releaseBranch.test(branch) && title !== `release: v${branch.slice("release/".length)}`) {
+    problems.push("Release PR title must be release: vX.Y.Z matching its branch.");
   }
   return problems;
 }

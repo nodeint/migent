@@ -29,17 +29,17 @@ test.each([
 
 test.each([
   '', 'Fix resume', 'fix: ', 'fix: restore resume.', 'fix(cli): restore resume',
-  'test: cover resume', 'fix: restore resume ', 'fix: restore\nresume', 'Release 1.2.3',
+  'test: cover resume', 'fix: restore resume ', 'fix: restore\nresume', 'release: v1.2.3',
 ])('rejects subject %s on a work branch', (subject) => {
   expect(subjectProblem(subject, 'fix/resume')).toBeTruthy();
 });
 
 test('release subjects and PR titles preserve the publishing convention', () => {
-  expect(subjectProblem('Release 1.2.3', 'release/1.2.3')).toBeNull();
-  expect(subjectProblem('Release 1.2.4', 'release/1.2.3')).toBeTruthy();
+  expect(subjectProblem('release: v1.2.3', 'release/1.2.3')).toBeNull();
+  expect(subjectProblem('release: v1.2.4', 'release/1.2.3')).toBeTruthy();
   expect(subjectProblem('docs: clarify notes', 'release/1.2.3')).toBeNull();
-  expect(pullRequestProblems('release/1.2.3', 'Release 1.2.3')).toEqual([]);
-  expect(pullRequestProblems('release/1.2.3', 'Release 1.2.3 (#42)')).not.toEqual([]);
+  expect(pullRequestProblems('release/1.2.3', 'release: v1.2.3')).toEqual([]);
+  expect(pullRequestProblems('release/1.2.3', 'release: v1.2.3 (#42)')).not.toEqual([]);
   expect(pullRequestProblems('release/1.2.3', 'docs: clarify notes')).not.toEqual([]);
   expect(pullRequestProblems('fix/resume', 'fix: restore resume')).toEqual([]);
   expect(pullRequestProblems('wrong/resume', 'fix: restore resume')).not.toEqual([]);

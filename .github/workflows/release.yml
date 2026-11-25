@@ -1,6 +1,6 @@
 name: Release
 
-# A squashed release PR ("Release X.Y.Z (#N)") landing on next releases that
+# A squashed release PR ("release: vX.Y.Z (#N)") landing on next releases that
 # version. The github job tags the commit, fast-forwards main to it, and
 # creates the GitHub Release. The npm job then publishes from the tag.
 # Every other push to next is ignored.
@@ -59,7 +59,7 @@ jobs:
             ref="refs/tags/$tag"
           else
             subject=$(git log -1 --format=%s "$GITHUB_SHA")
-            if ! [[ "$subject" =~ ^Release\ ([0-9]+\.[0-9]+\.[0-9]+)\ \(#[0-9]+\)$ ]]; then
+            if ! [[ "$subject" =~ ^release:\ v([0-9]+\.[0-9]+\.[0-9]+)\ \(#[0-9]+\)$ ]]; then
               echo "Not a release commit: $subject"
               echo "release=false" >> "$GITHUB_OUTPUT"
               exit 0
