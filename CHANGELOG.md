@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## 0.10.0
+## 0.10.1
 
 ### Breaking
 

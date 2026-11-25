@@ -1,6 +1,6 @@
 {
   "name": "@nodeint/migent-plugins",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "First-party plugins and their static registry for Migent.",
   "keywords": [
     "ai",

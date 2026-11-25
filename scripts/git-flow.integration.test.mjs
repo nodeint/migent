@@ -71,8 +71,8 @@ test('installed hooks enforce PR flow in a real isolated clone', () => {
       cwd: repo, encoding: 'utf8',
     }).status).not.toBe(0);
     git('switch', '-c', 'release/1.2.3');
-    git('commit', '--allow-empty', '-m', 'Release 1.2.3');
-    expect(spawnSync('git', ['commit', '--allow-empty', '-m', 'Release 1.2.4'], {
+    git('commit', '--allow-empty', '-m', 'release: v1.2.3');
+    expect(spawnSync('git', ['commit', '--allow-empty', '-m', 'release: v1.2.4'], {
       cwd: repo, encoding: 'utf8',
     }).status).not.toBe(0);
 
