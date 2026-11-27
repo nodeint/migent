@@ -1,4 +1,4 @@
-schema_version: 7
+schema_version: 8
 id: product
 constraints:
   - Product specification only. Do not modify source code or design internal software architecture.
