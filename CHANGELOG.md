@@ -2,9 +2,23 @@
 
 ## Unreleased
 
-- Add the opt-in `summarizer` plugin. It writes `plugins/summarizer/summary.md`, an agent-written session summary, on
-  completion, on a question, blocked or expired stop, or after each execution. Plugin API 1.3 adds the bounded
-  `artifacts` session read. (#141)
+## 0.11.0
+
+### Added
+
+- The opt-in `summarizer` plugin (`plugins.summarizer.enabled: true` plus an `agent`) writes
+  `plugins/summarizer/summary.md`, an agent-written session summary. By default it runs on completion, a question, a
+  blocked stop and an expired stop. ([#191](https://github.com/nodeint/migent/pull/191))
+- Setting `plugins.summarizer.triggers` replaces those defaults, so list every trigger you want, such as
+  `[completed, execution]`, to also run after each finished execution. ([#191](https://github.com/nodeint/migent/pull/191))
+- `migent session show` lists the summary and whether it is `current` or `stale`, and `migent session show --summary`
+  prints its text. ([#191](https://github.com/nodeint/migent/pull/191))
+- Plugin API 1.3 adds the bounded `artifacts` session read. ([#191](https://github.com/nodeint/migent/pull/191))
+
+### Changed
+
+- An advisory plugin's valid proposals are now applied even when the session advances while its handler runs, instead
+  of being discarded as stale. ([#191](https://github.com/nodeint/migent/pull/191))
 
 ## 0.10.1
 
@@ -132,41 +146,9 @@
   ([configuration](https://github.com/nodeint/migent/blob/main/docs/agents.md#resume-policies)).
   ([#135](https://github.com/nodeint/migent/pull/135))
 
-## 0.6.0
-
-### Breaking
-
-- `migent init` now takes agents from the project template, and the per-role flags (`--planner-*`, `--reviewer-*`,
-  `--developer-*`, `--client`, `--model`, `--effort`, `--option`, `--*provider`) are rejected.
-  Use `--agent NAME=CLIENT:MODEL`, `--agent-effort NAME=EFFORT` and `--agent-option NAME:KEY=VALUE` with the names
-  `planning`, `review` and `coding`, e.g. `--agent planning=codex:gpt-5`.
-  ([#128](https://github.com/nodeint/migent/pull/128))
-- Stage `verify` commands now run in cmd.exe (`%ComSpec%`) on Windows instead of `sh`;
-  other systems still use `/bin/sh`.
-  On Windows, rewrite POSIX-only `verify` commands (`&&` chains with `$VAR`, `test`, `grep`, `rm`) in cmd.exe syntax or
-  call a script that works there, e.g. `node scripts/check.mjs`. ([#127](https://github.com/nodeint/migent/pull/127))
-
-### Changed
-
-- The generated project has an `agents` section (`planning`, `review`, `coding`) that roles refer to by name;
-  `planner` is renamed `architect` and a new `operator` role shares `coding` with `developer`.
-  Existing projects are unchanged. ([#128](https://github.com/nodeint/migent/pull/128))
-- For `agy`, `claude-code`, `grok` and `opencode`, valid options now come from the installed CLI's headless help, and
-  `migent doctor`, `migent init` and the agent commands report `option-unknown`, `option-value-invalid`,
-  `option-conflict` and `option-unverified`.
-  Offline checks only refuse flags Migent sets itself, so a wrong option value reaches the client CLI unless doctor ran
-  first. ([#124](https://github.com/nodeint/migent/pull/124))
-
-### Fixed
-
-- A Claude Code role can set any option `claude -p --help` lists, such as `autocompact: 200000`, and pass
-  `migent doctor`. Numbers and booleans in YAML option values are stored as strings.
-  ([#124](https://github.com/nodeint/migent/pull/124))
-- Windows no longer needs Git Bash's `sh` on `PATH` to run `verify` commands, which previously failed with "Unable to
-  start the verify shell". ([#127](https://github.com/nodeint/migent/pull/127))
-
 ## Older versions
 
+- [0.6.0](https://github.com/nodeint/migent/releases/tag/v0.6.0)
 - [0.5.6](https://github.com/nodeint/migent/releases/tag/v0.5.6)
 - [0.5.5](https://github.com/nodeint/migent/releases/tag/v0.5.5)
 - [0.5.4](https://github.com/nodeint/migent/releases/tag/v0.5.4)

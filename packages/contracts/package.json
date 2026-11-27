@@ -1,6 +1,6 @@
 {
   "name": "@nodeint/migent-contracts",
-  "version": "0.10.1",
+  "version": "0.11.0",
   "description": "Public data contracts (TypeBox schemas) for Migent.",
   "keywords": [
     "ai",
