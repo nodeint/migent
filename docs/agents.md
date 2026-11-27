@@ -265,6 +265,8 @@ agents:
   the shared one.
 - A `policy` name that no policy defines is a configuration error, even when `policies` is absent. An agent that
   names no policy and matches none keeps today's behavior.
+- A plugin that calls an agent, such as `summarizer`, names one with `plugins.<id>.agent`; see
+  [sessions](sessions.md). Prefer a read-only configuration for it.
 - `plugins.prompt_cache_ttl.enabled: false` turns the plugin off: every resume continues the old conversation.
 - The plugin entry is frozen into the session when it is created, so a later `config.yaml` edit does not change
   a running session. Role sessions keep the policy across `continue`.

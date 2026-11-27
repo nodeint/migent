@@ -10,11 +10,12 @@ import {
 import { metricsPlugin } from './metrics/index.js';
 import { nextPlugin } from './next/index.js';
 import { promptCacheTtlPlugin } from './prompt-cache-ttl/index.js';
+import { summarizerPlugin } from './summarizer/index.js';
 
 export type { PluginRegistry };
 
 /** First-party plugins. Features add themselves here (#131, #141, #142). */
-const FIRST_PARTY: readonly Plugin[] = [metricsPlugin, promptCacheTtlPlugin, nextPlugin];
+const FIRST_PARTY: readonly Plugin[] = [metricsPlugin, promptCacheTtlPlugin, nextPlugin, summarizerPlugin];
 
 /** Structural equality of plain data: schemas are JSON-like objects, arrays and scalars. */
 function sameData(a: unknown, b: unknown): boolean {
