@@ -225,6 +225,23 @@ test('a fresh artifact that is stale twice records stale and writes nothing', as
   expect(() => reportOf(workspace)).toThrow();
 });
 
+test('an advisory result is applied after later events and never records stale', async () => {
+  const workspace = tempDir('migent-freshness-');
+  const state = { calls: 0 };
+  const base = handlerPlugin(async (_input, call) => {
+    state.calls += 1;
+    await call.session.snapshot();
+    appendEvent(workspace);
+    return [call.artifacts.propose('report.md', `body${state.calls}`)];
+  });
+  const advisory: Plugin = { ...base, manifest: { ...base.manifest, advisory: true } };
+  const { events, result } = await run([advisory], workspace);
+  expect(result.code).toBe(0);
+  expect(state.calls).toBe(1);
+  expect(reportOf(workspace)).toBe('body1');
+  expect(failures(events)).toEqual([]);
+});
+
 test('session reads after settlement reject without reading', async () => {
   const demo = intercepting({});
   let reads = 0;

@@ -176,9 +176,10 @@ The session-level files have distinct purposes:
   continues unmodified. An interceptor proposal from a discarded pass is recorded as `rejected` with reason
   `stale`, never `applied`. A handler's agent calls from a discarded attempt stay recorded, and its retry continues
   the call numbering. Whole-invocation validation runs before the freshness check, so an invalid result is
-  `invalid_intent`, not `stale`. The snapshot's `events` are the ordered parsed events (`executionId`, `stageId`,
-  `summary`, `data`, `raw`). A read after the invocation
-  settles rejects with `PluginContextClosed`.
+  `invalid_intent`, not `stale`. An advisory plugin reads the session at a point in time: its result is validated
+  and applied even after later events, and is never recorded as `stale`. The snapshot's `events` are the ordered
+  parsed events (`executionId`, `stageId`, `summary`, `data`, `raw`). A read after the invocation settles rejects with
+  `PluginContextClosed`.
 - Plugin API 1.3 adds `call.session.artifacts()`, declared as `artifacts` in `uses.session`. It returns the content of
   the stage artifacts under `executions/<id>/artifacts/`, and nothing else: never `plugins/` or `handoff/`. Each entry
   has the execution and stage, the relative `path`, `content`, `truncated` and `skipped`. The core bounds it at

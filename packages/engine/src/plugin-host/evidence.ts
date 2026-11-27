@@ -37,13 +37,16 @@ export function readsStale(reads: SessionReads, evidence: readonly ReadEvidence[
 
 /**
  * What an event handler's result depends on: its own reads, plus the invocation start as an implicit snapshot
- * basis when it proposes an artifact of a `fresh` claim, even if it read nothing.
+ * basis when it proposes an artifact of a `fresh` claim, even if it read nothing. An advisory plugin depends on
+ * nothing.
  */
 export function freshEvidence(
   plugin: { readonly manifest: PluginManifest },
   raw: unknown,
   captured: { readonly read: readonly ReadEvidence[]; readonly startBasis: number | null },
 ): readonly ReadEvidence[] {
+  // An advisory plugin reads the session at a point in time: later events never discard its result.
+  if (plugin.manifest.advisory) return [];
   if (!Array.isArray(raw)) return captured.read;
   const claims = plugin.manifest.uses.artifacts.filter((claim) => claim.fresh === true);
   const fresh = new Set(claims.map((claim) => claim.name));
