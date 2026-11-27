@@ -231,15 +231,21 @@ test('session reads after settlement reject without reading', async () => {
   const reading = {
     snapshot: () => { reads += 1; throw new Error('read'); },
     resumeFacts: () => { reads += 1; throw new Error('read'); },
+    artifacts: () => { reads += 1; throw new Error('read'); },
     basis: () => null,
   };
   const invocation = new InvocationState();
   const call: PluginCallContext = buildCallContext(
-    { manifest: demo.manifest, options: {}, readCore: () => undefined, reads: reading as never }, invocation, null,
+    {
+      manifest: { ...demo.manifest, uses: { ...USES, session: ['snapshot', 'resume_facts', 'artifacts'] } },
+      options: {}, readCore: () => undefined, reads: reading as never,
+    },
+    invocation, null,
   );
   invocation.close();
   await expect(call.session.snapshot()).rejects.toBeInstanceOf(PluginContextClosed);
   await expect(call.session.resumeFacts('e1')).rejects.toBeInstanceOf(PluginContextClosed);
+  await expect(call.session.artifacts()).rejects.toBeInstanceOf(PluginContextClosed);
   expect(reads).toBe(0);
 });
 
@@ -248,6 +254,7 @@ test('an undeclared session read is refused', async () => {
   const manifest = { ...demo.manifest, uses: { ...USES, session: [] } };
   const call = buildCallContext({ manifest, options: {}, readCore: () => undefined }, new InvocationState(), null);
   await expect(call.session.snapshot()).rejects.toThrow(/uses.session/);
+  await expect(call.session.artifacts()).rejects.toThrow(/uses.session/);
 });
 
 function chainWith(host: { invokeInterceptor: unknown; reportStale: unknown }): HostInterceptorChain {
@@ -473,4 +480,35 @@ test('an agent-using interceptor that exhausts freshness keeps its calls on the 
   const row = inspection?.invocations.find((item) => item.invocation_id === failed?.data.invocation_id);
   expect(row?.status).toBe('failed');
   expect(row?.agent_calls).toBe(1);
+});
+
+const withArtifacts = (apiVersion: { major: number; minor: number }, activate: Plugin['activate']): Plugin => {
+  const base = plugin(activate);
+  return { ...base, manifest: { ...base.manifest, apiVersion, uses: { ...USES, session: ['snapshot', 'artifacts'] } } };
+};
+
+test('an artifacts read is evidence at the current basis seq: it re-runs once when another event is appended', async () => {
+  const workspace = tempDir('migent-freshness-');
+  let calls = 0;
+  const demo = withArtifacts({ major: 1, minor: 3 }, (_options, migent) => {
+    migent.operations.intercept('agent.turn', {
+      before: async (request, call) => {
+        calls += 1;
+        const read = await call.session.artifacts();
+        expect(Object.isFrozen(read)).toBe(true);
+        if (calls === 1) appendEvent(workspace);
+        return { kind: 'patch', fields: { prompt: `ART${calls} ${String(request.prompt)}` } };
+      },
+    });
+  });
+  const { client, result } = await run([demo], workspace);
+  expect(result.code).toBe(0);
+  expect(calls).toBe(2);
+  expect(client.calls[0]?.prompt).toMatch(/^ART2 /);
+});
+
+test('an API 1.3 manifest is accepted, and a minor above 3 is not', async () => {
+  const { isSupportedPluginApiVersion } = await import('@nodeint/migent-contracts');
+  expect(isSupportedPluginApiVersion({ major: 1, minor: 3 })).toBe(true);
+  expect(isSupportedPluginApiVersion({ major: 1, minor: 4 })).toBe(false);
 });

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import type { PluginManifest, PluginResumeFacts, PluginSessionSnapshot } from '@nodeint/migent-contracts';
+import type { PluginManifest, PluginResumeFacts, PluginSessionArtifacts, PluginSessionSnapshot } from '@nodeint/migent-contracts';
 
 /**
  * What one `call.session` read returned, captured by the core. The plugin supplies none of it, so it cannot
@@ -13,6 +13,7 @@ export type ReadEvidence =
 /** The core's session reads. The context records their results, and the freshness check repeats them. */
 export interface SessionReads {
   snapshot(): PluginSessionSnapshot;
+  artifacts(): PluginSessionArtifacts;
   resumeFacts(executionId: string): PluginResumeFacts;
   /** The last non-`plugin.*` event seq now. */
   basis(): number | null;

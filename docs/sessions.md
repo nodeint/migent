@@ -179,6 +179,13 @@ The session-level files have distinct purposes:
   `invalid_intent`, not `stale`. The snapshot's `events` are the ordered parsed events (`executionId`, `stageId`,
   `summary`, `data`, `raw`). A read after the invocation
   settles rejects with `PluginContextClosed`.
+- Plugin API 1.3 adds `call.session.artifacts()`, declared as `artifacts` in `uses.session`. It returns the content of
+  the stage artifacts under `executions/<id>/artifacts/`, and nothing else: never `plugins/` or `handoff/`. Each entry
+  has the execution and stage, the relative `path`, `content`, `truncated` and `skipped`. The core bounds it at
+  32 KiB per file and 128 KiB in total. The total goes to the newest executions first. A file over the per-file bound
+  is cut at a UTF-8 boundary and marked `truncated`. A file that is not valid UTF-8, or has a NUL byte, is skipped as
+  `binary`; a read error is `unreadable`; a file past the total budget is `too_large_total`. The read is recorded as
+  snapshot evidence at the current `basis_seq`.
 - `task.md` is the task body. A one-line `session run --workflow --task` writes
   that sentence here. A prepared session creates an empty file for you to write, along with any
   other files that belong next to it. Stage prompts name this path and the

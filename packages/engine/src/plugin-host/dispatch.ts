@@ -15,7 +15,7 @@ import {
 } from '@nodeint/migent-contracts';
 import type { ClientRegistry, StageTarget } from '@nodeint/migent-kernel';
 import { CancellationRequested, cancellationSignal, loadWorkspaceConfig, logProgress, resolvePluginTarget, utcNow } from '@nodeint/migent-kernel';
-import { assertSessionLockHeld, readBasisSeq, readParsedEvents, readSessionSnapshot, resumeFacts, sessionEventLog, SessionStore, subscribeSessionEvents } from '@nodeint/migent-session';
+import { assertSessionLockHeld, readBasisSeq, readParsedEvents, readSessionArtifacts, readSessionSnapshot, resumeFacts, sessionEventLog, SessionStore, subscribeSessionEvents } from '@nodeint/migent-session';
 
 import { bindTarget } from '../agent-invocation.js';
 import type { InterceptorChain } from '../runtime/interception.js';
@@ -266,6 +266,7 @@ export class PluginHost {
     if (clients === null) return undefined;
     return {
       snapshot: () => readSessionSnapshot(this.workspace, this.sessionId, clients),
+      artifacts: () => readSessionArtifacts(this.workspace, this.sessionId),
       resumeFacts: (executionId) => resumeFacts(this.workspace, { sessionId: this.sessionId, executionId }, clients),
       basis: () => readBasisSeq(this.workspace, this.sessionId),
     };

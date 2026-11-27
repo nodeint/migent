@@ -9,6 +9,7 @@ import {
   type PluginInterceptor,
   type PluginManifest,
   type PluginResumeFacts,
+  type PluginSessionArtifacts,
   type PluginSessionSnapshot,
 } from '@nodeint/migent-contracts';
 
@@ -82,7 +83,7 @@ function sharedMembers(sources: ContextSources, invocation: InvocationState) {
  */
 async function readSession<T>(
   bound: { readonly sources: ContextSources; readonly invocation: InvocationState },
-  kind: 'snapshot' | 'resume_facts',
+  kind: 'snapshot' | 'resume_facts' | 'artifacts',
   read: (reads: SessionReads) => T,
 ): Promise<T> {
   const { sources, invocation } = bound;
@@ -123,6 +124,11 @@ export function buildCallContext(
         const snapshot = reads.snapshot();
         invocation.recordRead({ kind: 'snapshot', basisSeq: snapshot.basis_seq });
         return snapshot;
+      }),
+      artifacts: (): Promise<PluginSessionArtifacts> => readSession({ sources, invocation }, 'artifacts', (reads) => {
+        const artifacts = reads.artifacts();
+        invocation.recordRead({ kind: 'snapshot', basisSeq: artifacts.basis_seq });
+        return artifacts;
       }),
       resumeFacts: (executionId: string): Promise<PluginResumeFacts> =>
         readSession({ sources, invocation }, 'resume_facts', (reads) => {

@@ -13,8 +13,10 @@ First-party Migent plugins and their static registry. Internal; no stable public
   context; each handler gets its own per-invocation `call` context. Keep per-invocation state out of module
   scope: two stages can run one handler concurrently. The core writes an artifact and then records it, so a
   handler must not assume a written file has a `plugin.decision`; `session show` reports the ones that lack it.
-- `call.session.snapshot()` and `resumeFacts()` need `uses.session`. Never cache their result across invocations: a
-  changed read makes the core discard the result and re-run the handler once, then record `stale`.
+- `call.session.snapshot()`, `resumeFacts()` and `artifacts()` (plugin API 1.3) need `uses.session`. `artifacts()`
+  returns bounded stage artifact content (32 KiB per file, 128 KiB in total, newest executions first). Never cache
+  their result across invocations: a changed read makes the core discard the result and re-run the handler once,
+  then record `stale`.
 - A plugin reads only its own response extension payload: `execution.response_extension` in an `execution.finished`
   hook input (`null` when it has none), and `responseExtension` on each snapshot execution row (absent when it has
   none). No other plugin's payload appears there. Reading it adds no freshness rule.

@@ -1727,7 +1727,7 @@ Type: object
 | `uses.operations[].target` | string | yes | | An operation id, or a `prefix.*` pattern. |
 | `uses.operations[].phases` | (`"before"` \| `"after"`)[] | yes | | |
 | `uses.events` | (`"session.started"` \| `"execution.finished"` \| `"session.stopped"` \| `"session.completed"`)[] | yes | | |
-| `uses.session` | (`"snapshot"` \| `"resume_facts"`)[] | yes | | |
+| `uses.session` | (`"snapshot"` \| `"resume_facts"` \| `"artifacts"`)[] | yes | | |
 | `uses.artifacts` | object[] | yes | | |
 | `uses.artifacts[].name` | string | yes | | |
 | `uses.artifacts[].mode` | `"create_only"` \| `"replace"` | yes | | |
