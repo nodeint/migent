@@ -193,6 +193,17 @@ export const SessionRecommendations = Type.Object(
 );
 export type SessionRecommendations = Static<typeof SessionRecommendations>;
 
+// ---- plugins/summarizer/summary.md (the `summary` field of `session show --json`) -------------
+
+export const SessionSummaryField = Type.Object({
+  path: Type.String(),
+  basis_seq: Type.Number(),
+  stale: Type.Boolean({ description: 'True once non-`plugin.*` events were added after `basis_seq`.' }),
+  text: Type.Optional(Type.String({ description: 'The summary without its header line. Present with `--summary`.' })),
+}, {
+  description: 'The stored session summary, `plugins/summarizer/summary.md`. Absent without a summary; `null` with `--summary` and no summary.',
+});
+
 // ---- status.json ------------------------------------------------------------------------------
 
 export const SessionStatusFile = Type.Object(

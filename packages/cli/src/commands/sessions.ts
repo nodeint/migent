@@ -102,6 +102,7 @@ async function runSessions(
     status: string | null;
     limit: string | null;
     latest: boolean;
+    summary?: boolean;
   },
 ): Promise<number> {
   const selection = parseListSelection(options);
@@ -135,6 +136,7 @@ async function runSessions(
     jsonLines: options.asJson,
     cursor,
     exitWhenDone: options.exitWhenDone,
+    summary: options.summary === true,
   });
 }
 
@@ -435,6 +437,7 @@ function registerShow(session: Command, act: Act): void {
     .description('Print one session snapshot.')
     .argument('<session>', 'Session to inspect.')
     .option('--json', 'Print one JSON object without the task.')
+    .option('--summary', 'Print the stored session summary text. With --json, add summary.text, or summary null when none exists.')
     .addHelpText(
       'after',
       `${exitText(['Exit 0 after a snapshot, including a blocked session.', 'Exit 2 on a configuration error.'])}Examples:\n  migent session show <session>\n  migent session show <session> --json\n`,
@@ -451,6 +454,7 @@ function registerShow(session: Command, act: Act): void {
           status: null,
           limit: null,
           latest: false,
+          summary: options.summary === true,
         }),
       ),
     );

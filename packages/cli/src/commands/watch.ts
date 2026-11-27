@@ -22,6 +22,7 @@ import { isFile } from '../fs-utils.js';
 import { cliHooks } from '../hooks.js';
 import { bindCancellationSignals, delay, throwIfCliCancelled } from '../signals.js';
 import { readRecommendations } from './recommendations-read.js';
+import { readSummary } from './summary-read.js';
 
 /** Pause between log polls, in milliseconds. */
 const POLL_MS = 250;
@@ -38,6 +39,8 @@ interface FollowOptions {
   jsonLines?: boolean;
   cursor?: number | null;
   exitWhenDone?: boolean;
+  /** `session show --summary`: add the summary text, or `null` in JSON when there is none. */
+  summary?: boolean;
 }
 
 /** Where the tail starts: the events cursor and, when tailing only new lines, the stream offsets. */
@@ -69,7 +72,12 @@ export async function followSession(
   if (once) {
     const drift = statusDriftMessage(workspace, sessionId);
     if (drift) printNotice(drift);
-    printSnapshot(sessionDirectory, { executionId, jsonLines });
+    const withSummary = options.summary === true;
+    const snapshot = printSnapshot(sessionDirectory, { executionId, jsonLines, summary: withSummary });
+    if (withSummary && !jsonLines && !isRecord(snapshot.summary)) {
+      process.stderr.write(`No summary for session: ${sessionId}.
+`);
+    }
     return 0;
   }
   const start = followStart(sessionDirectory, options.cursor ?? null, { executionId, jsonLines });
@@ -193,11 +201,12 @@ function followExit(
 
 function printSnapshot(
   sessionDirectory: string,
-  selection: { executionId: string | null; jsonLines: boolean },
+  selection: { executionId: string | null; jsonLines: boolean; summary?: boolean },
   eventsCursor?: number,
 ): Record<string, unknown> {
   const { executionId, jsonLines } = selection;
-  const snapshot = withLiveFacts(watchSnapshot(sessionDirectory, executionId), sessionDirectory);
+  const base = watchSnapshot(sessionDirectory, executionId);
+  const snapshot = withLiveFacts(base, sessionDirectory, selection.summary === true);
   if (eventsCursor !== undefined) snapshot.events_cursor = eventsCursor;
   if (jsonLines) writeJson(eventsCursor === undefined ? SessionSnapshot : SessionSnapshotLine, snapshotJson(snapshot));
   else printWatchSnapshot(snapshot);
@@ -205,7 +214,11 @@ function printSnapshot(
 }
 
 /** Adds the live plugin facts, which need the live config and the registry, so the session package cannot. */
-function withLiveFacts(snapshot: Record<string, unknown>, sessionDirectory: string): Record<string, unknown> {
+function withLiveFacts(
+  snapshot: Record<string, unknown>,
+  sessionDirectory: string,
+  withText: boolean,
+): Record<string, unknown> {
   const { plugins } = snapshot;
   const workspace = path.resolve(sessionDirectory, '..', '..', '..');
   const registry = cliHooks.runner?.pluginRegistry ?? pluginRegistry();
@@ -213,7 +226,10 @@ function withLiveFacts(snapshot: Record<string, unknown>, sessionDirectory: stri
   const live = withLivePlugins(inspection, { workspace, sessionDirectory, registry });
   const withPlugins = live === null ? snapshot : { ...snapshot, plugins: live };
   const recommendations = readRecommendations(sessionDirectory);
-  return recommendations === undefined ? withPlugins : { ...withPlugins, recommendations };
+  const withRecommendations = recommendations === undefined ? withPlugins : { ...withPlugins, recommendations };
+  const summary = readSummary(sessionDirectory, { withText });
+  if (summary !== undefined) return { ...withRecommendations, summary };
+  return withText ? { ...withRecommendations, summary: null } : withRecommendations;
 }
 
 function snapshotJson(snapshot: Record<string, unknown>): Static<typeof SessionSnapshot> {

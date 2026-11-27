@@ -316,6 +316,12 @@ function recommendationLines(snapshot: Record<string, unknown>): Line[] {
   });
 }
 
+function summaryLines(snapshot: Record<string, unknown>): Line[] {
+  const { summary } = snapshot;
+  if (!isRecord(summary)) return [];
+  return [['summary', `${String(summary.path)} · ${summary.stale === true ? 'stale' : 'current'}`]];
+}
+
 export function printWatchSnapshot(snapshot: Record<string, unknown>): void {
   const lines: Line[] = [
     ...identityLines(snapshot),
@@ -324,12 +330,15 @@ export function printWatchSnapshot(snapshot: Record<string, unknown>): void {
     ...outcomeLines(snapshot),
     ...pluginLines(snapshot),
     ...recommendationLines(snapshot),
+    ...summaryLines(snapshot),
     ...recordList(snapshot.quota_failures).map((quota): Line => ['quota', formatQuotaFailure(quota)]),
   ];
   if (nonEmptyString(snapshot.diagnostics)) lines.push(['diagnostics', snapshot.diagnostics]);
   lines.push(['updated_at', formatWatchTimestamp(snapshot.updated_at)], outputsLine(snapshot));
   lines.push(['events_cursor', String(snapshot.events_cursor ?? 0)]);
   for (const [label, value] of lines) process.stdout.write(`${label}  ${value}\n`);
+  const text = isRecord(snapshot.summary) ? snapshot.summary.text : undefined;
+  if (typeof text === 'string') process.stdout.write(`\n${text}`);
 }
 
 /** A live `resume.expired` event as the pending decision it raises, so follow shows what show shows. */
