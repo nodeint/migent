@@ -13,12 +13,12 @@ import type { PluginExtension } from './extension-catalog.js';
 /** The event kinds a plugin handler can observe. */
 export const PLUGIN_HOOKS = ['session.started', 'execution.finished', 'session.stopped', 'session.completed'] as const;
 export const PLUGIN_OPERATION_PHASES = ['before', 'after'] as const;
-export const PLUGIN_SESSION_READS = ['snapshot', 'resume_facts'] as const;
+export const PLUGIN_SESSION_READS = ['snapshot', 'resume_facts', 'artifacts'] as const;
 export const PLUGIN_ARTIFACT_MODES = ['create_only', 'replace'] as const;
 /** The `hook` recorded for a failed activation. */
 export const PLUGIN_ACTIVATE_HOOK = 'activate';
 /** The plugin API version this core supports. A manifest needs the same major and a minor not above this one. */
-export const PLUGIN_API_VERSION = { major: 1, minor: 2 } as const;
+export const PLUGIN_API_VERSION = { major: 1, minor: 3 } as const;
 export const PLUGIN_ON_ERROR = ['ignore', 'stop', 'fail'] as const;
 export const PLUGIN_FAILURE_REASONS = ['error', 'timeout', 'invalid_intent', 'unavailable', 'version_changed', 'cancelled', 'stale'] as const;
 
@@ -219,6 +219,27 @@ export interface PluginSessionSnapshot {
   readonly exit_anomalies: readonly Readonly<Record<string, unknown>>[];
 }
 
+/** Why an artifact entry carries no content. */
+export const PLUGIN_ARTIFACT_SKIPS = ['too_large_total', 'unreadable', 'binary'] as const;
+export type PluginArtifactSkip = (typeof PLUGIN_ARTIFACT_SKIPS)[number];
+
+/** One stage artifact file as a plugin reads it (plugin API 1.3). `path` is relative to the artifacts directory. */
+export interface PluginSessionArtifact {
+  readonly execution_id: string;
+  readonly stage_id: string | null;
+  readonly path: string;
+  readonly content: string | null;
+  /** The content was cut at the per-file bound. */
+  readonly truncated: boolean;
+  readonly skipped: PluginArtifactSkip | null;
+}
+
+/** Detached, bounded facts about the stage artifacts of one session, in execution order. */
+export interface PluginSessionArtifacts {
+  readonly basis_seq: number | null;
+  readonly entries: readonly PluginSessionArtifact[];
+}
+
 /** What the resume gate knows about one execution. Unknown values are null. */
 export interface PluginResumeFacts {
   readonly completedAt: string | null;
@@ -276,6 +297,8 @@ export interface PluginCallContext extends PluginSharedContext {
   readonly session: {
     readonly snapshot: () => Promise<PluginSessionSnapshot>;
     readonly resumeFacts: (executionId: string) => Promise<PluginResumeFacts>;
+    /** Plugin API 1.3. Bounded content of the stage artifacts; needs `artifacts` in `uses.session`. */
+    readonly artifacts: () => Promise<PluginSessionArtifacts>;
   };
   readonly artifacts: {
     /** Builds the proposal for a declared artifact claim. Pure: nothing is written. */

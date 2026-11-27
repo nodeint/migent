@@ -837,6 +837,11 @@ Type: object
 | `recommendations[].workflow` | string \| null | yes | | |
 | `recommendations[].reason` | string | yes | | |
 | `recommendations[].warning` | string | no | | |
+| `summary` | object \| null | no | | The stored session summary, `plugins/summarizer/summary.md`. Absent without a summary; `null` with `--summary` and no summary. |
+| `summary.path` | string | yes | | |
+| `summary.basis_seq` | number | yes | | |
+| `summary.stale` | boolean | yes | | True once non-`plugin.*` events were added after `basis_seq`. |
+| `summary.text` | string | no | | The summary without its header line. Present with `--summary`. |
 | `diagnostics` | string | no | | |
 | `exit_anomalies` | object[] | no | | |
 | `exit_anomalies[].stage_id` | string | yes | | |
@@ -962,6 +967,11 @@ Type: object
 | `recommendations[].workflow` | string \| null | yes | | |
 | `recommendations[].reason` | string | yes | | |
 | `recommendations[].warning` | string | no | | |
+| `summary` | object \| null | no | | The stored session summary, `plugins/summarizer/summary.md`. Absent without a summary; `null` with `--summary` and no summary. |
+| `summary.path` | string | yes | | |
+| `summary.basis_seq` | number | yes | | |
+| `summary.stale` | boolean | yes | | True once non-`plugin.*` events were added after `basis_seq`. |
+| `summary.text` | string | no | | The summary without its header line. Present with `--summary`. |
 | `diagnostics` | string | no | | |
 | `exit_anomalies` | object[] | no | | |
 | `exit_anomalies[].stage_id` | string | yes | | |
@@ -1727,7 +1737,7 @@ Type: object
 | `uses.operations[].target` | string | yes | | An operation id, or a `prefix.*` pattern. |
 | `uses.operations[].phases` | (`"before"` \| `"after"`)[] | yes | | |
 | `uses.events` | (`"session.started"` \| `"execution.finished"` \| `"session.stopped"` \| `"session.completed"`)[] | yes | | |
-| `uses.session` | (`"snapshot"` \| `"resume_facts"`)[] | yes | | |
+| `uses.session` | (`"snapshot"` \| `"resume_facts"` \| `"artifacts"`)[] | yes | | |
 | `uses.artifacts` | object[] | yes | | |
 | `uses.artifacts[].name` | string | yes | | |
 | `uses.artifacts[].mode` | `"create_only"` \| `"replace"` | yes | | |

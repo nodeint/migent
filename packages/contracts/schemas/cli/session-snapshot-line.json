@@ -844,6 +844,38 @@
       },
       "description": "Downstream workflows the stages recommended, from `plugins/next/recommendations.json`. Present only while the session's freeze holds a `next` response contract and the file is valid."
     },
+    "summary": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "path",
+            "basis_seq",
+            "stale"
+          ],
+          "properties": {
+            "path": {
+              "type": "string"
+            },
+            "basis_seq": {
+              "type": "number"
+            },
+            "stale": {
+              "type": "boolean",
+              "description": "True once non-`plugin.*` events were added after `basis_seq`."
+            },
+            "text": {
+              "type": "string",
+              "description": "The summary without its header line. Present with `--summary`."
+            }
+          },
+          "description": "The stored session summary, `plugins/summarizer/summary.md`. Absent without a summary; `null` with `--summary` and no summary."
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "diagnostics": {
       "type": "string"
     },

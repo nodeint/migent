@@ -1,4 +1,4 @@
-schema_version: 7
+schema_version: 8
 id: issue
 constraints:
   - Triage only. Do not change files other than issue.md or run commands beyond git and gh; investigate by reading code, documentation, and GitHub only to choose the next workflow.

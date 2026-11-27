@@ -38,11 +38,13 @@ state directly.
 
 ## Seams
 
-Internal seams attach to the core mechanisms. Three first-party plugins consume them. `metrics` runs by default on
+Internal seams attach to the core mechanisms. Four first-party plugins consume them. `metrics` runs by default on
 `session.completed`, from an automatic completion and from `session complete`, which runs
 `completeSessionManually` (`engine` `src/complete-manually.ts`) inside a plugin scope. `prompt_cache_ttl` runs by
 default as a `before` interceptor of `conversation.resume`. `next` adds a response contract to stages of
-workflows with `downstream` and records the recommendations on `execution.finished`. No third-party plugin extends Migent.
+workflows with `downstream` and records the recommendations on `execution.finished`. `summarizer` is advisory and
+opt-in: it writes `plugins/summarizer/summary.md` from the session snapshot and the bounded `artifacts` read. No
+third-party plugin extends Migent.
 `invokeOnce` has one caller, the plugin host's `agents.invoke` call member (`src/plugin-host/agent-call.ts`). The
 plugin host in `engine` `src/plugin-host/` is the one subscriber, and the `plugins` section is the one registered
 config section.

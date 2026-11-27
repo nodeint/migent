@@ -2,7 +2,7 @@ import Type, { type Static } from 'typebox';
 
 import { Diagnostic, id, listOf, NextSuggestion, nullable } from './common.js';
 import { PluginsSection } from './plugins-inspection.js';
-import { SessionRecommendation } from './session-files.js';
+import { SessionRecommendation, SessionSummaryField } from './session-files.js';
 
 const strings = () => Type.Array(Type.String());
 const record = () => Type.Record(Type.String(), Type.Unknown());
@@ -371,6 +371,7 @@ const snapshotProperties = {
       description: 'Downstream workflows the stages recommended, from `plugins/next/recommendations.json`. Present only while the session\'s freeze holds a `next` response contract and the file is valid.',
     }),
   ),
+  summary: Type.Optional(nullable(SessionSummaryField)),
   diagnostics: Type.Optional(Type.String()),
   exit_anomalies: Type.Optional(
     Type.Array(

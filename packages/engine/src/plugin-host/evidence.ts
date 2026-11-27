@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-import type { PluginManifest, PluginResumeFacts, PluginSessionSnapshot } from '@nodeint/migent-contracts';
+import type { PluginManifest, PluginResumeFacts, PluginSessionArtifacts, PluginSessionSnapshot } from '@nodeint/migent-contracts';
 
 /**
  * What one `call.session` read returned, captured by the core. The plugin supplies none of it, so it cannot
@@ -13,6 +13,7 @@ export type ReadEvidence =
 /** The core's session reads. The context records their results, and the freshness check repeats them. */
 export interface SessionReads {
   snapshot(): PluginSessionSnapshot;
+  artifacts(): PluginSessionArtifacts;
   resumeFacts(executionId: string): PluginResumeFacts;
   /** The last non-`plugin.*` event seq now. */
   basis(): number | null;
@@ -36,13 +37,16 @@ export function readsStale(reads: SessionReads, evidence: readonly ReadEvidence[
 
 /**
  * What an event handler's result depends on: its own reads, plus the invocation start as an implicit snapshot
- * basis when it proposes an artifact of a `fresh` claim, even if it read nothing.
+ * basis when it proposes an artifact of a `fresh` claim, even if it read nothing. An advisory plugin depends on
+ * nothing.
  */
 export function freshEvidence(
   plugin: { readonly manifest: PluginManifest },
   raw: unknown,
   captured: { readonly read: readonly ReadEvidence[]; readonly startBasis: number | null },
 ): readonly ReadEvidence[] {
+  // An advisory plugin reads the session at a point in time: later events never discard its result.
+  if (plugin.manifest.advisory) return [];
   if (!Array.isArray(raw)) return captured.read;
   const claims = plugin.manifest.uses.artifacts.filter((claim) => claim.fresh === true);
   const fresh = new Set(claims.map((claim) => claim.name));

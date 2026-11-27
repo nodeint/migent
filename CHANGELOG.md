@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Add the opt-in `summarizer` plugin. It writes `plugins/summarizer/summary.md`, an agent-written session summary, on
+  completion, on a question, blocked or expired stop, or after each execution. Plugin API 1.3 adds the bounded
+  `artifacts` session read. (#141)
+
 ## 0.10.1
 
 ### Breaking

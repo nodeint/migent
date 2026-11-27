@@ -96,7 +96,8 @@
           "items": {
             "enum": [
               "snapshot",
-              "resume_facts"
+              "resume_facts",
+              "artifacts"
             ]
           }
         },

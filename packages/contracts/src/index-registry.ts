@@ -166,4 +166,5 @@ export const SESSION_FILE_EXCLUSIONS: readonly { name: string; reason: string }[
   { name: 'stream.jsonl', reason: 'Non-goal: opaque provider stream.' },
   { name: '.last-id.lock', reason: 'Non-goal: internal id allocation lock.' },
   { name: 'cancel.requested', reason: 'Non-goal: cancel marker.' },
+  { name: 'summary.md', reason: 'Markdown, not a schema: `plugins/summarizer/summary.md`, one header line `<!-- migent-summary v1 basis_seq=<n> -->`, then text. `session show --json` reports it as `summary`.' },
 ];

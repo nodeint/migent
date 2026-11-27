@@ -38,7 +38,8 @@ while it is updated), and `.deleting/` (sessions being removed).
 ├── events.jsonl
 ├── plugins/
 │   ├── metrics/metrics.json              # written by the metrics plugin when a workflow session completes
-│   └── next/recommendations.json         # rebuilt by the next plugin once a stage has recommended a downstream workflow
+│   ├── next/recommendations.json         # rebuilt by the next plugin once a stage has recommended a downstream workflow
+│   └── summarizer/summary.md             # written by the summarizer plugin (opt-in): header line, title line, three sections
 ├── session.lock                          # present only while a process is running the session
 ├── cancel.requested                      # temporary; written by `session cancel`, removed by the running process
 ├── outputs/                              # present after outputs are published
@@ -176,9 +177,27 @@ The session-level files have distinct purposes:
   continues unmodified. An interceptor proposal from a discarded pass is recorded as `rejected` with reason
   `stale`, never `applied`. A handler's agent calls from a discarded attempt stay recorded, and its retry continues
   the call numbering. Whole-invocation validation runs before the freshness check, so an invalid result is
-  `invalid_intent`, not `stale`. The snapshot's `events` are the ordered parsed events (`executionId`, `stageId`,
-  `summary`, `data`, `raw`). A read after the invocation
-  settles rejects with `PluginContextClosed`.
+  `invalid_intent`, not `stale`. An advisory plugin reads the session at a point in time: its result is validated
+  and applied even after later events, and is never recorded as `stale`. The snapshot's `events` are the ordered
+  parsed events (`executionId`, `stageId`, `summary`, `data`, `raw`). A read after the invocation settles rejects with
+  `PluginContextClosed`.
+- Plugin API 1.3 adds `call.session.artifacts()`, declared as `artifacts` in `uses.session`. It returns the content of
+  the stage artifacts under `executions/<id>/artifacts/`, and nothing else: never `plugins/` or `handoff/`. Each entry
+  has the execution and stage, the relative `path`, `content`, `truncated` and `skipped`. The core bounds it at
+  32 KiB per file and 128 KiB in total. The total goes to the newest executions first. A file over the per-file bound
+  is cut at a UTF-8 boundary and marked `truncated`. A file that is not valid UTF-8, or has a NUL byte, is skipped as
+  `binary`; a read error is `unreadable`; a file past the total budget is `too_large_total`. The read is recorded as
+  snapshot evidence at the current `basis_seq`.
+- The `summarizer` plugin is advisory and opt-in. It needs `plugins.summarizer.enabled: true` and an `agent`. Each
+  trigger makes one agent call and replaces `plugins/summarizer/summary.md`. `triggers` is a list of `completed`,
+  `question`, `blocked`, `expired` and `execution`, without duplicates; the default is the first four and `[]` writes
+  nothing. `completed` fires for a run and for `session complete`; `question`, `blocked` and `expired` fire when a run
+  stops in that status; `execution` fires after every finished execution. The first line is
+  `<!-- migent-summary v1 basis_seq=<n> -->`, the second the title line
+  `# Session <id> · <workflow> · <status> · <time>`, both written by the plugin. The agent writes `## Done`,
+  `## Current state` and `## Needs attention`. A failed or blank agent call records `plugin.failed` and keeps the
+  previous file; it never changes the run's status or exit code. Every trigger costs one LLM call, and `execution`
+  can mean many. The agent runs in the workspace, so prefer a read-only agent configuration for it.
 - `task.md` is the task body. A one-line `session run --workflow --task` writes
   that sentence here. A prepared session creates an empty file for you to write, along with any
   other files that belong next to it. Stage prompts name this path and the

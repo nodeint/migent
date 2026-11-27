@@ -634,6 +634,7 @@ migent session list --latest --json
 migent session list --workflow <id> --status completed --json
 migent session show <session-id>
 migent session show <session-id> --json
+migent session show <session-id> --summary
 migent session metrics <session-id> --json
 migent session metrics --json --workflow <id> --status completed --limit 10
 migent session follow <session-id>
@@ -786,6 +787,13 @@ While the session's current freeze holds a `next` response contract, the snapsho
 array (`stage_id`, `execution_id`, `workflow`, `reason`, `warning`). It is omitted when the file is missing, the freeze
 has no `next` contract (for example after `--refresh-workflow` removed `downstream`), or the file is not valid JSON or
 does not match its schema. In the last case a notice goes to stderr and `--json` stdout stays one object.
+When `plugins/summarizer/summary.md` exists, the snapshot adds one line `summary  plugins/summarizer/summary.md ·
+current|stale`. It is `stale` once non-`plugin.*` events follow the summary's `basis_seq`; a failed attempt alone
+changes nothing. This does not depend on the config, so a summary stays shown after the plugin is disabled.
+`--summary` also prints the text after the snapshot, and on a session without a summary prints `No summary for
+session: <id>.` on stderr with exit 0. The JSON snapshot has a `summary` object (`path`, `basis_seq`, `stale`, and
+`text` with `--summary`). It is omitted without a summary, and with `--json --summary` it is `null`. A summary that is
+not UTF-8 or has no valid header line is ignored with a notice on stderr, and `--json` stdout stays one object.
 For a schema 2 session it also prints, on stderr, any drift
 between `status.json` and the fold of the session files. `session follow` prints
 that snapshot and then follows events until a signal. It merges `events.jsonl`
