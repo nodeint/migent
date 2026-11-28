@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Changed
+
+- Role stages may now ask the human by default; set `ask: never` to opt out. `get workflow` reports `ask: "human"` for
+  an omitted `ask`. ([#194](https://github.com/nodeint/migent/pull/194))
+
 ## 0.11.0
 
 ### Added
