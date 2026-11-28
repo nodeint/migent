@@ -5,7 +5,7 @@ import { stageErrorPath, workflowRuleCode } from '../diagnostics.js';
 import type { DraftStage, DraftUnit } from '../draft/problems.js';
 import { declaredStagePlaceholders, DraftProblems, draftUnit } from '../draft/problems.js';
 import { ConfigurationError } from '../errors.js';
-import type { AskTarget } from '../model.js';
+import type { StageAsk } from '../model.js';
 import type { RoleStageSpec, StageAgent, StageSpec } from '../model.js';
 import { VERIFY_ARTIFACT } from '../model.js';
 import { isRecord } from '../record.js';
@@ -214,7 +214,7 @@ interface CollectedStageFields {
   readonly verify: DraftUnit<string[]>;
   readonly runWhen: DraftUnit<StageSpec['runWhen']>;
   readonly artifact: DraftUnit<string | null>;
-  readonly ask: DraftUnit<AskTarget>;
+  readonly ask: DraftUnit<StageAsk>;
   readonly decision: CollectedDecision;
   readonly instructions: DraftUnit<string[]>;
   readonly agent: DraftUnit<StageAgent | null>;
@@ -294,7 +294,7 @@ function readStageFields(reader: StageReader): CollectedStageFields {
   const { kind, role } = readStageKind(reader, verify);
   const roleFields = kind === 'role';
   const artifact = readStageArtifact(reader, kind, verify);
-  const ask: DraftUnit<AskTarget> = roleFields && Object.hasOwn(rawItem, 'ask')
+  const ask: DraftUnit<StageAsk> = roleFields && Object.hasOwn(rawItem, 'ask')
     ? read(() => stageAsk(rawItem, stageId))
     : ({ state: 'absent', value: 'human' } as const);
   const decision = readStageDecision(reader, roleFields);

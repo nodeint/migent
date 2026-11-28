@@ -15,7 +15,7 @@ import {
 } from '@nodeint/migent-kernel';
 import { ConfigurationError } from '@nodeint/migent-kernel';
 import { selectSessionWorkflow } from '@nodeint/migent-session';
-import { isRecord } from '@nodeint/migent-workflow';
+import { isRecord, stageAskTarget } from '@nodeint/migent-workflow';
 import {
   isRoleStage,
   loadNamedWorkflow,
@@ -152,7 +152,7 @@ function stageView(
     run_when: stage.runWhen === null || stage.runWhen === undefined
       ? null
       : { changed_paths: [...stage.runWhen.changedPaths] },
-    ask: stage.ask ?? null,
+    ask: stageAskTarget(stage),
     target,
     problems,
   };

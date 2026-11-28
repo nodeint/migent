@@ -62,7 +62,7 @@ export function loadHandoffFile(file: string, rules: HandoffRules): LoadedHandof
   const active = rules.extensions ?? [];
   const { handoff, present } = readHandoffDocument(file, active);
   if (handoff.status === 'question') {
-    if (rules.ask === null) throw new HandoffFileError('question_not_allowed', 'status: question requires a stage with ask: human.', file);
+    if (rules.ask === null) throw new HandoffFileError('question_not_allowed', 'status: question is not allowed: the stage sets ask: never.', file);
     rejectExtensions(present, file);
     return { status: 'question', blocker: null, decision: null, questions: handoff.questions, extensions: {} };
   }

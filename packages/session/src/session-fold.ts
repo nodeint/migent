@@ -359,7 +359,7 @@ function publishExecutionStatus(
     draft.recordLatestDecision(decisionOfOutcome(latest.outcome));
   }
   const questions = latestPerStage(rows).filter((row) => row.outcome?.status === 'question' && row.status !== 'running');
-  draft.set('questions', questions.flatMap((row) => pendingQuestionRows(row, inputs.workflow)));
+  draft.set('questions', questions.flatMap((row) => pendingQuestionRows(row)));
   if (questions.length === 0) draft.clear('questions');
   const blocked = blockedExecutions(rows, draft.view, inputs.workflow).map((row) => ({
     executionId: row.executionId,
@@ -519,10 +519,10 @@ function executionBlocker(executions: readonly FoldExecution[], executionId: str
 }
 
 /** The status.json question rows for one stopped question execution. */
-function pendingQuestionRows(row: StatusExecution, workflow: FoldInputs['workflow']): Record<string, unknown>[] {
+function pendingQuestionRows(row: StatusExecution): Record<string, unknown>[] {
   return (row.outcome?.questions ?? []).map((question) => ({
     ...question, execution_id: row.executionId, stage_id: row.stageId,
-    recipient: workflow?.stages[row.stageId]?.ask ?? 'human',
+    recipient: 'human',
     file: 'executions/' + row.executionId + '/questions.json',
   }));
 }

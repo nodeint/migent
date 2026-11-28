@@ -74,6 +74,10 @@ test('a question needs a stage that asks a human', () => {
   expect(kindOf(JSON.stringify({ schema_version: 1, status: 'question', questions: [question] }))).toBe('question_not_allowed');
 });
 
+test('a rejected question names ask: never', () => {
+  expect(() => load(JSON.stringify({ schema_version: 1, status: 'question', questions: [question] }))).toThrow('the stage sets ask: never');
+});
+
 test('the examples in the rendered contract pass the loader', () => {
   const prompt = renderProviderPrompt('body', { contract: true, ask: 'human', decisionValues: ['approved', 'revise'], handoffFile: '/h.json' });
   const lines = /```json\n([\s\S]*?)\n```/.exec(prompt)![1]!.split('\n');

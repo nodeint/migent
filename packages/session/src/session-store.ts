@@ -379,7 +379,7 @@ export class SessionStore extends SessionStoreResume {
     const { agentId } = record;
     Object.assign(metadata, executionResultFields({ status, agentId, timestamp, error, outcome, extra }));
     if (outcome?.status === 'question') {
-      writeQuestionRequest(context, { stageId: metadata.stage_id, recipient: workflow?.stages[stageId]?.ask ?? 'human' }, outcome);
+      writeQuestionRequest(context, { stageId: metadata.stage_id, recipient: 'human' }, outcome);
     }
     const { storedError, failureReason } = storedFailure(metadata);
     const plan = planExecutionSave({

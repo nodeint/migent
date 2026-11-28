@@ -5,7 +5,7 @@ import { isValid, NonBlankString, schemaIssues,WorkflowArtifact, WorkflowLine, W
 import { compileChangedPathPattern } from './changed-paths.js';
 import { DEFAULT_MAX_VERIFY } from './constants.js';
 import { ConfigurationError } from './errors.js';
-import type { AskTarget } from './model.js';
+import type { StageAsk } from './model.js';
 import type { RunWhen, StageAgent, StageSpec } from './model.js';
 import { isRecord, pyRepr } from './record.js';
 import type { DecisionBodyProblem } from './structure.js';
@@ -211,8 +211,8 @@ export function routeTarget(
   return targets;
 }
 
-export function stageAsk(stage: Record<string, unknown>, stageId: string): AskTarget {
-  if (!isValid(STAGE_FIELD_SCHEMAS.ask, stage.ask)) throw new ConfigurationError(`stages.${stageId}.ask must be human.`);
+export function stageAsk(stage: Record<string, unknown>, stageId: string): StageAsk {
+  if (!isValid(STAGE_FIELD_SCHEMAS.ask, stage.ask)) throw new ConfigurationError(`stages.${stageId}.ask must be human or never.`);
   return stage.ask;
 }
 

@@ -403,7 +403,7 @@ quiet on a version 2 workflow.
 See [Human-in-the-loop interaction](human-in-the-loop.md) for the complete
 question-and-answer flow, including numbered replies and structured history.
 
-Stages with `ask: human` can stop with outcome `question`. `session show` lists
+Role stages can stop with outcome `question` unless they set `ask: never`. `session show` lists
 each pending question with its context, options, and `single`/`multiple`
 selection mode. Each execution's `questions.json` preserves the batch it asked, and the
 `input.json` of the execution that received the answers records them

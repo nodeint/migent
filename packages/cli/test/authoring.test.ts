@@ -287,7 +287,7 @@ test('workflow validate reports every independent error with its own path', asyn
     ['downstream', 0, 'workflow'],
   ]);
   expect(res.json.diagnostics.map((d: { message: string }) => d.message)).toEqual([
-    'stages.implement.ask must be human.',
+    'stages.implement.ask must be human or never.',
     'stages.implement.max_revisions must be a non-negative integer.',
     'stages.review.role is required.',
     'build: downstream workflow nowhere is not in .migent/workflows.',

@@ -75,7 +75,7 @@ export function parseStageOutcome(
   }
   const decision = parseDecision(headers.get('decision'), status, decisionValues);
   if (status === 'question') {
-    if (ask === null) throw new ResponseContractError('status: question requires ask: human.');
+    if (ask === null) throw new ResponseContractError('status: question is not allowed: the stage sets ask: never.');
     // Questions come from the question request file; see resolveStageOutcome.
     return new StageOutcome(status);
   }

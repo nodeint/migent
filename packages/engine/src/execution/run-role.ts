@@ -3,6 +3,7 @@ import { HANDOFF_FILE_PROTOCOL } from '@nodeint/migent-prompts';
 import type { ExecutionContext, SessionStore } from '@nodeint/migent-session';
 
 import { stageExtensions } from '../response-extensions.js';
+import { stageFacts } from '../run-setup.js';
 import type { InterceptorChain } from '../runtime/interception.js';
 import { OperationRuntime } from '../runtime/operation-runtime.js';
 import type { TraceSink } from '../runtime/trace.js';
@@ -28,7 +29,7 @@ function factsOf(drive: Drive): RoleFacts {
     context: drive.context, clientId: drive.clientId, model: drive.model, profile: drive.profile,
     workspacePath: drive.workspacePath, sessionId: drive.sessionId, stage: drive.stage,
     decisionValues: drive.decisionValues, artifactName: drive.artifactName,
-    ask: drive.stage?.ask ?? (drive.stage === null ? 'human' : null), protocol: drive.protocol,
+    ask: stageFacts(drive.stage).ask, protocol: drive.protocol,
     extensions: drive.sessionId === null
       ? { prompts: [], rules: [] } : stageExtensions(drive.context, drive.store.stageId(drive.context), drive.protocol),
     files: { protocol: drive.protocol, questionFile, handoffFile }, verifyCommands: drive.verifyCommands,

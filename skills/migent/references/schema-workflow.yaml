@@ -35,8 +35,8 @@ stages:
 
   - id: draft
     role: planner
-    # Optional recipient for questions. Only human is supported; omit to disable questions.
-    ask: human
+    # Optional. Questions go to human by default; set ask: never to disable them.
+    ask: never
     # Optional agent for this stage: a name from config.yaml, or a complete inline
     # agent (model, effort, client). Omit to use the role's agent.
     agent: deep_reasoning

@@ -303,7 +303,8 @@
     "ask": {
       "anyOf": [
         {
-          "type": "string"
+          "type": "string",
+          "description": "Effective question recipient (`human`), or null when the stage cannot ask."
         },
         {
           "type": "null"

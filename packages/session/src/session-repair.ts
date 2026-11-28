@@ -100,7 +100,7 @@ function writeExecutionQuestions(sessionDirectory: string, inputs: FoldInputs): 
     if (execution.outcome?.status !== 'question') continue;
     writeJsonAtomic(path.join(sessionDirectory, 'executions', execution.executionId, 'questions.json'), {
       schema_version: 1, stage_id: execution.stageId, execution_id: execution.executionId,
-      recipient: inputs.workflow?.stages[execution.stageId]?.ask ?? 'human',
+      recipient: 'human',
       questions: storedQuestions(execution.outcome),
     });
   }

@@ -565,7 +565,7 @@ response text is a free-form report for humans; Migent does not read it for the 
 {"schema_version":1,"status":"complete","decision":"approved","summary":"The plan covers the required behavior and tests."}
 ```
 
-`status` is `complete`, `blocked`, or (with `ask: human`) `question`. `decision` is
+`status` is `complete`, `blocked`, or (unless the stage sets `ask: never`) `question`. `decision` is
 required with `complete` when the stage declares decisions. `summary` is optional display
 text. A blocked stage states its reason in `blocker`, which is required:
 
@@ -626,16 +626,16 @@ turn, including resume, reply, and repair after verification fails.
 For the user interaction guide, CLI examples, and question history, see
 [Human-in-the-loop interaction](human-in-the-loop.md).
 
-Enable questions on any stage with a role:
+Role stages may ask questions by default. Disable them on a stage with `ask: never`:
 
 ```yaml
 - id: plan
   role: planner
-  ask: human
+  ask: never
 ```
 
-`ask` selects the recipient. Only `human` is supported today; other values,
-including role names, are configuration errors. Omit `ask` to disable questions.
+`ask` selects the recipient. `human` (default) and `never` are supported; other values,
+including role names, are configuration errors. Omitting `ask` means `human`.
 A stage without a role cannot declare it. Use `instructions` to describe when
 the agent should ask. The recipient is independent of the question protocol,
 so an agent recipient can be added later without introducing another stage.
@@ -676,9 +676,9 @@ one per kind per execution (so a protocol 3 execution gets at most two correctio
 
 | Kind | Trigger | Contract in the correction | `failure_reason` when still wrong | Event |
 | --- | --- | --- | --- | --- |
-| `handoff` | Protocol 3: `handoff.json` missing, empty, not JSON, not matching the schema, with a decision the stage does not allow, or `question` without `ask: human`; under protocol 4, a missing or invalid response extension payload | full | `handoff_file_invalid` | `handoff.file_invalid` |
+| `handoff` | Protocol 3: `handoff.json` missing, empty, not JSON, not matching the schema, with a decision the stage does not allow, or `question` on a stage with `ask: never`; under protocol 4, a missing or invalid response extension payload | full | `handoff_file_invalid` | `handoff.file_invalid` |
 | `stage_output` | After `status: complete`, a required artifact or completion output is missing or empty. Both protocols; under protocol 3 the agent fixes it by also rewriting `handoff.json` | reminder | `stage_output_missing` | `stage.output_missing` |
-| `response_contract` | Protocol 2 only: missing or invalid `status:` or `decision:` header, or `status: question` without `ask: human` | full | `response_contract_invalid` | `response.contract_invalid` |
+| `response_contract` | Protocol 2 only: missing or invalid `status:` or `decision:` header, or `status: question` on a stage with `ask: never` | full | `response_contract_invalid` | `response.contract_invalid` |
 | `question_file` | Protocol 2 only: `status: question` with an unusable request file | reminder | `question_file_invalid` | `question.file_invalid` |
 
 Provider errors, quota, timeouts, start failures, signals and replies that are not model

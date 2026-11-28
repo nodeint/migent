@@ -101,7 +101,7 @@ export const STAGE_CORE_PROPERTIES = {
     depends_on: Type.Optional(nullable(StringList('Stage ids that must complete first.'))),
     instructions: Type.Optional(nullable(StringList('Instructions added to the stage prompt.'))),
     agent: Type.Optional(nullable(RoleAgent)),
-    ask: Type.Optional(Type.Literal('human', { description: '`human` lets the stage ask the user a question.' })),
+    ask: Type.Optional(Type.Union([Type.Literal('human'), Type.Literal('never')], { description: '`human` (default) lets the stage ask the user a question; `never` disables questions.' })),
     max_revisions: Type.Optional(Count),
     verify: Type.Optional(nullable(Type.Union([WorkflowLine, Type.Array(WorkflowLine, { minItems: 1 })], { description: 'Shell command or commands run after the stage.' }))),
     max_verify: Type.Optional(nullable(PositiveCount)),

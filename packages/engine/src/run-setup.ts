@@ -7,7 +7,7 @@ import {
 } from '@nodeint/migent-kernel';
 import type { TurnKind } from '@nodeint/migent-prompts';
 import { type ExecutionContext, type HumanInput, loadFrozenWorkflow, type SessionStore } from '@nodeint/migent-session';
-import { allStageArtifacts, loadNamedWorkflow, loadStage, type StageSpec } from '@nodeint/migent-workflow';
+import { allStageArtifacts, type AskTarget, loadNamedWorkflow, loadStage, stageAskTarget,type StageSpec } from '@nodeint/migent-workflow';
 
 export function classifyFinishedProcess(
   client: CliClient,
@@ -23,7 +23,7 @@ export function classifyFinishedProcess(
 
 export interface StageFacts {
   decisionValues: string[];
-  ask: NonNullable<StageSpec['ask']> | 'human' | null;
+  ask: AskTarget | null;
   artifactFiles: ReturnType<typeof allStageArtifacts>;
   artifactName: string | null;
   verifyCommands: string[];
@@ -69,7 +69,7 @@ export function carryExhaustedArtifact(
 /** What a stage says about its decisions, questions, artifacts, and verify list. */
 export function stageFacts(stage: StageSpec | null): StageFacts {
   const decisionValues = stage?.decisionValues ?? [];
-  const ask = stage?.ask ?? (stage === null ? 'human' : null);
+  const ask = stage === null ? 'human' : stageAskTarget(stage);
   const artifactFiles = stage === null ? [] : allStageArtifacts(stage);
   const artifactName = artifactFiles[0]?.artifact.file ?? null;
   const verifyCommands = stage?.verify ?? [];
