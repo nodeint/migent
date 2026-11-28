@@ -78,9 +78,17 @@
       ]
     },
     "ask": {
-      "type": "string",
-      "const": "human",
-      "description": "`human` lets the stage ask the user a question."
+      "anyOf": [
+        {
+          "type": "string",
+          "const": "human"
+        },
+        {
+          "type": "string",
+          "const": "never"
+        }
+      ],
+      "description": "`human` (default) lets the stage ask the user a question; `never` disables questions."
     },
     "max_revisions": {
       "anyOf": [

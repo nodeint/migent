@@ -8,7 +8,7 @@ export { HANDOFF_SCHEMA_VERSION };
 /**
  * Structure of the handoff document an agent writes under response protocol 3. Pure data: the
  * kernel adds the stage-dependent rules (the decision must be one the stage allows, `question`
- * needs `ask: human`) and normalizes questions (assigns IDs and option letters). Closed objects:
+ * is not disabled by `ask: never`) and normalizes questions (assigns IDs and option letters). Closed objects:
  * an unknown key is an error.
  */
 

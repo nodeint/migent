@@ -12,7 +12,7 @@ const extensionValuesSchema = z.record(z.string(), z.record(z.string(), z.unknow
 
 const stageFieldSchema = {
   extensions: extensionValuesSchema.optional(),
-  ask: z.literal('human').optional(),
+  ask: z.enum(['human', 'never']).optional(),
   id: z.string(),
   description: z.string().nullable(),
   artifacts: z.array(stageArtifactSchema),

@@ -8,6 +8,9 @@ import type { ExtensionValues } from './extensions.js';
 /** The recipient is separate from the question outcome; more recipients can be added later. */
 export type AskTarget = 'human';
 
+/** The authored `ask` field: `human` (the default) allows questions, `never` disables them. */
+export type StageAsk = AskTarget | 'never';
+
 export const VERIFY_ARTIFACT = 'verify.md';
 
 /** Run the stage only when a changed Git path matches one of the globs. */
@@ -26,7 +29,7 @@ export type StageAgent =
 interface StageFields {
   /** Plugin keys claimed on this stage, by owner. Absent when the stage carries none. */
   extensions?: ExtensionValues;
-  ask?: AskTarget;
+  ask?: StageAsk;
   id: string;
   description: string | null;
   /** Stage-level artifacts the stage writes on every `complete`. */
@@ -167,4 +170,10 @@ export function isPathReference(reference: string): boolean {
     reference.includes('\\') ||
     path.isAbsolute(reference)
   );
+}
+
+/** Who the stage may ask a question: `human` unless the stage has no role or sets `ask: never`. */
+export function stageAskTarget(stage: StageSpec): AskTarget | null {
+  if (!isRoleStage(stage) || stage.ask === 'never') return null;
+  return 'human';
 }

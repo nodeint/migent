@@ -1238,7 +1238,7 @@ Type: object
 | `verify_timeout` | number \| null | yes | | |
 | `run_when` | object \| null | yes | | |
 | `run_when.changed_paths` | string[] | yes | | |
-| `ask` | string \| null | yes | | |
+| `ask` | string \| null | yes | | Effective question recipient (`human`), or null when the stage cannot ask. |
 | `target` | object \| null | yes | | |
 | `target.client` | string | yes | | |
 | `target.model` | string | yes | | |

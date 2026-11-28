@@ -1448,7 +1448,7 @@ exports[`get --json 5`] = `
         "agent": null,
         "artifact": null,
         "artifacts": [],
-        "ask": null,
+        "ask": "human",
         "decision_artifacts": {},
         "decisions": [],
         "depends_on": [],
@@ -1473,7 +1473,7 @@ exports[`get --json 5`] = `
         "agent": null,
         "artifact": null,
         "artifacts": [],
-        "ask": null,
+        "ask": "human",
         "decision_artifacts": {},
         "decisions": [],
         "depends_on": [

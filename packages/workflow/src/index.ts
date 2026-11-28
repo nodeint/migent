@@ -52,6 +52,7 @@ export type {
   RunWhen,
   StageAgent,
   StageArtifact,
+  StageAsk,
   StageSpec,
   VerifyOnlyStageSpec,
   WorkflowCatalog,
@@ -67,6 +68,7 @@ export {
   isWorkflowV2,
   SCHEMA_VERSION,
   stageArtifactsFor,
+  stageAskTarget,
   VERIFY_ARTIFACT,
 } from './model.js';
 export { parseWorkflowMapping } from './parse.js';

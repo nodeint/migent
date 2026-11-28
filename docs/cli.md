@@ -400,6 +400,10 @@ Project types `workflow`, `role`, `agent`, and `config` read `.migent/`.
 whether `config.local.yaml` sets it); `roles` shows each role's agent and
 description; `workflows` lists the files in `.migent/workflows/`.
 
+`get workflow` reports each stage's effective `ask`: `"human"` when the stage may ask
+questions (the default, also for an omitted `ask`), and `null` when the stage sets
+`ask: never` or has no role.
+
 Machine types `client`, `model`, `option`, and `effort` work
 outside a project:
 

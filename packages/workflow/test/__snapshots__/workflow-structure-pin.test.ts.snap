@@ -179,7 +179,7 @@ exports[`draft collector diagnostics 1`] = `
   "ask bot": [
     {
       "code": "workflow-invalid",
-      "message": "stages.a.ask must be human.",
+      "message": "stages.a.ask must be human or never.",
       "path": [
         "stages",
         0,
@@ -765,7 +765,7 @@ exports[`strict reader diagnostics 1`] = `
   },
   "ask bot": {
     "code": "workflow-invalid",
-    "message": "stages.a.ask must be human.",
+    "message": "stages.a.ask must be human or never.",
     "path": [
       "stages",
       0,

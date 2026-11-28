@@ -20,7 +20,6 @@ stages:
     role: architect
     depends_on: []
     max_revisions: 3
-    ask: human
     instructions:
       - Define the goal, scope, and architectural constraints from the task and repository evidence.
       - Design component responsibilities, boundaries, contracts, and dependencies.

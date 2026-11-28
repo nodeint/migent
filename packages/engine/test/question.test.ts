@@ -29,7 +29,7 @@ function workspace(stages: string, extra = ''): string {
 }
 
 test('question requires an opted-in recipient; the response headers carry no question data', () => {
-  expect(() => parseStageOutcome(question, true)).toThrow('requires ask: human');
+  expect(() => parseStageOutcome(question, true, { ask: null })).toThrow('the stage sets ask: never');
   expect(parseStageOutcome('status: question\n\nSee the question request file.', true, { ask: 'human' })?.toJson()).toEqual({ status: 'question' });
   expect(parseStageOutcome(question.replace('status: question', 'status: question\ndecision: approved'), true, { decisionValues: ['approved'], ask: 'human' })?.status).toBe('question');
 });
@@ -107,12 +107,53 @@ test('a question stops its dependents but independent stages continue', async ()
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-test('a stage without ask cannot question', async () => {
+test('a stage without ask may question', async () => {
   const root = workspace('  - { id: plan, role: planner }\n');
   try {
-    const result = await executeNamedWorkflow(root, { workflowId: 'plan', task: 'Plan' }, new AgentToolRunner(registryOf({ fake: new ScriptedClient([question, question]) }), 10));
-    expect(result.code).toBe(3);
+    const provider = new ScriptedClient([question]);
+    const result = await executeNamedWorkflow(root, { workflowId: 'plan', task: 'Plan' }, new AgentToolRunner(registryOf({ fake: provider }), 10));
+    expect(result.code).toBe(9);
+    expect(result.stopReason).toBe('question');
+    expect(provider.calls[0]?.prompt).toContain('complete | question | blocked');
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('ask: never offers no question status and rejects a question', async () => {
+  const root = workspace('  - { id: plan, role: planner, ask: never }\n');
+  try {
+    const provider = new ScriptedClient([question, question]);
+    const result = await executeNamedWorkflow(root, { workflowId: 'plan', task: 'Plan' }, new AgentToolRunner(registryOf({ fake: provider }), 10));
+    expect(result.code).toBe(3);
+    expect(provider.calls[0]?.prompt).not.toContain('question |');
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('question recipient stays human after the stage is changed to ask: never', async () => {
+  const root = workspace('  - { id: plan, role: planner }\n');
+  try {
+    const runner = new AgentToolRunner(registryOf({ fake: new ScriptedClient([question]) }), 10);
+    const first = await executeNamedWorkflow(root, { workflowId: 'plan', task: 'Plan' }, runner);
+    const sessionDir = path.join(root, '.migent/sessions', first.sessionId);
+    writeFileSync(path.join(root, '.migent/workflows/plan.yaml'), `schema_version: 3
+id: plan
+stages:
+  - { id: plan, role: planner, ask: never }
+`);
+    const refreshed = { sessionId: first.sessionId, refreshWorkflow: true };
+    expect((await executeNamedWorkflow(root, refreshed, runner)).code).toBe(9);
+    expect(readFileSync(path.join(sessionDir, 'workflow.frozen.yaml'), 'utf8')).toContain('ask: never');
+    const questionFile = path.join(sessionDir, 'executions/0001-plan--attempt-01/questions.json');
+    rmSync(questionFile);
+    repairSession(root, first.sessionId);
+    expect(JSON.parse(readFileSync(questionFile, 'utf8')).recipient).toBe('human');
+    expect(new SessionStore(root).readSessionStatus(first.sessionId).questions).toMatchObject([{ recipient: 'human' }]);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('ask: never parses; other values are rejected', () => {
+  const parse = (ask: string) => parseWorkflowMapping({ schema_version: 3, stages: [{ id: 'plan', role: 'planner', ask }] }, 'plan.yaml');
+  expect(parse('never').stages.plan?.ask).toBe('never');
+  expect(() => parse('bot')).toThrow('ask must be human or never');
 });
 
 test('question between verify repairs carries the artifact and failure budget', async () => {

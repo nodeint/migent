@@ -67,7 +67,7 @@ test('a stage whose fields are invalid still counts as declared for depends_on',
   const input = draft([stage('a', { ask: 'bot' }), stage('b', { depends_on: ['a'] })]);
   const result = collectWorkflowDraft(input, 'build.yaml');
   // Only the ask error: the broken stage exists, so the dependency is not "unknown".
-  expect(result.problems.map((item) => item.message)).toEqual(['stages.a.ask must be human.']);
+  expect(result.problems.map((item) => item.message)).toEqual(['stages.a.ask must be human or never.']);
 });
 
 test('an unknown dependency is reported per stage', () => {
@@ -207,7 +207,7 @@ test('graph checks run per field, not only when every stage parses', () => {
     'build.yaml',
   );
   expect(conditional.problems.map((item) => item.message)).toEqual([
-    'stages.a.ask must be human.',
+    'stages.a.ask must be human or never.',
     "outputs 'release' comes from stages.release, which is reached through run_when stage gated; a skip would leave it missing.",
   ]);
 });

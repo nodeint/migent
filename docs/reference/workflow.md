@@ -120,7 +120,7 @@ Type: object
 | `depends_on` | string[] \| null | no | | Stage ids that must complete first. |
 | `instructions` | string[] \| null | no | | Instructions added to the stage prompt. |
 | `agent` | [Role agent](config.md#config-role-agent-json) \| null | no | | The name of an `agents` entry, or a complete inline agent. |
-| `ask` | `"human"` | no | | `human` lets the stage ask the user a question. |
+| `ask` | `"human"` \| `"never"` | no | | `human` (default) lets the stage ask the user a question; `never` disables questions. |
 | `max_revisions` | integer \| string | no | | A whole number, written as an integer or a digit string. |
 | `verify` | string \| string[] \| null | no | | Shell command or commands run after the stage. |
 | `max_verify` | integer \| string \| null | no | | A whole number of at least 1, written as an integer or a digit string. |

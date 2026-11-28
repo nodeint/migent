@@ -8,7 +8,6 @@ stages:
     role: developer
     depends_on: []
     max_revisions: 3
-    ask: human
     instructions:
       - Implement within scope, following repository conventions and any agreed architecture.
       - Work directly from the task when no architectural decisions are needed.

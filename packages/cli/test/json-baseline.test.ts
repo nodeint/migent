@@ -188,6 +188,20 @@ test('get --json', async () => {
   expect(await json(['get', 'agent', 'planner-model', '-o', 'json'])).toMatchSnapshot();
 });
 
+test('get workflow --json reports the effective ask recipient per stage', async () => {
+  writeFileSync(path.join(root, '.migent', 'workflows', 'asks.yaml'), [
+    'schema_version: 8', 'id: asks', 'stages:',
+    '  - { id: check, verify: [node --version] }',
+    '  - { id: open, role: planner, depends_on: [check] }',
+    '  - { id: closed, role: planner, ask: never, depends_on: [check] }', '',
+  ].join('\n'));
+  const result = await json(['get', 'workflow', 'asks', '--json']);
+  expect(result.stderr).toBe('');
+  expect(result.code).toBe(0);
+  const {stages} = (result.stdout as { stages: { id: string; ask: string | null }[] });
+  expect(stages.map((stage) => [stage.id, stage.ask])).toEqual([['check', null], ['open', 'human'], ['closed', null]]);
+});
+
 test('doctor --json', async () => {
   expect(await json(['doctor', '--json'])).toMatchSnapshot();
 });
@@ -367,7 +381,7 @@ test('session resume --no-continue --json prints the recorded decision', async (
   try {
     cliHooks.runner = run.runner;
     const result = await json(['session', 'resume', run.id, 'fresh', '--no-continue', '--json'], undefined, run.root);
-    expect(result.code).toBe(0);
+  expect(result.code).toBe(0);
     expect(result.stdout).toMatchObject({ stage_id: 'plan', choice: 'fresh', continued: false, remaining: [] });
   } finally {
     removeWorkspace(run.root);

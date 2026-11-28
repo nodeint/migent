@@ -96,7 +96,7 @@ export const StageView = Type.Object(
     max_verify: int(),
     verify_timeout: nullable(int()),
     run_when: nullable(Type.Object({ changed_paths: strings() })),
-    ask: nullable(Type.String()),
+    ask: nullable(Type.String({ description: 'Effective question recipient (`human`), or null when the stage cannot ask.' })),
     target: nullable(Target),
     problems: strings(),
   },

@@ -345,7 +345,6 @@ artifacts:
 stages:
   - id: plan
     role: planner
-    ask: human
     max_revisions: 3
     instructions:
       - Define scope, component boundaries, contracts, and key trade-offs in plan.md.
@@ -381,7 +380,7 @@ is an **artifact**;
 **decision** selects a route: `approved` completes the workflow, while `revise`
 returns to `plan` with the review feedback.
 
-`ask: human` lets the planner pause for your answers and continue the same
+Role stages can pause for your answers and continue the same
 conversation. `outputs` publishes the final plan when the workflow completes.
 
 ### Beyond sequential workflows

@@ -8,9 +8,10 @@ Questions belong to the stage doing the work. A planner can ask about scope,
 a developer can ask about conflicting requirements, and a reviewer can ask
 about acceptance criteria. A question does not need a separate workflow stage.
 
-## Enable questions
+## Questions are on by default
 
-Add `ask: human` to each stage that may ask questions. The role must already be
+Every role stage may ask questions; no field is needed. Set `ask: never` on a stage to
+disable them. The role must already be
 configured in `.migent/config.yaml`.
 
 ```yaml
@@ -22,15 +23,15 @@ artifacts:
 stages:
   - id: plan
     role: planner
-    ask: human
     instructions:
       - Read task.md and the relevant code, then write plan.md.
       - Ask the user when the task leaves a scope or behavior decision unresolved.
     artifacts: [plan]
 ```
 
-`ask` selects the recipient. Currently its only supported value is `human`.
-Omitting it disables questions for that workflow stage. Stages that only run
+`ask` selects the recipient. `human` is the default; `never` disables questions. No other
+value is supported.
+Omitting it means `human`. Stages that only run
 verification commands cannot ask questions. Agent or role recipients such as
 `ask: jev` are not implemented.
 
@@ -152,7 +153,7 @@ that looks like another numbered answer. It keeps the answer boundaries explicit
 Migent uses the same question protocol whether a human or another agent calls
 the CLI. The `ask` recipient determines who should make the decision.
 
-| Caller | Handling a question with `ask: human` |
+| Caller | Handling a question from a stage that may ask |
 | --- | --- |
 | Human at the terminal | Read the printed questions, then run `continue` with the answers. |
 | Agent operating Migent | Read `session show --json`, present the questions and options to the user, then pass their answers to `continue`. |
@@ -250,7 +251,7 @@ which Migent writes per execution from the validated outcome.
 ```
 
 `status` is `complete`, `blocked` (with a required `blocker`) or `question`. A `question`
-handoff is valid only for a stage with `ask: human`. The published schema is
+handoff is invalid on a stage with `ask: never`. The published schema is
 `HandoffDocument` in `@nodeint/migent-contracts`.
 
 Each question requires nonempty `question` and `context` strings, a `selection`
@@ -272,7 +273,7 @@ response with a `status: question` header line; the file is read only for that s
 ### When the handoff file is unusable
 
 If the handoff file is missing, empty, not valid JSON, fails validation, names a
-decision the stage does not allow, or asks a question on a stage without `ask: human`,
+decision the stage does not allow, or asks a question on a stage with `ask: never`,
 Migent sends the agent one correction turn in the same execution and conversation. The
 message names the file and the problem; the agent rewrites the file and responds again.
 The correction is recorded in `execution.json` under `corrections.handoff`, so cancelling
